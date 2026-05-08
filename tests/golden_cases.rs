@@ -232,6 +232,7 @@ golden_test_cases!(
     html_block,
     html_block_commonmark_type6_type7,
     html_block_div_idempotent,
+    html_block_div_nested_idempotent,
     html_block_pre_close_tag_inline_commonmark,
     html_inline_span_idempotent,
     ignore_directives,
