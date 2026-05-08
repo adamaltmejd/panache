@@ -219,6 +219,16 @@ pub enum Commands {
         /// Enforce exclude patterns even for explicitly provided files
         #[arg(long)]
         #[arg(help = "Apply exclude patterns to explicitly provided files")]
+        #[arg(
+            long_help = "Apply exclude patterns from your configuration even to files \
+            passed explicitly on the command line.\
+            \n\nBy default, explicitly-named files bypass exclude patterns: the assumption is \
+            that if you asked for a specific file, you want it processed. With --force-exclude, \
+            those patterns are honored regardless.\
+            \n\nThis is primarily intended for pre-commit hooks (and similar tooling), which \
+            pass changed files explicitly but should still respect the project's exclude \
+            configuration."
+        )]
         force_exclude: bool,
     },
     /// Parse and display the CST tree for debugging
@@ -326,6 +336,16 @@ For editor configuration examples, see: https://github.com/jolars/panache#editor
         /// Enforce exclude patterns even for explicitly provided files
         #[arg(long)]
         #[arg(help = "Apply exclude patterns to explicitly provided files")]
+        #[arg(
+            long_help = "Apply exclude patterns from your configuration even to files \
+            passed explicitly on the command line. \
+            \n\nBy default, explicitly-named files bypass exclude patterns: the assumption is \
+            that if you asked for a specific file, you want it processed. With --force-exclude, \
+            those patterns are honored regardless. \
+            \n\nThis is primarily intended for pre-commit hooks (and similar tooling), which \
+            pass changed files explicitly but should still respect the project's exclude \
+            configuration."
+        )]
         force_exclude: bool,
     },
     /// Delete cache data
@@ -380,6 +400,16 @@ pub enum DebugCommands {
         /// Enforce exclude patterns even for explicitly provided files
         #[arg(long)]
         #[arg(help = "Apply exclude patterns to explicitly provided files")]
+        #[arg(
+            long_help = "Apply exclude patterns from your configuration even to files \
+            passed explicitly on the command line. \
+            \n\nBy default, explicitly-named files bypass exclude patterns: the assumption is \
+            that if you asked for a specific file, you want it processed. With --force-exclude, \
+            those patterns are honored regardless. \
+            \n\nThis is primarily intended for pre-commit hooks (and similar tooling), which \
+            pass changed files explicitly but should still respect the project's exclude \
+            configuration."
+        )]
         force_exclude: bool,
     },
 }

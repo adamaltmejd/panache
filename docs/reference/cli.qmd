@@ -71,7 +71,11 @@ Format a Quarto, Pandoc, or R Markdown document according to Panache's formattin
 * `--verify` — Run smoke-check invariants: (1) parser losslessness (input == parsed CST text) and (2) formatter idempotency (format(format(x)) == format(x)). When formatting files by path (including directories), --verify does not write any changes to disk. Exits with code 1 when verification fails. 
 
    Deprecated: prefer `panache debug format --checks all`.
-* `--force-exclude` — Apply exclude patterns to explicitly provided files
+* `--force-exclude` — Apply exclude patterns from your configuration even to files passed explicitly on the command line.
+
+   By default, explicitly-named files bypass exclude patterns: the assumption is that if you asked for a specific file, you want it processed. With --force-exclude, those patterns are honored regardless.
+
+   This is primarily intended for pre-commit hooks (and similar tooling), which pass changed files explicitly but should still respect the project's exclude configuration.
 
 
 
@@ -140,7 +144,11 @@ Configure rules in panache.toml with [lint] section.
 
   Possible values: `human`, `short`
 
-* `--force-exclude` — Apply exclude patterns to explicitly provided files
+* `--force-exclude` — Apply exclude patterns from your configuration even to files passed explicitly on the command line. 
+
+   By default, explicitly-named files bypass exclude patterns: the assumption is that if you asked for a specific file, you want it processed. With --force-exclude, those patterns are honored regardless. 
+
+   This is primarily intended for pre-commit hooks (and similar tooling), which pass changed files explicitly but should still respect the project's exclude configuration.
 
 
 
@@ -190,7 +198,11 @@ Run parser+formatter checks and emit diagnostics
 * `--report` — Emit Markdown report output suitable for issue descriptions
 * `--dump-dir <DIR>` — Directory where failing artifacts are written
 * `--dump-passes` — Write input/parse/format pass artifacts to --dump-dir for every file
-* `--force-exclude` — Apply exclude patterns to explicitly provided files
+* `--force-exclude` — Apply exclude patterns from your configuration even to files passed explicitly on the command line. 
+
+   By default, explicitly-named files bypass exclude patterns: the assumption is that if you asked for a specific file, you want it processed. With --force-exclude, those patterns are honored regardless. 
+
+   This is primarily intended for pre-commit hooks (and similar tooling), which pass changed files explicitly but should still respect the project's exclude configuration.
 
 
 
