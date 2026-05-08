@@ -224,6 +224,52 @@ fn test_parse_dash_with_stdin_filename_infers_flavor() {
 }
 
 #[test]
+fn test_parse_to_pandoc_json_stdin() {
+    let assert = cargo_bin_cmd!("panache")
+        .args(["parse", "--to", "pandoc-json"])
+        .write_stdin("# Heading\n\nA **bold** word.")
+        .assert()
+        .success()
+        // Compact JSON, pinned api-version, contains the expected node tags.
+        .stdout(predicate::str::starts_with("{\"blocks\":"))
+        .stdout(predicate::str::contains(
+            "\"pandoc-api-version\":[1,23,1,1]",
+        ))
+        .stdout(predicate::str::contains("\"t\":\"Header\""))
+        .stdout(predicate::str::contains("\"t\":\"Para\""))
+        .stdout(predicate::str::contains("\"t\":\"Strong\""))
+        .stdout(predicate::str::contains("\"t\":\"Str\""))
+        .stdout(predicate::str::contains("\"bold\""))
+        // Make sure we did not also dump the CST debug tree or pandoc-ast.
+        .stdout(predicate::str::contains("DOCUMENT").not())
+        .stdout(predicate::str::contains("Header 1").not());
+
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+    // Output must round-trip as valid JSON.
+    serde_json::from_str::<serde_json::Value>(stdout.trim_end())
+        .expect("pandoc-json output must be valid JSON");
+}
+
+#[test]
+fn test_parse_to_pandoc_json_utf8_round_trips() {
+    // Regression for issue #269 — pandoc-ast emits Haskell-style numeric
+    // escapes for non-ASCII chars (matching real pandoc -t native), which
+    // tools like ascii2uni can't decode. pandoc-json must keep UTF-8
+    // intact so the value parses back to the original string.
+    let assert = cargo_bin_cmd!("panache")
+        .args(["parse", "--to", "pandoc-json"])
+        .write_stdin("Räksmörgås")
+        .assert()
+        .success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+    let value: serde_json::Value = serde_json::from_str(stdout.trim_end()).expect("valid JSON");
+    let str_node_content = value
+        .pointer("/blocks/0/c/0/c")
+        .expect("Para → first inline → content");
+    assert_eq!(str_node_content.as_str(), Some("Räksmörgås"));
+}
+
+#[test]
 fn test_parse_to_pandoc_ast_with_json_writes_both() {
     let temp_dir = TempDir::new().unwrap();
     let test_file = temp_dir.path().join("test.qmd");

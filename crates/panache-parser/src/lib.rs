@@ -38,7 +38,7 @@ pub use options::Extensions;
 pub use options::Flavor;
 pub use options::PandocCompat;
 pub use options::ParserOptions;
-pub use pandoc_ast::to_pandoc_ast;
+pub use pandoc_ast::{to_pandoc_ast, to_pandoc_json};
 pub use parser::inlines::refdef_map::{RefdefMap, collect_refdef_labels};
 pub use parser::parse;
 pub use parser::parse_with_refdefs;

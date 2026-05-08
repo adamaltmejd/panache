@@ -248,12 +248,16 @@ pub enum Commands {
 
         /// Output format printed to stdout
         #[arg(long, value_enum, default_value_t = ParseOutput::Cst, value_name = "FORMAT")]
-        #[arg(help = "Output format: cst (default) or pandoc-ast")]
+        #[arg(help = "Output format: cst (default), pandoc-ast, or pandoc-json")]
         #[arg(long_help = "Choose what to print to stdout:\n\
             - cst (default): debug-format CST tree, useful for parser debugging.\n\
             - pandoc-ast: pandoc-native AST text, the same shape produced by \
               `pandoc -f markdown -t native`. Unsupported constructs emit visible \
-              `Unsupported \"<KIND>\"` sentinels rather than being silently dropped.")]
+              `Unsupported \"<KIND>\"` sentinels rather than being silently dropped.\n\
+            - pandoc-json: the same AST encoded as JSON, matching \
+              `pandoc -f markdown -t json`. UTF-8 round-trips cleanly through \
+              `jq`/`ascii2uni` since strings use standard JSON escaping rather \
+              than Haskell-show numeric escapes.")]
         to: ParseOutput,
 
         /// Write CST JSON output to the given file
@@ -425,6 +429,7 @@ pub enum DebugChecks {
 pub enum ParseOutput {
     Cst,
     PandocAst,
+    PandocJson,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]

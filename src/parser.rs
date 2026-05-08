@@ -6,8 +6,8 @@ pub use panache_parser::parser::blocks;
 pub use panache_parser::parser::inlines;
 pub use panache_parser::parser::utils;
 pub use panache_parser::parser::yaml;
-pub use panache_parser::to_pandoc_ast;
 pub use panache_parser::{RefdefMap, collect_refdef_labels};
+pub use panache_parser::{to_pandoc_ast, to_pandoc_json};
 
 use crate::config::Config;
 use crate::syntax::SyntaxNode;

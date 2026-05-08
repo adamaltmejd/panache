@@ -767,6 +767,9 @@ fn main() -> io::Result<()> {
                     ParseOutput::PandocAst => {
                         println!("{}", panache::parser::to_pandoc_ast(&tree));
                     }
+                    ParseOutput::PandocJson => {
+                        println!("{}", panache::parser::to_pandoc_json(&tree));
+                    }
                 }
             }
             Ok(())

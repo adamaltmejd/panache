@@ -21,6 +21,14 @@ use std::collections::{HashMap, HashSet};
 use crate::SyntaxNode;
 use crate::syntax::SyntaxKind;
 use rowan::NodeOrToken;
+use serde_json::{Value, json};
+
+/// Pinned `pandoc-api-version` reported in `to_pandoc_json` output. Mirrors
+/// the version reported by pandoc 3.9.0.2 (the version pinned by the
+/// conformance corpus — see
+/// `tests/fixtures/pandoc-conformance/.panache-source`). Bump alongside
+/// any pandoc-version bump in that corpus.
+const PANDOC_API_VERSION: [u32; 4] = [1, 23, 1, 1];
 
 #[derive(Default)]
 struct RefsCtx {
@@ -78,6 +86,39 @@ pub fn to_pandoc_ast(tree: &SyntaxNode) -> String {
     out.push_str(" ]");
     REFS_CTX.with(|c| *c.borrow_mut() = RefsCtx::default());
     out
+}
+
+/// Render the given panache CST as pandoc JSON-AST text.
+///
+/// Output mirrors `pandoc -f markdown -t json`: a single JSON object
+/// `{"pandoc-api-version": [...], "meta": {...}, "blocks": [...]}` where
+/// each AST node is `{"t": "Constructor", "c": <content>}` (nullary
+/// constructors omit `"c"`). The block tree is the same one used by
+/// [`to_pandoc_ast`] — the difference is the surface encoding only.
+///
+/// Output is compact (no whitespace), matching pandoc's default. The
+/// `pandoc-api-version` field is pinned to [`PANDOC_API_VERSION`].
+///
+/// Note: object keys are emitted in alphabetical order (e.g. `"c"` before
+/// `"t"`) rather than pandoc's insertion order. JSON objects are unordered
+/// by spec, so downstream tools (`jq`, `ascii2uni`, deserializers) treat
+/// the outputs as equivalent — but they are not byte-identical.
+///
+/// As with [`to_pandoc_ast`], unsupported nodes emit a panache-internal
+/// `{"t": "Unsupported", "c": "<KIND>"}` sentinel rather than being
+/// silently dropped. This sentinel is not emitted by real pandoc.
+pub fn to_pandoc_json(tree: &SyntaxNode) -> String {
+    let ctx = build_refs_ctx(tree);
+    REFS_CTX.with(|c| *c.borrow_mut() = ctx);
+    let blocks = blocks_from_doc(tree);
+    let blocks_json: Vec<Value> = blocks.iter().map(block_to_json).collect();
+    REFS_CTX.with(|c| *c.borrow_mut() = RefsCtx::default());
+    let doc = json!({
+        "pandoc-api-version": PANDOC_API_VERSION,
+        "meta": {},
+        "blocks": blocks_json,
+    });
+    serde_json::to_string(&doc).expect("pandoc-json serialization is infallible")
 }
 
 fn build_refs_ctx(tree: &SyntaxNode) -> RefsCtx {
@@ -5031,4 +5072,312 @@ fn write_haskell_string(s: &str, out: &mut String) {
         }
     }
     out.push('"');
+}
+
+// ----- pandoc JSON projection ---------------------------------------------
+//
+// Walks the same `Block`/`Inline` tree as `write_block`/`write_inline` but
+// emits pandoc's JSON shape — `{"t": "Constructor", "c": <content>}`, with
+// nullary constructors omitting `"c"`. See pandoc's
+// `Text.Pandoc.Definition` ToJSON instances for the source of truth.
+
+fn attr_to_json(attr: &Attr) -> Value {
+    let kvs: Vec<Value> = attr.kvs.iter().map(|(k, v)| json!([k, v])).collect();
+    json!([attr.id, attr.classes, kvs])
+}
+
+fn target_to_json(url: &str, title: &str) -> Value {
+    json!([url, title])
+}
+
+fn inlines_to_json(inlines: &[Inline]) -> Vec<Value> {
+    inlines.iter().map(inline_to_json).collect()
+}
+
+fn blocks_to_json(blocks: &[Block]) -> Vec<Value> {
+    blocks.iter().map(block_to_json).collect()
+}
+
+fn citation_to_json(c: &Citation) -> Value {
+    let mode = match c.mode {
+        CitationMode::AuthorInText => "AuthorInText",
+        CitationMode::NormalCitation => "NormalCitation",
+        CitationMode::SuppressAuthor => "SuppressAuthor",
+    };
+    json!({
+        "citationId": c.id,
+        "citationPrefix": inlines_to_json(&c.prefix),
+        "citationSuffix": inlines_to_json(&c.suffix),
+        "citationMode": { "t": mode },
+        "citationNoteNum": c.note_num,
+        "citationHash": c.hash,
+    })
+}
+
+fn inline_to_json(inline: &Inline) -> Value {
+    match inline {
+        Inline::Str(s) => json!({ "t": "Str", "c": s }),
+        Inline::Space => json!({ "t": "Space" }),
+        Inline::SoftBreak => json!({ "t": "SoftBreak" }),
+        Inline::LineBreak => json!({ "t": "LineBreak" }),
+        Inline::Emph(children) => json!({ "t": "Emph", "c": inlines_to_json(children) }),
+        Inline::Strong(children) => json!({ "t": "Strong", "c": inlines_to_json(children) }),
+        Inline::Strikeout(children) => {
+            json!({ "t": "Strikeout", "c": inlines_to_json(children) })
+        }
+        Inline::Superscript(children) => {
+            json!({ "t": "Superscript", "c": inlines_to_json(children) })
+        }
+        Inline::Subscript(children) => {
+            json!({ "t": "Subscript", "c": inlines_to_json(children) })
+        }
+        Inline::Code(attr, content) => {
+            json!({ "t": "Code", "c": [attr_to_json(attr), content] })
+        }
+        Inline::Link(attr, text, url, title) => json!({
+            "t": "Link",
+            "c": [attr_to_json(attr), inlines_to_json(text), target_to_json(url, title)],
+        }),
+        Inline::Image(attr, alt, url, title) => json!({
+            "t": "Image",
+            "c": [attr_to_json(attr), inlines_to_json(alt), target_to_json(url, title)],
+        }),
+        Inline::Math(kind, content) => json!({
+            "t": "Math",
+            "c": [{ "t": kind }, content],
+        }),
+        Inline::Span(attr, children) => json!({
+            "t": "Span",
+            "c": [attr_to_json(attr), inlines_to_json(children)],
+        }),
+        Inline::RawInline(format, content) => json!({
+            "t": "RawInline",
+            "c": [format, content],
+        }),
+        Inline::Quoted(kind, children) => json!({
+            "t": "Quoted",
+            "c": [{ "t": kind }, inlines_to_json(children)],
+        }),
+        Inline::Note(blocks) => json!({ "t": "Note", "c": blocks_to_json(blocks) }),
+        Inline::Cite(citations, text) => json!({
+            "t": "Cite",
+            "c": [
+                citations.iter().map(citation_to_json).collect::<Vec<_>>(),
+                inlines_to_json(text),
+            ],
+        }),
+        Inline::Unsupported(name) => json!({ "t": "Unsupported", "c": name }),
+    }
+}
+
+fn block_to_json(b: &Block) -> Value {
+    match b {
+        Block::Para(inlines) => json!({ "t": "Para", "c": inlines_to_json(inlines) }),
+        Block::Plain(inlines) => json!({ "t": "Plain", "c": inlines_to_json(inlines) }),
+        Block::Header(level, attr, inlines) => json!({
+            "t": "Header",
+            "c": [level, attr_to_json(attr), inlines_to_json(inlines)],
+        }),
+        Block::BlockQuote(blocks) => {
+            json!({ "t": "BlockQuote", "c": blocks_to_json(blocks) })
+        }
+        Block::CodeBlock(attr, content) => json!({
+            "t": "CodeBlock",
+            "c": [attr_to_json(attr), content],
+        }),
+        Block::HorizontalRule => json!({ "t": "HorizontalRule" }),
+        Block::BulletList(items) => {
+            let items_json: Vec<Vec<Value>> = items.iter().map(|it| blocks_to_json(it)).collect();
+            json!({ "t": "BulletList", "c": items_json })
+        }
+        Block::OrderedList(start, style, delim, items) => {
+            let items_json: Vec<Vec<Value>> = items.iter().map(|it| blocks_to_json(it)).collect();
+            json!({
+                "t": "OrderedList",
+                "c": [
+                    [json!(start), json!({ "t": style }), json!({ "t": delim })],
+                    items_json,
+                ],
+            })
+        }
+        Block::RawBlock(format, content) => json!({
+            "t": "RawBlock",
+            "c": [format, content],
+        }),
+        Block::Table(data) => table_to_json(data),
+        Block::Div(attr, blocks) => json!({
+            "t": "Div",
+            "c": [attr_to_json(attr), blocks_to_json(blocks)],
+        }),
+        Block::LineBlock(lines) => {
+            let lines_json: Vec<Vec<Value>> =
+                lines.iter().map(|line| inlines_to_json(line)).collect();
+            json!({ "t": "LineBlock", "c": lines_json })
+        }
+        Block::DefinitionList(items) => {
+            let items_json: Vec<Value> = items
+                .iter()
+                .map(|(term, defs)| {
+                    let defs_json: Vec<Vec<Value>> =
+                        defs.iter().map(|d| blocks_to_json(d)).collect();
+                    json!([inlines_to_json(term), defs_json])
+                })
+                .collect();
+            json!({ "t": "DefinitionList", "c": items_json })
+        }
+        Block::Figure(attr, caption, body) => {
+            // Pandoc's Caption shape: `[shortCaption_or_null, [blocks]]`.
+            // panache stores the caption as a Vec<Block> directly; wrap it.
+            let caption_json = json!([Value::Null, blocks_to_json(caption)]);
+            json!({
+                "t": "Figure",
+                "c": [attr_to_json(attr), caption_json, blocks_to_json(body)],
+            })
+        }
+        Block::Unsupported(name) => json!({ "t": "Unsupported", "c": name }),
+    }
+}
+
+fn table_to_json(data: &TableData) -> Value {
+    // Caption: `[null, [Plain inlines]]` when non-empty, `[null, []]` when empty.
+    let caption_blocks: Vec<Value> = if data.caption.is_empty() {
+        Vec::new()
+    } else {
+        vec![json!({ "t": "Plain", "c": inlines_to_json(&data.caption) })]
+    };
+    let caption_json = json!([Value::Null, caption_blocks]);
+
+    // Column specs: pair each align constructor with its column-width
+    // constructor — `ColWidthDefault` (nullary) or `ColWidth f` (with value).
+    let colspecs: Vec<Value> = data
+        .aligns
+        .iter()
+        .enumerate()
+        .map(|(i, align)| {
+            let width = data.widths.get(i).copied().unwrap_or(None);
+            let width_json = match width {
+                None => json!({ "t": "ColWidthDefault" }),
+                Some(w) => json!({ "t": "ColWidth", "c": w }),
+            };
+            json!([{ "t": align }, width_json])
+        })
+        .collect();
+
+    let empty_attr = json!(["", Vec::<Value>::new(), Vec::<Value>::new()]);
+
+    let head_rows: Vec<Value> = data
+        .head_rows
+        .iter()
+        .map(|r| table_row_to_json(r))
+        .collect();
+    let body_rows: Vec<Value> = data
+        .body_rows
+        .iter()
+        .map(|r| table_row_to_json(r))
+        .collect();
+    let foot_rows: Vec<Value> = data
+        .foot_rows
+        .iter()
+        .map(|r| table_row_to_json(r))
+        .collect();
+
+    let table_head = json!([empty_attr, head_rows]);
+    let table_bodies = json!([[empty_attr, 0, Vec::<Value>::new(), body_rows,]]);
+    let table_foot = json!([empty_attr, foot_rows]);
+
+    json!({
+        "t": "Table",
+        "c": [
+            attr_to_json(&data.attr),
+            caption_json,
+            colspecs,
+            table_head,
+            table_bodies,
+            table_foot,
+        ],
+    })
+}
+
+fn table_row_to_json(cells: &[GridCell]) -> Value {
+    let empty_attr = json!(["", Vec::<Value>::new(), Vec::<Value>::new()]);
+    let cells_json: Vec<Value> = cells
+        .iter()
+        .map(|cell| {
+            json!([
+                empty_attr,
+                { "t": "AlignDefault" },
+                cell.row_span,
+                cell.col_span,
+                blocks_to_json(&cell.blocks),
+            ])
+        })
+        .collect();
+    json!([empty_attr, cells_json])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+    use serde_json::Value;
+
+    fn parse_to_json(input: &str) -> Value {
+        let tree = parse(input, None);
+        let s = to_pandoc_json(&tree);
+        serde_json::from_str(&s).expect("to_pandoc_json must emit valid JSON")
+    }
+
+    #[test]
+    fn empty_doc_emits_envelope_with_no_blocks() {
+        let v = parse_to_json("");
+        assert_eq!(v["pandoc-api-version"], serde_json::json!([1, 23, 1, 1]));
+        assert_eq!(v["meta"], serde_json::json!({}));
+        assert_eq!(v["blocks"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn paragraph_with_str_emits_para_str_shape() {
+        let v = parse_to_json("hello");
+        let blocks = v["blocks"].as_array().expect("blocks is array");
+        assert_eq!(blocks.len(), 1);
+        let para = &blocks[0];
+        assert_eq!(para["t"], "Para");
+        let inlines = para["c"].as_array().expect("Para.c is array");
+        assert_eq!(inlines.len(), 1);
+        assert_eq!(inlines[0]["t"], "Str");
+        assert_eq!(inlines[0]["c"], "hello");
+    }
+
+    #[test]
+    fn nullary_constructors_omit_c_key() {
+        // A space between two words produces a nullary `Space` inline.
+        let v = parse_to_json("a b");
+        let inlines = v["blocks"][0]["c"].as_array().expect("Para.c is array");
+        // [Str "a", Space, Str "b"]
+        let space = inlines
+            .iter()
+            .find(|i| i["t"] == "Space")
+            .expect("Space inline present");
+        let space_obj = space.as_object().expect("Space is JSON object");
+        assert!(
+            !space_obj.contains_key("c"),
+            "nullary constructors must omit the \"c\" key, got {space:?}",
+        );
+    }
+
+    #[test]
+    fn header_attr_shape_matches_pandoc_tuple() {
+        // `# Hi {#foo .bar key=val}` → Header 1 ("foo", ["bar"], [("key","val")]) [Str "Hi"]
+        let v = parse_to_json("# Hi {#foo .bar key=val}");
+        let header = &v["blocks"][0];
+        assert_eq!(header["t"], "Header");
+        let c = header["c"].as_array().expect("Header.c is array");
+        assert_eq!(c.len(), 3);
+        assert_eq!(c[0], 1, "level");
+        // attr tuple: [id, [classes], [[k, v], ...]]
+        let attr = c[1].as_array().expect("attr tuple");
+        assert_eq!(attr[0], "foo");
+        assert_eq!(attr[1], serde_json::json!(["bar"]));
+        assert_eq!(attr[2], serde_json::json!([["key", "val"]]));
+    }
 }
