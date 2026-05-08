@@ -1777,6 +1777,7 @@ fn pipe_table(node: &SyntaxNode) -> Option<TableData> {
     let mut body_rows: Vec<Vec<Vec<Inline>>> = Vec::new();
     let mut aligns: Vec<&'static str> = Vec::new();
     let mut caption_inlines: Vec<Inline> = Vec::new();
+    let mut caption_attr_from_node: Option<Attr> = None;
     for child in node.children() {
         match child.kind() {
             SyntaxKind::TABLE_HEADER => {
@@ -1790,7 +1791,9 @@ fn pipe_table(node: &SyntaxNode) -> Option<TableData> {
                 body_rows.push(pipe_table_cells(&child));
             }
             SyntaxKind::TABLE_CAPTION => {
-                caption_inlines = pipe_table_caption(&child);
+                let (inlines, attr) = pipe_table_caption(&child);
+                caption_inlines = inlines;
+                caption_attr_from_node = attr;
             }
             _ => {}
         }
@@ -1814,7 +1817,7 @@ fn pipe_table(node: &SyntaxNode) -> Option<TableData> {
         .into_iter()
         .map(|cells| cells_to_plain_blocks(cells, cols))
         .collect();
-    let (attr, caption_inlines) = extract_caption_attrs(caption_inlines);
+    let (attr, caption_inlines) = resolve_caption_attr(caption_inlines, caption_attr_from_node);
     Some(TableData {
         attr,
         caption: caption_inlines,
@@ -1893,9 +1896,37 @@ fn extract_caption_attrs(mut inlines: Vec<Inline>) -> (Attr, Vec<Inline>) {
     (attr, inlines)
 }
 
-fn pipe_table_caption(node: &SyntaxNode) -> Vec<Inline> {
+/// Resolve `(Attr, caption_inlines)` for a table whose caption has already
+/// been projected. Prefers a structural ATTRIBUTE node when the parser
+/// captured one (`+caption_attributes` lift); falls back to the legacy
+/// trailing-Str scan for older paths.
+fn resolve_caption_attr(
+    caption_inlines: Vec<Inline>,
+    caption_attr_from_node: Option<Attr>,
+) -> (Attr, Vec<Inline>) {
+    match caption_attr_from_node {
+        Some(attr) => (attr, caption_inlines),
+        None => extract_caption_attrs(caption_inlines),
+    }
+}
+
+/// Run `pipe_table_caption` over the table node's TABLE_CAPTION child if any,
+/// returning collected inlines and a structurally-extracted attr (None when
+/// the parser didn't lift one).
+fn project_table_caption_from(node: &SyntaxNode) -> (Vec<Inline>, Option<Attr>) {
+    node.children()
+        .find(|c| c.kind() == SyntaxKind::TABLE_CAPTION)
+        .map(|n| pipe_table_caption(&n))
+        .unwrap_or_else(|| (Vec::new(), None))
+}
+
+fn pipe_table_caption(node: &SyntaxNode) -> (Vec<Inline>, Option<Attr>) {
     // Walk all tokens after TABLE_CAPTION_PREFIX and collect inline content.
+    // The parser lifts a trailing `{...}` attribute block (Pandoc's
+    // `+caption_attributes`) into a structural ATTRIBUTE node — surface it as
+    // the table's outer attr instead of projecting it as an inline.
     let mut out = Vec::new();
+    let mut caption_attr: Option<Attr> = None;
     let mut after_prefix = false;
     for el in node.children_with_tokens() {
         match el {
@@ -1904,22 +1935,43 @@ fn pipe_table_caption(node: &SyntaxNode) -> Vec<Inline> {
                     after_prefix = true;
                     continue;
                 }
-                if after_prefix {
-                    out.push(inline_from_node(&n));
+                if !after_prefix {
+                    continue;
                 }
+                if n.kind() == SyntaxKind::ATTRIBUTE {
+                    let raw = n.text().to_string();
+                    let inner = raw.trim().trim_start_matches('{').trim_end_matches('}');
+                    caption_attr = Some(parse_attr_block(inner));
+                    // Drop any trailing whitespace inline pushed before the attribute.
+                    if matches!(out.last(), Some(Inline::Space)) {
+                        out.pop();
+                    }
+                    continue;
+                }
+                out.push(inline_from_node(&n));
             }
             NodeOrToken::Token(t) => {
                 if t.kind() == SyntaxKind::TABLE_CAPTION_PREFIX {
                     after_prefix = true;
                     continue;
                 }
-                if after_prefix {
-                    push_token_inline(&t, &mut out);
+                if !after_prefix {
+                    continue;
                 }
+                if t.kind() == SyntaxKind::ATTRIBUTE {
+                    let raw = t.text();
+                    let inner = raw.trim().trim_start_matches('{').trim_end_matches('}');
+                    caption_attr = Some(parse_attr_block(inner));
+                    if matches!(out.last(), Some(Inline::Space)) {
+                        out.pop();
+                    }
+                    continue;
+                }
+                push_token_inline(&t, &mut out);
             }
         }
     }
-    coalesce_inlines(out)
+    (coalesce_inlines(out), caption_attr)
 }
 
 fn pipe_separator_aligns(raw: &str) -> Vec<&'static str> {
@@ -2055,12 +2107,8 @@ fn simple_table(node: &SyntaxNode) -> Option<TableData> {
         .iter()
         .map(|r| cells_to_plain_blocks(simple_table_row_cells(r), cols.len()))
         .collect();
-    let caption_inlines = node
-        .children()
-        .find(|c| c.kind() == SyntaxKind::TABLE_CAPTION)
-        .map(|n| pipe_table_caption(&n))
-        .unwrap_or_default();
-    let (attr, caption_inlines) = extract_caption_attrs(caption_inlines);
+    let (caption_inlines, caption_attr_from_node) = project_table_caption_from(node);
+    let (attr, caption_inlines) = resolve_caption_attr(caption_inlines, caption_attr_from_node);
     Some(TableData {
         attr,
         caption: caption_inlines,
@@ -2373,12 +2421,8 @@ fn grid_table(node: &SyntaxNode) -> Option<TableData> {
     };
 
     // Caption.
-    let caption_inlines = node
-        .children()
-        .find(|c| c.kind() == SyntaxKind::TABLE_CAPTION)
-        .map(|n| pipe_table_caption(&n))
-        .unwrap_or_default();
-    let (attr, caption_inlines) = extract_caption_attrs(caption_inlines);
+    let (caption_inlines, caption_attr_from_node) = project_table_caption_from(node);
+    let (attr, caption_inlines) = resolve_caption_attr(caption_inlines, caption_attr_from_node);
 
     Some(TableData {
         attr,
@@ -2651,12 +2695,8 @@ fn multiline_table(node: &SyntaxNode) -> Option<TableData> {
                 .collect()
         })
         .collect();
-    let caption_inlines = node
-        .children()
-        .find(|c| c.kind() == SyntaxKind::TABLE_CAPTION)
-        .map(|n| pipe_table_caption(&n))
-        .unwrap_or_default();
-    let (attr, caption_inlines) = extract_caption_attrs(caption_inlines);
+    let (caption_inlines, caption_attr_from_node) = project_table_caption_from(node);
+    let (attr, caption_inlines) = resolve_caption_attr(caption_inlines, caption_attr_from_node);
     Some(TableData {
         attr,
         caption: caption_inlines,

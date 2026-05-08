@@ -1,0 +1,42 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..62
+  PARAGRAPH@0..9
+    CITATION@0..8
+      CITATION_MARKER@0..1 "@"
+      CITATION_KEY@1..8 "tbl-glm"
+    NEWLINE@8..9 "\n"
+  BLANK_LINE@9..10
+    BLANK_LINE@9..10 "\n"
+  PIPE_TABLE@10..62
+    TABLE_HEADER@10..22
+      WHITESPACE@10..12 "  "
+      TEXT@12..13 "|"
+      WHITESPACE@13..14 " "
+      TABLE_CELL@14..19
+        TEXT@14..19 "Model"
+      WHITESPACE@19..20 " "
+      TEXT@20..21 "|"
+      NEWLINE@21..22 "\n"
+    TABLE_SEPARATOR@22..34
+      TEXT@22..33 "  | :---- |"
+      NEWLINE@33..34 "\n"
+    TABLE_ROW@34..46
+      WHITESPACE@34..36 "  "
+      TEXT@36..37 "|"
+      WHITESPACE@37..38 " "
+      TABLE_CELL@38..39
+        TEXT@38..39 "A"
+      WHITESPACE@39..44 "     "
+      TEXT@44..45 "|"
+      NEWLINE@45..46 "\n"
+    BLANK_LINE@46..47
+      BLANK_LINE@46..47 "\n"
+    TABLE_CAPTION@47..62
+      WHITESPACE@47..49 "  "
+      TABLE_CAPTION_PREFIX@49..51 ": "
+      ATTRIBUTE@51..61
+        ATTRIBUTE@51..61 "{#tbl-glm}"
+      NEWLINE@61..62 "\n"

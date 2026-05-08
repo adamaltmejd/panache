@@ -198,5 +198,7 @@ DOCUMENT@0..1380
         EMPHASIS_MARKER@1339..1340 "*"
         TEXT@1340..1348 "Nordics."
         EMPHASIS_MARKER@1348..1349 "*"
-      TEXT@1349..1379 " {#nordics source=\"wi ..."
+      WHITESPACE@1349..1350 " "
+      ATTRIBUTE@1350..1379
+        ATTRIBUTE@1350..1379 "{#nordics source=\"wik ..."
       NEWLINE@1379..1380 "\n"

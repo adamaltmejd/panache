@@ -364,6 +364,7 @@ golden_test_cases!(
     paragraph_wrapping,
     paragraphs,
     pipe_table,
+    pipe_table_caption_attribute,
     pipe_table_unicode,
     plain_continuation_edge_cases,
     quarto_code_blocks,

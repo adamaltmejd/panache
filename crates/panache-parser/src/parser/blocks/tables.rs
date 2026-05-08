@@ -5,6 +5,7 @@ use crate::syntax::SyntaxKind;
 use rowan::GreenNodeBuilder;
 use unicode_width::UnicodeWidthChar;
 
+use crate::parser::utils::attributes::try_parse_trailing_attributes_with_pos;
 use crate::parser::utils::helpers::{emit_line_tokens, strip_newline};
 use crate::parser::utils::inline_emission;
 
@@ -406,6 +407,55 @@ fn find_caption_after_table(lines: &[&str], table_end: usize) -> Option<(usize, 
 }
 
 /// Emit a table caption node.
+/// Emit caption text for a single line. If `lift_trailing_attrs` is set and
+/// the text ends with a balanced `{...}` block, lift it into a structural
+/// `ATTRIBUTE` node so `AttributeNode::cast` finds its id (matches Pandoc's
+/// `+caption_attributes` behavior — `: caption {#tbl-id}` gives the table
+/// the id).
+fn emit_caption_line_text(
+    builder: &mut GreenNodeBuilder<'static>,
+    text_with_newline: &str,
+    config: &ParserOptions,
+    lift_trailing_attrs: bool,
+) {
+    let (text, newline_str) = strip_newline(text_with_newline);
+
+    if lift_trailing_attrs
+        && !text.is_empty()
+        && let Some((_attrs, before_attrs, start_brace_pos)) =
+            try_parse_trailing_attributes_with_pos(text)
+    {
+        let trimmed_len = text.trim_end().len();
+        let space = &text[before_attrs.len()..start_brace_pos];
+        let raw_attrs = &text[start_brace_pos..trimmed_len];
+        let trailing_ws = &text[trimmed_len..];
+
+        if !before_attrs.is_empty() {
+            inline_emission::emit_inlines(builder, before_attrs, config);
+        }
+        if !space.is_empty() {
+            builder.token(SyntaxKind::WHITESPACE.into(), space);
+        }
+        builder.start_node(SyntaxKind::ATTRIBUTE.into());
+        builder.token(SyntaxKind::ATTRIBUTE.into(), raw_attrs);
+        builder.finish_node();
+        if !trailing_ws.is_empty() {
+            builder.token(SyntaxKind::WHITESPACE.into(), trailing_ws);
+        }
+        if !newline_str.is_empty() {
+            builder.token(SyntaxKind::NEWLINE.into(), newline_str);
+        }
+        return;
+    }
+
+    if !text.is_empty() {
+        inline_emission::emit_inlines(builder, text, config);
+    }
+    if !newline_str.is_empty() {
+        builder.token(SyntaxKind::NEWLINE.into(), newline_str);
+    }
+}
+
 fn emit_table_caption(
     builder: &mut GreenNodeBuilder<'static>,
     lines: &[&str],
@@ -415,7 +465,10 @@ fn emit_table_caption(
 ) {
     builder.start_node(SyntaxKind::TABLE_CAPTION.into());
 
+    let last_idx = (end - start).saturating_sub(1);
+
     for (i, line) in lines[start..end].iter().enumerate() {
+        let lift_attrs = i == last_idx;
         if i == 0 {
             // First line - parse and emit prefix separately
             let trimmed = line.trim_start();
@@ -452,40 +505,15 @@ fn emit_table_caption(
                 // Emit rest of line after prefix
                 let rest_start = leading_ws_len + prefix_len;
                 if rest_start < line.len() {
-                    // Get the caption text (excluding newline)
-                    let (caption_text, newline_str) = strip_newline(&line[rest_start..]);
-
-                    if !caption_text.is_empty() {
-                        inline_emission::emit_inlines(builder, caption_text, config);
-                    }
-
-                    if !newline_str.is_empty() {
-                        builder.token(SyntaxKind::NEWLINE.into(), newline_str);
-                    }
+                    emit_caption_line_text(builder, &line[rest_start..], config, lift_attrs);
                 }
             } else {
                 // No recognized prefix, emit whole trimmed line
-                let (text, newline_str) = strip_newline(&line[leading_ws_len..]);
-
-                if !text.is_empty() {
-                    inline_emission::emit_inlines(builder, text, config);
-                }
-
-                if !newline_str.is_empty() {
-                    builder.token(SyntaxKind::NEWLINE.into(), newline_str);
-                }
+                emit_caption_line_text(builder, &line[leading_ws_len..], config, lift_attrs);
             }
         } else {
-            // Continuation lines - emit with inline parsing
-            let (text, newline_str) = strip_newline(line);
-
-            if !text.is_empty() {
-                inline_emission::emit_inlines(builder, text, config);
-            }
-
-            if !newline_str.is_empty() {
-                builder.token(SyntaxKind::NEWLINE.into(), newline_str);
-            }
+            // Continuation lines - emit with inline parsing (attrs only on last line).
+            emit_caption_line_text(builder, line, config, lift_attrs);
         }
     }
 

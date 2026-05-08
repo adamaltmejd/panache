@@ -14,7 +14,10 @@ DOCUMENT@0..356
       TABLE_CAPTION@33..61
         WHITESPACE@33..35 "  "
         TABLE_CAPTION_PREFIX@35..37 ": "
-        TEXT@37..60 "My Caption {#tbl:foo-1}"
+        TEXT@37..47 "My Caption"
+        WHITESPACE@47..48 " "
+        ATTRIBUTE@48..60
+          ATTRIBUTE@48..60 "{#tbl:foo-1}"
         NEWLINE@60..61 "\n"
       BLANK_LINE@61..62
         BLANK_LINE@61..62 "\n"
@@ -103,7 +106,10 @@ DOCUMENT@0..356
       TABLE_CAPTION@188..217
         WHITESPACE@188..190 "  "
         TABLE_CAPTION_PREFIX@190..192 ": "
-        TEXT@192..216 "My Caption2 {#tbl:foo-2}"
+        TEXT@192..203 "My Caption2"
+        WHITESPACE@203..204 " "
+        ATTRIBUTE@204..216
+          ATTRIBUTE@204..216 "{#tbl:foo-2}"
         NEWLINE@216..217 "\n"
       BLANK_LINE@217..218
         BLANK_LINE@217..218 "\n"
