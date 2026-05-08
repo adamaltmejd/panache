@@ -1,0 +1,4 @@
+[ Para [ Str "Before" , Space , Str "comment." ]
+, RawBlock (Format "html") "<!-- Standalone comment -->"
+, Para [ Str "After" , Space , Str "comment." ]
+]

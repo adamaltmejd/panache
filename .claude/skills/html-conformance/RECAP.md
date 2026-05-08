@@ -11,7 +11,143 @@ reverted, what trap to avoid) are the load-bearing content here.
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-08 (Phase 3 — sectioning + verbatim negative-space pin)
+## Latest session — 2026-05-08 (Phase 4 — comments + processing instructions corpus pin)
+
+**html (block + inline) pass count: 27 → 39** (12 new corpus cases,
+all passing, no code change required).
+**Workspace test count: 0 failing → 0 failing** (all green).
+
+### What landed
+
+Phase 4 is **partial corpus expansion** — comments and processing
+instructions match pandoc-native exactly under `Flavor::Pandoc`,
+both block and inline. Declarations (`<!DOCTYPE>`) and CDATA were
+*not* pinned: panache currently emits `RawBlock` for them, but
+pandoc-markdown emits `Para [Str ...]` (treats them as plain
+text). That divergence is a parser-shape gap deferred to a later
+session.
+
+Added 12 corpus directories under
+`crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/`:
+
+- `0221-html-block-comment-plain` — `<!-- comment -->`
+- `0222-html-block-comment-multiline` — `<!--\nMulti\nline\n-->`
+- `0223-html-block-comment-between-paras` — comment between two
+  Paras
+- `0224-html-block-comment-adjacent` — two consecutive comments
+  → two RawBlocks
+- `0225-html-block-comment-with-tags` — comment containing
+  `<span>nested</span>` (still one opaque RawBlock — pandoc does
+  not recurse)
+- `0226-html-inline-comment-plain` — `Text with <!-- c --> in it.`
+- `0227-html-inline-comment-no-spaces` — `Text with <!--c--> in it.`
+- `0228-html-inline-comment-multiline` — inline comment spanning
+  a hard-break boundary
+- `0229-html-inline-comment-multiple` — multiple inline comments
+  in one Para
+- `0230-html-block-pi-plain` — `<?php echo "hi"; ?>`
+- `0231-html-block-pi-xml` — `<?xml version="1.0"?>`
+- `0232-html-inline-pi-plain` — `See <?php ... ?> output.`
+
+All cases match `pandoc -f markdown -t native` byte-equivalent
+(after `normalize_native`). No parser, projector, formatter, or
+salsa changes — Phase 4 is pure corpus pinning.
+
+### What Phase 4 still does NOT do
+
+- **`<!DOCTYPE html>` and other declarations.** Pandoc-markdown
+  emits `Para [Str "<!DOCTYPE", Space, Str "html>"]` (literal
+  text); panache emits `RawBlock (Format "html") "<!DOCTYPE html>"`.
+  Probe:
+  ```
+  printf '<!DOCTYPE html>\n' | pandoc -f markdown -t native
+  printf '<!DOCTYPE html>\n' | cargo run -- parse --to pandoc-ast
+  ```
+  Pandoc reads HTML blocks via `htmlTag isBlockTag`
+  (`pandoc/src/Text/Pandoc/Readers/Markdown.hs:1117`) which
+  matches `<!DOCTYPE>` but rejects the bare declaration form in
+  default markdown. Fix would gate panache's HTML-block type-4
+  recognition under `Flavor::Pandoc` (or only accept it under
+  CommonMark dialect).
+
+- **`<![CDATA[...]]>`.** Same pattern: pandoc-markdown emits a
+  Para with literal text and finds inline raw HTML inside (e.g.
+  `<not>`); panache emits a single opaque RawBlock. CommonMark
+  type-5 recognition needs to be gated off in `Flavor::Pandoc`.
+
+- **The bigger `markdown_in_html_blocks` story** for non-sectioning
+  block tags (e.g. `<table>`, `<tr>`, `<td>`, `<dl>`) — same Phase
+  5-class parser-shape gap noted in the previous Phase 3 session.
+
+### Files in committable diff
+
+- 12 new corpus directories under
+  `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/`
+  (each with `input.md` + `expected.native` generated via
+  `pandoc 3.9.0.2 -f markdown -t native`).
+- `crates/panache-parser/tests/pandoc/allowlist.txt` (12 new ids
+  221–232 under two new section headers
+  `# html-block (comments + processing instructions)` and
+  `# html-inline (comments + processing instructions)`).
+- `crates/panache-parser/tests/pandoc/report.txt` +
+  `docs/development/pandoc-report.json` (regenerated; pass rate
+  219/220 → 231/232).
+
+No parser, projector, formatter, or salsa changes — Phase 4
+matches Phase 3's pure-negative-space shape.
+
+### Suggested next sub-targets, ranked
+
+1. **Phase 4 follow-up — gate HTML-block type-4 / type-5
+   recognition under Pandoc dialect.** Today panache emits
+   `RawBlock` for `<!DOCTYPE html>` and `<![CDATA[...]]>`; pandoc
+   emits Para with literal text. The fix likely lives in
+   `crates/panache-parser/src/parser/blocks/html_blocks.rs`'s
+   `try_parse_html_block_start` — under `Dialect::Pandoc`, types
+   4 and 5 should *not* match (fall back to paragraph parsing).
+   CommonMark dialect must keep them. Add 4-6 corpus cases (all
+   declaration/CDATA variants) once the gate works. Paired
+   parser fixture required.
+2. **Phase 5 / 6 — `markdown_in_html_blocks` for non-sectioning
+   block tags.** Highest-impact remaining gap. Pandoc default
+   parses markdown inside *most* HTML block tags except the four
+   verbatim ones; panache currently silently drops content inside
+   `<table>/<tr>/<td>/<dl>/<dt>/<dd>/<ul>/<ol>/<li>/<form>`. Fix
+   in `parser/blocks/html_blocks.rs` — split HTML-block scanning
+   so each balanced tag pair emits a separate `HTML_BLOCK` and
+   intermediate content is fed back to the block dispatcher. Add
+   ~6-10 corpus cases once it works.
+3. **Phase 5 (nested div, blocked.txt id 199)** — depth-aware
+   pre-scan. Same machinery needed for #2 above; could ride
+   along.
+
+### Don't redo / known traps (new this session)
+
+- **Pandoc-markdown does NOT recognize HTML type-4 (declarations)
+  or type-5 (CDATA) as raw HTML.** This is markdown-flavor
+  specific — `pandoc -f commonmark` keeps RawBlock for
+  `<!DOCTYPE html>`. The divergence is in
+  `pandoc/src/Text/Pandoc/Readers/Markdown.hs:1117` where
+  `htmlBlock` uses `htmlTag isBlockTag` (only matches block-level
+  TAGS), not the broader CommonMark "starts with `<!`-letter"
+  rule. Don't try to pin DOCTYPE/CDATA cases without fixing this
+  first — the current parser-shape will project to the wrong
+  pandoc-native shape.
+- **Phase 4 is partial.** Skill description says Phase 4 covers
+  "comments, processing instructions, declarations, CDATA". The
+  first two are easy negative-space pins (what this session did);
+  the latter two require a parser-shape fix (next session). Don't
+  re-read the skill RECAP and assume Phase 4 is "done" — check
+  whether declaration/CDATA gate has shipped before declaring it
+  complete.
+- **Comment recognition recurses correctly inline.** Even multi-line
+  inline comments (`<!-- TODO\nspans -->` inside a Para) parse
+  as a single RawInline that spans the soft-break. Don't try to
+  split them at line boundaries — pandoc keeps them whole.
+
+--------------------------------------------------------------------------------
+
+## Earlier session — 2026-05-08 (Phase 3 — sectioning + verbatim negative-space pin)
 
 **html (block + inline) pass count: 17 → 27** (10 new corpus cases,
 all passing, no code change required).

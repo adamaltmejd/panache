@@ -1,0 +1,1 @@
+Text with <!--comment--> inline.

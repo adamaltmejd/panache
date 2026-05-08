@@ -1,0 +1,14 @@
+[ Para
+    [ Str "Some"
+    , Space
+    , Str "text"
+    , Space
+    , Str "with"
+    , Space
+    , RawInline (Format "html") "<!-- inline comment -->"
+    , Space
+    , Str "in"
+    , Space
+    , Str "it."
+    ]
+]

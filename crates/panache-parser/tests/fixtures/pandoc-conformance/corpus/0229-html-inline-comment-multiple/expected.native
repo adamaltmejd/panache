@@ -1,0 +1,12 @@
+[ Para
+    [ Str "A"
+    , Space
+    , RawInline (Format "html") "<!--c1-->"
+    , Space
+    , Str "B"
+    , Space
+    , RawInline (Format "html") "<!--c2-->"
+    , Space
+    , Str "C."
+    ]
+]

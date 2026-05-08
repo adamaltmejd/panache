@@ -1,0 +1,11 @@
+[ Para
+    [ Str "See"
+    , Space
+    , Str "more"
+    , Space
+    , RawInline
+        (Format "html") "<!-- TODO: link\nspans lines -->"
+    , Space
+    , Str "here."
+    ]
+]
