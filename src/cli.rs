@@ -442,13 +442,19 @@ pub enum MessageFormat {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum CliFlavor {
+    /// Pandoc's Markdown (the extended dialect described in `man pandoc`)
     Pandoc,
+    /// Quarto's Markdown (Pandoc-based, with Quarto-specific extensions and shortcodes)
     Quarto,
+    /// R Markdown (Pandoc-based, with knitr/Rmd code chunks)
     #[value(name = "rmarkdown")]
     RMarkdown,
+    /// GitHub Flavored Markdown
     Gfm,
+    /// CommonMark (the strict, standardized base dialect)
     #[value(name = "commonmark")]
     CommonMark,
+    /// MultiMarkdown (Fletcher Penney's extended Markdown dialect)
     #[value(name = "multimarkdown")]
     MultiMarkdown,
 }
