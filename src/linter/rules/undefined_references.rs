@@ -306,6 +306,29 @@ mod tests {
     }
 
     #[test]
+    fn accepts_quarto_crossref_to_table_caption_attribute() {
+        // Pandoc's `+caption_attributes` lifts a trailing `{#tbl-id}` from the
+        // caption text into the Table's outer attribute, so `@tbl-id` resolves.
+        let input = "@tbl-glm\n\n  | Model |\n  | :---- |\n  | A     |\n\n  : {#tbl-glm}\n";
+        let mut config = Config {
+            flavor: Flavor::Quarto,
+            extensions: crate::config::Extensions::for_flavor(Flavor::Quarto),
+            ..Default::default()
+        };
+        config.extensions.quarto_crossrefs = true;
+        let tree = crate::parser::parse(input, Some(config.clone()));
+        let rule = UndefinedReferencesRule;
+        let diagnostics = rule.check(&tree, input, &config, None);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.code != "undefined-reference-label"),
+            "@tbl-glm should resolve via the caption's {{#tbl-glm}} attribute, got: {:?}",
+            diagnostics
+        );
+    }
+
+    #[test]
     fn accepts_quarto_crossref_to_chunk_label() {
         let input = "See @fig-plot.\n\n```{r}\n#| label: fig-plot\nplot(1:10)\n```\n";
         let mut config = Config {
