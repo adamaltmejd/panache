@@ -30,7 +30,9 @@ use super::blocks::headings::{
     emit_atx_heading, emit_setext_heading, try_parse_atx_heading, try_parse_setext_heading,
 };
 use super::blocks::horizontal_rules::{emit_horizontal_rule, try_parse_horizontal_rule};
-use super::blocks::html_blocks::{HtmlBlockType, parse_html_block, try_parse_html_block_start};
+use super::blocks::html_blocks::{
+    HtmlBlockType, parse_html_block_with_wrapper, try_parse_html_block_start,
+};
 use super::blocks::indented_code::{is_indented_code_line, parse_indented_code_block};
 use super::blocks::latex_envs::LatexEnvInfo;
 use super::blocks::line_blocks::{parse_line_block, try_parse_line_block_start};
@@ -1806,7 +1808,31 @@ impl BlockParser for HtmlBlockParser {
                 .expect("HTML block type should exist")
         };
 
-        let new_pos = parse_html_block(builder, lines, line_pos, block_type, ctx.blockquote_depth);
+        // Pandoc-dialect div lift: when the block opens with a
+        // `<div ...>` tag, retag the wrapper as HTML_BLOCK_DIV so the
+        // projector emits Block::Div and the salsa anchor index can read
+        // the open tag's id. CST bytes stay identical — only the wrapper
+        // kind changes. CommonMark dialect keeps the opaque HTML_BLOCK
+        // shape.
+        let wrapper_kind = match &block_type {
+            HtmlBlockType::BlockTag { tag_name, .. }
+                if tag_name == "div"
+                    && ctx.config.dialect == crate::options::Dialect::Pandoc
+                    && ctx.config.extensions.native_divs =>
+            {
+                crate::syntax::SyntaxKind::HTML_BLOCK_DIV
+            }
+            _ => crate::syntax::SyntaxKind::HTML_BLOCK,
+        };
+
+        let new_pos = parse_html_block_with_wrapper(
+            builder,
+            lines,
+            line_pos,
+            block_type,
+            ctx.blockquote_depth,
+            wrapper_kind,
+        );
         new_pos - line_pos
     }
 

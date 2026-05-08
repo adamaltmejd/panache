@@ -1,0 +1,10 @@
+[ Para
+    [ Str "Before" , Space , Str "the" , Space , Str "div." ]
+, Div
+    ( "middle" , [] , [] )
+    [ Para
+        [ Str "Inside" , Space , Str "the" , Space , Str "div." ]
+    ]
+, Para
+    [ Str "After" , Space , Str "the" , Space , Str "div." ]
+]

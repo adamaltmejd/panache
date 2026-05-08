@@ -182,6 +182,15 @@ pub enum SyntaxKind {
     HTML_BLOCK,         // Generic HTML block
     HTML_BLOCK_TAG,     // Opening/closing tags
     HTML_BLOCK_CONTENT, // Content between tags
+    // Pandoc-dialect lift: a matched <div ...>...</div> block.
+    HTML_BLOCK_DIV,
+    // Structural region inside an HTML opening tag holding the
+    // attribute-list bytes — i.e. everything between the tag name and
+    // the closing `>`, exclusive. Recognized by `AttributeNode::cast`,
+    // so the salsa anchor index sees `id`/`class`/key=val attrs from
+    // `<div id="x">` blocks via the same walk that handles fenced-div
+    // and heading attributes.
+    HTML_ATTRS,
 
     // Inline raw HTML (CommonMark §6.6 / Pandoc raw_html). One node per HTML
     // tag/comment/declaration/PI/CDATA span; child token holds the verbatim

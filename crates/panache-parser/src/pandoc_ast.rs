@@ -713,6 +713,7 @@ fn block_from(node: &SyntaxNode) -> Option<Block> {
         // and produces no body block.
         SyntaxKind::PANDOC_TITLE_BLOCK => None,
         SyntaxKind::HTML_BLOCK => Some(html_block(node)),
+        SyntaxKind::HTML_BLOCK_DIV => Some(html_div_block(node)),
         SyntaxKind::PIPE_TABLE => pipe_table(node).map(Block::Table),
         SyntaxKind::SIMPLE_TABLE => simple_table(node).map(Block::Table),
         SyntaxKind::GRID_TABLE => grid_table(node).map(Block::Table),
@@ -1009,6 +1010,24 @@ fn html_block(node: &SyntaxNode) -> Block {
     Block::RawBlock("html".to_string(), content)
 }
 
+/// Project an `HTML_BLOCK_DIV` node (a Pandoc-dialect-lifted
+/// `<div ...>...</div>` block) into a `Block::Div`. The CST already pins
+/// the structural shape; we read the open tag's attributes from the
+/// first `HTML_BLOCK_TAG` child and recurse into the content as
+/// markdown. Falls back to `RawBlock` only if the open-tag attribute
+/// parse fails (defensive — the parser only retags as `HTML_BLOCK_DIV`
+/// when the open tag was recognized).
+fn html_div_block(node: &SyntaxNode) -> Block {
+    let mut content = node.text().to_string();
+    while content.ends_with('\n') {
+        content.pop();
+    }
+    if let Some(div) = try_div_html_block(&content) {
+        return div;
+    }
+    Block::RawBlock("html".to_string(), content)
+}
+
 /// Project an `HTML_BLOCK` node into one or more `Block`s. Pandoc emits each
 /// "complete tag" line of a block-level HTML_BLOCK as a separate `RawBlock`,
 /// with text content lines parsed as Markdown into `Plain` blocks (the
@@ -1133,7 +1152,10 @@ fn is_complete_html_tag_line(s: &str) -> bool {
 /// (one HTML block can project as several pandoc-native blocks under
 /// `markdown_in_html_blocks`) while keeping every other kind one-block.
 fn collect_block(node: &SyntaxNode, out: &mut Vec<Block>) {
-    if node.kind() == SyntaxKind::HTML_BLOCK {
+    if matches!(
+        node.kind(),
+        SyntaxKind::HTML_BLOCK | SyntaxKind::HTML_BLOCK_DIV
+    ) {
         emit_html_block(node, out);
         return;
     }

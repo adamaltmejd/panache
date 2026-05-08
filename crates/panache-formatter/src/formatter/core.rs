@@ -512,11 +512,12 @@ impl Formatter {
     // The large format_node_sync method - keeping it here for now, can extract later
     pub(super) fn format_node_sync(&mut self, node: &SyntaxNode, indent: usize) {
         // Check if formatting is ignored - if so, preserve content exactly
-        // Exception: Always process DOCUMENT, COMMENT, and HTML_BLOCK nodes (may contain directives)
+        // Exception: Always process DOCUMENT, COMMENT, and HTML_BLOCK / HTML_BLOCK_DIV nodes (may contain directives)
         if self.directive_tracker.is_formatting_ignored()
             && node.kind() != SyntaxKind::DOCUMENT
             && node.kind() != SyntaxKind::COMMENT
             && node.kind() != SyntaxKind::HTML_BLOCK
+            && node.kind() != SyntaxKind::HTML_BLOCK_DIV
         {
             let text = node.text().to_string();
             self.output.push_str(&text);
@@ -994,7 +995,7 @@ impl Formatter {
                 }
             }
 
-            SyntaxKind::HTML_BLOCK => {
+            SyntaxKind::HTML_BLOCK | SyntaxKind::HTML_BLOCK_DIV => {
                 // Check if this is a directive comment
                 if let Some(directive) = extract_directive_from_node(node) {
                     // Process the directive to update tracker state
@@ -1327,7 +1328,7 @@ impl Formatter {
                                 ctx.in_list_continuation = false;
                             }
                         }
-                        SyntaxKind::HTML_BLOCK => {
+                        SyntaxKind::HTML_BLOCK | SyntaxKind::HTML_BLOCK_DIV => {
                             // Format HTML block contents (BLOCK_QUOTE_MARKER tokens
                             // are stripped by the HTML_BLOCK handler) and re-emit
                             // the blockquote prefix per line so the output stays

@@ -1,0 +1,48 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..121
+  HTML_BLOCK_DIV@0..51
+    HTML_BLOCK_TAG@0..51
+      TEXT@0..4 "<div"
+      WHITESPACE@4..5 " "
+      HTML_ATTRS@5..18
+        TEXT@5..18 "id=\"anchor-c\""
+      TEXT@18..19 ">"
+      TEXT@19..50 "Content in a div with ..."
+      NEWLINE@50..51 "\n"
+  BLANK_LINE@51..52
+    BLANK_LINE@51..52 "\n"
+  PARAGRAPH@52..75
+    TEXT@52..56 "See "
+    LINK@56..73
+      LINK_START@56..57
+        LINK_START@56..57 "["
+      LINK_TEXT@57..61
+        TEXT@57..61 "link"
+      LINK_TEXT_END@61..62 "]"
+      LINK_DEST_START@62..63 "("
+      LINK_DEST@63..72
+        TEXT@63..72 "#anchor-c"
+      LINK_DEST_END@72..73 ")"
+    TEXT@73..74 "."
+    NEWLINE@74..75 "\n"
+  BLANK_LINE@75..76
+    BLANK_LINE@75..76 "\n"
+  HTML_BLOCK_DIV@76..121
+    HTML_BLOCK_TAG@76..93
+      TEXT@76..80 "<div"
+      WHITESPACE@80..81 " "
+      HTML_ATTRS@81..91
+        TEXT@81..91 "id=\"multi\""
+      TEXT@91..92 ">"
+      NEWLINE@92..93 "\n"
+    HTML_BLOCK_CONTENT@93..114
+      NEWLINE@93..94 "\n"
+      TEXT@94..112 "A *multiline* div."
+      NEWLINE@112..113 "\n"
+      NEWLINE@113..114 "\n"
+    HTML_BLOCK_TAG@114..121
+      TEXT@114..120 "</div>"
+      NEWLINE@120..121 "\n"

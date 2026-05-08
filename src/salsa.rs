@@ -840,6 +840,12 @@ pub fn symbol_usage_index_from_tree(
             .push(span_attrs.text_range());
     }
 
+    // Pandoc-dialect <div id="..."> attribute regions are exposed
+    // structurally as `SyntaxKind::HTML_ATTRS` and recognized by
+    // `AttributeNode::cast`, so the descendants walk above already
+    // registers their ids in `crossref_declarations`. No dedicated
+    // walk needed here.
+
     for block in tree.descendants().filter_map(CodeBlock::cast) {
         db.unwind_if_revision_cancelled();
         for label in block.chunk_label_entries() {

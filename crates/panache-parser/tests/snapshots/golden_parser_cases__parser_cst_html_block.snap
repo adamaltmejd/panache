@@ -28,9 +28,13 @@ DOCUMENT@0..342
     NEWLINE@107..108 "\n"
   BLANK_LINE@108..109
     BLANK_LINE@108..109 "\n"
-  HTML_BLOCK@109..159
+  HTML_BLOCK_DIV@109..159
     HTML_BLOCK_TAG@109..133
-      TEXT@109..132 "<div class=\"container\">"
+      TEXT@109..113 "<div"
+      WHITESPACE@113..114 " "
+      HTML_ATTRS@114..131
+        TEXT@114..131 "class=\"container\""
+      TEXT@131..132 ">"
       NEWLINE@132..133 "\n"
     HTML_BLOCK_CONTENT@133..152
       TEXT@133..151 "Content inside div"

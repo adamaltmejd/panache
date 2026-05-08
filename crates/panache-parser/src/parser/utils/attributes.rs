@@ -228,6 +228,138 @@ pub fn parse_attribute_content(content: &str) -> Option<AttributeBlock> {
     })
 }
 
+/// Parse HTML-style attributes from a raw HTML opening tag text such as
+/// `<div id="x" class="a b" data-key="v">`, returning the same
+/// `AttributeBlock` shape as Pandoc-style brace attributes. Whitespace-
+/// separated `class="..."` is split into individual classes; `id="..."`
+/// becomes the identifier; everything else becomes a key/value pair.
+/// Returns `None` if the tag has no recognized attributes.
+///
+/// Self-closing slashes (`<div .../>`) and trailing whitespace are tolerated.
+/// The leading `<TAG` and trailing `>` are stripped; this routine does not
+/// validate the tag name.
+pub fn parse_html_tag_attributes(tag_text: &str) -> Option<AttributeBlock> {
+    let trimmed = tag_text.trim_start();
+    let after_lt = trimmed.strip_prefix('<')?;
+    // Find the end of the opening tag at the first `>` not inside a quoted
+    // attribute value. Anything after that `>` (e.g. inline content + close
+    // tag for a same-line `<div id="x">Content</div>`) is irrelevant.
+    let bytes = after_lt.as_bytes();
+    let mut tag_end = None;
+    let mut quote: Option<u8> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match (quote, b) {
+            (None, b'"') | (None, b'\'') => quote = Some(b),
+            (Some(q), b2) if b2 == q => quote = None,
+            (None, b'>') => {
+                tag_end = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let tag_end = tag_end?;
+    let inner = &after_lt[..tag_end];
+    // Drop any trailing self-closing slash.
+    let inner = inner.trim_end().trim_end_matches('/').trim_end();
+    // Drop the tag name (alphanumeric run after `<`).
+    let bytes = inner.as_bytes();
+    let mut name_end = 0usize;
+    while name_end < bytes.len()
+        && !bytes[name_end].is_ascii_whitespace()
+        && bytes[name_end] != b'/'
+    {
+        name_end += 1;
+    }
+    let attrs_text = &inner[name_end..];
+    parse_html_attribute_list(attrs_text)
+}
+
+/// Parse a raw HTML attribute list (the bytes between a tag name and the
+/// closing `>`, exclusive). Accepts inputs like `id="x" class="a b"
+/// data-key=v` and produces an [`AttributeBlock`]. Returns `None` if no
+/// recognized attributes are present.
+///
+/// Used by [`parse_html_tag_attributes`] (which strips `<TAG ...>`
+/// surrounding chrome before delegating here) and by
+/// `AttributeNode::id` for the structural `HTML_ATTRS` CST node, whose
+/// text holds JUST the attribute region.
+pub fn parse_html_attribute_list(attrs_text: &str) -> Option<AttributeBlock> {
+    let mut identifier: Option<String> = None;
+    let mut classes: Vec<String> = Vec::new();
+    let mut key_values: Vec<(String, String)> = Vec::new();
+
+    let bytes = attrs_text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' | b'/' => {
+                i += 1;
+            }
+            _ => {
+                let key_start = i;
+                while i < bytes.len()
+                    && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'=' | b'/')
+                {
+                    i += 1;
+                }
+                let key = &attrs_text[key_start..i];
+                let value = if i < bytes.len() && bytes[i] == b'=' {
+                    i += 1;
+                    if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                        let quote = bytes[i];
+                        i += 1;
+                        let v_start = i;
+                        while i < bytes.len() && bytes[i] != quote {
+                            i += 1;
+                        }
+                        let v = attrs_text[v_start..i].to_string();
+                        if i < bytes.len() {
+                            i += 1;
+                        }
+                        v
+                    } else {
+                        let v_start = i;
+                        while i < bytes.len()
+                            && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'/')
+                        {
+                            i += 1;
+                        }
+                        attrs_text[v_start..i].to_string()
+                    }
+                } else {
+                    String::new()
+                };
+                if key.is_empty() {
+                    continue;
+                }
+                match key {
+                    "id" => {
+                        if identifier.is_none() && !value.is_empty() {
+                            identifier = Some(value);
+                        }
+                    }
+                    "class" => {
+                        for c in value.split_ascii_whitespace() {
+                            classes.push(c.to_string());
+                        }
+                    }
+                    _ => key_values.push((key.to_string(), value)),
+                }
+            }
+        }
+    }
+
+    if identifier.is_none() && classes.is_empty() && key_values.is_empty() {
+        return None;
+    }
+    Some(AttributeBlock {
+        identifier,
+        classes,
+        key_values,
+    })
+}
+
 /// Emit attribute block as AST nodes
 pub fn emit_attributes(builder: &mut GreenNodeBuilder, attrs: &AttributeBlock) {
     builder.start_node(SyntaxKind::ATTRIBUTE.into());
@@ -398,6 +530,39 @@ mod tests {
             attrs.key_values,
             vec![("key".to_string(), "val".to_string())]
         );
+    }
+
+    #[test]
+    fn test_parse_html_tag_attributes_id_only() {
+        let attrs = parse_html_tag_attributes(r#"<div id="anchor-c">"#).unwrap();
+        assert_eq!(attrs.identifier.as_deref(), Some("anchor-c"));
+        assert!(attrs.classes.is_empty());
+        assert!(attrs.key_values.is_empty());
+    }
+
+    #[test]
+    fn test_parse_html_tag_attributes_inline_content_after_open() {
+        // For a same-line block `<div id="x">Content</div>`, the entire
+        // line is in the HTML_BLOCK_TAG. The parser must terminate at the
+        // first unquoted `>` and ignore the trailing content + close tag.
+        let attrs = parse_html_tag_attributes(r#"<div id="anchor-c">Content.</div>"#).unwrap();
+        assert_eq!(attrs.identifier.as_deref(), Some("anchor-c"));
+    }
+
+    #[test]
+    fn test_parse_html_tag_attributes_class_and_kv() {
+        let attrs = parse_html_tag_attributes(r#"<div id="x" class="a b" data-key="v">"#).unwrap();
+        assert_eq!(attrs.identifier.as_deref(), Some("x"));
+        assert_eq!(attrs.classes, vec!["a", "b"]);
+        assert_eq!(
+            attrs.key_values,
+            vec![("data-key".to_string(), "v".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_html_tag_attributes_no_attrs() {
+        assert!(parse_html_tag_attributes("<div>").is_none());
     }
 
     #[test]

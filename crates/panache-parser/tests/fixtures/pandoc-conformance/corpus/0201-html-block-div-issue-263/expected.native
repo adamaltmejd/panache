@@ -1,0 +1,23 @@
+[ Div
+    ( "anchor-c" , [] , [] )
+    [ Plain
+        [ Str "Content"
+        , Space
+        , Str "in"
+        , Space
+        , Str "a"
+        , Space
+        , Str "div"
+        , Space
+        , Str "with"
+        , Space
+        , Str "id."
+        ]
+    ]
+, Para
+    [ Str "See"
+    , Space
+    , Link ( "" , [] , [] ) [ Str "link" ] ( "#anchor-c" , "" )
+    , Str "."
+    ]
+]

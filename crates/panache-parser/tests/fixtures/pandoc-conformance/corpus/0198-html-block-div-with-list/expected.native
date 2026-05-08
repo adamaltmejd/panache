@@ -1,0 +1,9 @@
+[ Div
+    ( "items" , [] , [] )
+    [ BulletList
+        [ [ Plain [ Str "one" ] ]
+        , [ Plain [ Str "two" ] ]
+        , [ Plain [ Str "three" ] ]
+        ]
+    ]
+]

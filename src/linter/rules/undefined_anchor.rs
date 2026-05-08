@@ -161,6 +161,34 @@ mod tests {
     }
 
     #[test]
+    fn resolves_explicit_id_on_html_div_block() {
+        // Regression for issue #263: <div id="..."> blocks under Pandoc
+        // dialect should expose their id structurally so anchor links
+        // resolve. The Pandoc-dialect parser lifts the block to
+        // HTML_BLOCK_DIV and the salsa indexer reads the open tag.
+        let input =
+            "<div id=\"anchor-c\">Content in a div with id.</div>\n\nSee [link](#anchor-c).\n";
+        let diagnostics = parse_and_lint(input);
+        assert!(
+            diagnostics.is_empty(),
+            "expected no diagnostics, got {:?}",
+            diagnostics
+        );
+    }
+
+    #[test]
+    fn resolves_explicit_id_on_html_div_block_multiline() {
+        let input =
+            "<div id=\"sec-a\">\n\n**Important** content.\n\n</div>\n\nSee [section A](#sec-a).\n";
+        let diagnostics = parse_and_lint(input);
+        assert!(
+            diagnostics.is_empty(),
+            "expected no diagnostics, got {:?}",
+            diagnostics
+        );
+    }
+
+    #[test]
     fn resolves_implicit_heading_with_auto_identifiers_on() {
         let input = "# Heading Name\n\nSee [there](#heading-name).\n";
         let diagnostics = parse_and_lint(input);

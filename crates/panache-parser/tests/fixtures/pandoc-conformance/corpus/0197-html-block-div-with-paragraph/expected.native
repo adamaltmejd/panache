@@ -1,0 +1,19 @@
+[ Div
+    ( "para" , [] , [] )
+    [ Para
+        [ Str "This"
+        , Space
+        , Str "paragraph"
+        , Space
+        , Str "contains"
+        , Space
+        , Strong [ Str "bold" ]
+        , Space
+        , Str "and"
+        , Space
+        , Emph [ Str "italic" ]
+        , Space
+        , Str "text."
+        ]
+    ]
+]

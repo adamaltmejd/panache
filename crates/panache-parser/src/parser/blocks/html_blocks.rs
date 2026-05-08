@@ -285,17 +285,20 @@ fn is_closing_marker(line: &str, block_type: &HtmlBlockType) -> bool {
     }
 }
 
-/// Parse an HTML block, consuming lines from the parser.
-/// Returns the new position after the HTML block.
-pub(crate) fn parse_html_block(
+/// Parse an HTML block, allowing the caller to pick the wrapper SyntaxKind
+/// (`HTML_BLOCK` for opaque preservation, `HTML_BLOCK_DIV` for the
+/// Pandoc-dialect `<div>` lift). Children are emitted byte-for-byte
+/// identical to the source either way; only the wrapper retag changes.
+pub(crate) fn parse_html_block_with_wrapper(
     builder: &mut GreenNodeBuilder<'static>,
     lines: &[&str],
     start_pos: usize,
     block_type: HtmlBlockType,
     bq_depth: usize,
+    wrapper_kind: SyntaxKind,
 ) -> usize {
     // Start HTML block
-    builder.start_node(SyntaxKind::HTML_BLOCK.into());
+    builder.start_node(wrapper_kind.into());
 
     let first_line = lines[start_pos];
     let blank_terminated = ends_at_blank_line(&block_type);
@@ -314,7 +317,16 @@ pub(crate) fn parse_html_block(
 
     let (line_without_newline, newline_str) = strip_newline(first_inner);
     if !line_without_newline.is_empty() {
-        builder.token(SyntaxKind::TEXT.into(), line_without_newline);
+        // For HTML_BLOCK_DIV, expose the open tag's attributes
+        // structurally so `AttributeNode::cast(HTML_ATTRS)` finds them
+        // via the same descendants walk that handles fenced-div /
+        // heading attrs. CST bytes stay byte-equal to source — we only
+        // tokenize at finer granularity for matched div opens.
+        if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+            emit_div_open_tag_tokens(builder, line_without_newline);
+        } else {
+            builder.token(SyntaxKind::TEXT.into(), line_without_newline);
+        }
     }
     if !newline_str.is_empty() {
         builder.token(SyntaxKind::NEWLINE.into(), newline_str);
@@ -395,6 +407,102 @@ pub(crate) fn parse_html_block(
 
     builder.finish_node(); // HtmlBlock
     current_pos
+}
+
+/// Emit the open-tag line of an `HTML_BLOCK_DIV`, splitting the bytes
+/// `[ws]<div[ ws ATTRS]>[trailing]` into
+/// `WHITESPACE? + TEXT("<div") + (WHITESPACE + HTML_ATTRS{TEXT(attrs)})?
+/// + TEXT(">") + TEXT(trailing)?`.
+///
+/// Bytes are byte-identical to the source — this only tokenizes at finer
+/// granularity so `AttributeNode::cast(HTML_ATTRS)` can read the attribute
+/// region structurally. Falls back to a single TEXT token if the line
+/// doesn't fit the expected `<div ...>` shape (defensive — the parser
+/// only retags as `HTML_BLOCK_DIV` when this shape was matched).
+fn emit_div_open_tag_tokens(builder: &mut GreenNodeBuilder<'static>, line: &str) {
+    let bytes = line.as_bytes();
+    // Leading indent (CommonMark allows up to 3 spaces).
+    let indent_end = bytes.iter().position(|&b| b != b' ').unwrap_or(bytes.len());
+    if indent_end > 0 {
+        builder.token(SyntaxKind::WHITESPACE.into(), &line[..indent_end]);
+    }
+    let rest = &line[indent_end..];
+    // Match the literal `<div` prefix (ASCII case-insensitive on `div`).
+    if !rest.starts_with('<') || rest.len() < 4 || !rest[1..4].eq_ignore_ascii_case("div") {
+        builder.token(SyntaxKind::TEXT.into(), rest);
+        return;
+    }
+    let after_name = &rest[4..];
+    let after_name_bytes = after_name.as_bytes();
+    // Find the closing `>` of the open tag, respecting quoted attribute values.
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut tag_close: Option<usize> = None;
+    while i < after_name_bytes.len() {
+        let b = after_name_bytes[i];
+        match (quote, b) {
+            (None, b'"') | (None, b'\'') => quote = Some(b),
+            (Some(q), b2) if b2 == q => quote = None,
+            (None, b'>') => {
+                tag_close = Some(i);
+                break;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let Some(tag_close) = tag_close else {
+        // Open tag has no closing `>` on this line — defensive fallback.
+        builder.token(SyntaxKind::TEXT.into(), rest);
+        return;
+    };
+    // Whitespace between the tag name and the attribute region.
+    let attrs_inner = &after_name[..tag_close];
+    let ws_end = attrs_inner
+        .as_bytes()
+        .iter()
+        .position(|&b| !matches!(b, b' ' | b'\t'))
+        .unwrap_or(attrs_inner.len());
+    let leading_ws = &attrs_inner[..ws_end];
+    // Strip a trailing self-closing slash and the whitespace before it
+    // from the attribute region; emit them as TEXT outside the
+    // HTML_ATTRS node so the structural region only holds attribute
+    // bytes (not formatting punctuation).
+    let attrs_after_ws = &attrs_inner[ws_end..];
+    let mut attr_end = attrs_after_ws.len();
+    let attr_bytes = attrs_after_ws.as_bytes();
+    let mut self_close_start = attr_end;
+    if attr_end > 0 && attr_bytes[attr_end - 1] == b'/' {
+        self_close_start = attr_end - 1;
+        attr_end = self_close_start;
+        while attr_end > 0 && matches!(attr_bytes[attr_end - 1], b' ' | b'\t') {
+            attr_end -= 1;
+        }
+    }
+    let attrs_text = &attrs_after_ws[..attr_end];
+    let trailing_text = &attrs_after_ws[attr_end..self_close_start.max(attr_end)];
+    let after_self_close = &attrs_after_ws[self_close_start..];
+
+    builder.token(SyntaxKind::TEXT.into(), "<div");
+    if !leading_ws.is_empty() {
+        builder.token(SyntaxKind::WHITESPACE.into(), leading_ws);
+    }
+    if !attrs_text.is_empty() {
+        builder.start_node(SyntaxKind::HTML_ATTRS.into());
+        builder.token(SyntaxKind::TEXT.into(), attrs_text);
+        builder.finish_node();
+    }
+    if !trailing_text.is_empty() {
+        builder.token(SyntaxKind::WHITESPACE.into(), trailing_text);
+    }
+    if !after_self_close.is_empty() {
+        builder.token(SyntaxKind::TEXT.into(), after_self_close);
+    }
+    builder.token(SyntaxKind::TEXT.into(), ">");
+    let after_gt = &after_name[tag_close + 1..];
+    if !after_gt.is_empty() {
+        builder.token(SyntaxKind::TEXT.into(), after_gt);
+    }
 }
 
 /// Emit one continuation line of an HTML block, preserving any blockquote
@@ -597,7 +705,14 @@ mod tests {
         let mut builder = GreenNodeBuilder::new();
 
         let block_type = try_parse_html_block_start(lines[0], false).unwrap();
-        let new_pos = parse_html_block(&mut builder, &lines, 0, block_type, 0);
+        let new_pos = parse_html_block_with_wrapper(
+            &mut builder,
+            &lines,
+            0,
+            block_type,
+            0,
+            SyntaxKind::HTML_BLOCK,
+        );
 
         assert_eq!(new_pos, 1);
     }
@@ -609,7 +724,14 @@ mod tests {
         let mut builder = GreenNodeBuilder::new();
 
         let block_type = try_parse_html_block_start(lines[0], false).unwrap();
-        let new_pos = parse_html_block(&mut builder, &lines, 0, block_type, 0);
+        let new_pos = parse_html_block_with_wrapper(
+            &mut builder,
+            &lines,
+            0,
+            block_type,
+            0,
+            SyntaxKind::HTML_BLOCK,
+        );
 
         assert_eq!(new_pos, 3);
     }
@@ -621,7 +743,14 @@ mod tests {
         let mut builder = GreenNodeBuilder::new();
 
         let block_type = try_parse_html_block_start(lines[0], false).unwrap();
-        let new_pos = parse_html_block(&mut builder, &lines, 0, block_type, 0);
+        let new_pos = parse_html_block_with_wrapper(
+            &mut builder,
+            &lines,
+            0,
+            block_type,
+            0,
+            SyntaxKind::HTML_BLOCK,
+        );
 
         // Should consume all lines even without closing tag
         assert_eq!(new_pos, 2);
@@ -634,7 +763,14 @@ mod tests {
         let mut builder = GreenNodeBuilder::new();
 
         let block_type = try_parse_html_block_start(lines[0], true).unwrap();
-        let new_pos = parse_html_block(&mut builder, &lines, 0, block_type, 0);
+        let new_pos = parse_html_block_with_wrapper(
+            &mut builder,
+            &lines,
+            0,
+            block_type,
+            0,
+            SyntaxKind::HTML_BLOCK,
+        );
 
         // Block contains <div>\nfoo\n; stops at blank line (line 2).
         assert_eq!(new_pos, 2);

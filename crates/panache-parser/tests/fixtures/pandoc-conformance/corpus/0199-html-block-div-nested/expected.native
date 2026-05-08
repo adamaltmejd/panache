@@ -1,0 +1,7 @@
+[ Div
+    ( "outer" , [] , [] )
+    [ Div
+        ( "inner" , [] , [] )
+        [ Para [ Str "deep" , Space , Str "content" ] ]
+    ]
+]

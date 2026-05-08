@@ -1,0 +1,7 @@
+[ Div
+    ( "ref"
+    , [ "note" , "warning" ]
+    , [ ( "data-source" , "rfc" ) ]
+    )
+    [ Para [ Str "attention" ] ]
+]

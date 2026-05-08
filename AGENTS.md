@@ -94,6 +94,19 @@ RUST_LOG=info ./target/release/panache format document.qmd
 - Only use `read_bash` if command is still running after `initial_wait`
 - Use `mode="async"` for interactive sessions (REPL, debuggers)
 
+**Disk lint cache trap (`~/.cache/panache/`):**
+
+When debugging linter changes (rules, salsa indexers, anchor resolution), the
+CLI reads cached lint output keyed on a tool fingerprint that does NOT
+invalidate on every code change. Symptoms: unit tests for the rule pass,
+`cargo build` succeeds, but `panache lint` keeps emitting the OLD diagnostic and
+`eprintln!` from your changed code never fires.
+
+Fix: `rm -rf ~/.cache/panache/` before re-running the CLI, or set
+`cache.enabled = false` in `panache.toml`. Always validate the rule via unit
+tests first; treat CLI diagnostics as a downstream sanity check, not the primary
+signal.
+
 ## Core Architecture
 
 ### CST vs AST
