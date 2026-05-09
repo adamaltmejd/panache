@@ -9,7 +9,9 @@ fn test_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Panache is a CLI formatter"))
+        .stdout(predicate::str::contains(
+            "Panache is a command-line formatter, linter, and language server",
+        ))
         .stdout(predicate::str::contains("Global options:"))
         .stdout(predicate::str::contains("--color <WHEN>"))
         .stdout(predicate::str::contains("--no-color"))

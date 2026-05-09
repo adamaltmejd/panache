@@ -17,9 +17,11 @@ const STYLES: Styles = Styles::styled()
 )]
 #[command(styles = STYLES)]
 #[command(
-    long_about = "Panache is a CLI formatter and LSP for Quarto (.qmd), Pandoc, and Markdown files \
-    written in Rust. It understands Quarto/Pandoc-specific syntax that other formatters like \
-    Prettier and mdformat struggle with, including fenced divs, tables, and math formatting."
+    long_about = "Panache is a command-line formatter, linter, and language server \
+    (implementing the Language Server Protocol, LSP) for Quarto (.qmd), Pandoc, and Markdown \
+    files written in Rust. It understands Quarto/Pandoc-specific syntax that other formatters \
+    like Prettier and mdformat struggle with, including fenced divs, tables, and math \
+    formatting."
 )]
 #[command(after_help = "For help with a specific command, see: `panache help <command>`.")]
 #[command(
