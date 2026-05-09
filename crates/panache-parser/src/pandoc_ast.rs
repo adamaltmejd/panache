@@ -122,28 +122,55 @@ pub fn to_pandoc_json(tree: &SyntaxNode) -> String {
 }
 
 fn build_refs_ctx(tree: &SyntaxNode) -> RefsCtx {
+    build_refs_ctx_inherited(tree, None)
+}
+
+fn build_refs_ctx_inherited(tree: &SyntaxNode, parent: Option<&RefsCtx>) -> RefsCtx {
     let mut ctx = RefsCtx::default();
-    // Cite note-num assignment runs first so it is populated before footnote
-    // bodies are parsed (which would otherwise call `render_citation_inline`
-    // with the lookup map empty and fall back to noteNum=1).
     collect_cite_note_nums(tree, &mut ctx);
-    // Same reason: example-list numbering and the resolved heading-id lookup
-    // are also referenced from `inlines_from` paths that run during
-    // `parse_footnote_def` below — populate them up-front.
     let mut example_counter: usize = 0;
     collect_example_numbering(tree, &mut ctx, &mut example_counter);
-    // Promoting the in-progress ctx into REFS_CTX lets the footnote-body
-    // parser see the cite-note and example-numbering maps that were just
-    // computed. Without this, `parse_footnote_def` (called transitively from
-    // `collect_refs_and_headings` below) reads an empty thread-local.
     REFS_CTX.with(|c| {
         let mut borrowed = c.borrow_mut();
         borrowed.cite_note_num_by_offset = ctx.cite_note_num_by_offset.clone();
         borrowed.example_label_to_num = ctx.example_label_to_num.clone();
         borrowed.example_list_start_by_offset = ctx.example_list_start_by_offset.clone();
     });
+    // Seed seen_ids from parent's heading_ids so inner heading auto-ids
+    // disambiguate against outer's history. Reverse-engineer counts from
+    // final ids: id `base` implies count >= 1; `base-N` implies count >=
+    // N+1. Take max per base.
     let mut seen_ids: HashMap<String, u32> = HashMap::new();
+    if let Some(p) = parent {
+        for id in &p.heading_ids {
+            if let Some(idx) = id.rfind('-')
+                && let Ok(n) = id[idx + 1..].parse::<u32>()
+            {
+                let base = id[..idx].to_string();
+                let entry = seen_ids.entry(base).or_insert(0);
+                *entry = (*entry).max(n + 1);
+            }
+            let entry = seen_ids.entry(id.clone()).or_insert(0);
+            *entry = (*entry).max(1);
+        }
+    }
     collect_refs_and_headings(tree, &mut ctx, &mut seen_ids);
+    // Fold parent refs/footnotes/heading_ids into the inner ctx so lookups
+    // during projection see both halves. Inner-defined keys win on conflict
+    // (scoping semantics; pandoc's true rule is "first def in document
+    // order wins" but tracking that across the recursive boundary would
+    // require offset-aware merging that no current corpus case exercises).
+    if let Some(p) = parent {
+        for (k, v) in &p.refs {
+            ctx.refs.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        for (k, v) in &p.footnotes {
+            ctx.footnotes.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        for id in &p.heading_ids {
+            ctx.heading_ids.insert(id.clone());
+        }
+    }
     ctx
 }
 
@@ -612,7 +639,7 @@ pub fn normalize_native(s: &str) -> String {
 // Variant names mirror Pandoc's `Text.Pandoc.Definition` constructors so the
 // emission code reads 1:1 against pandoc-native — `BlockQuote`, `CodeBlock`,
 // `BulletList`, `OrderedList` are not redundant here, they are the spec names.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
 enum Block {
     Para(Vec<Inline>),
@@ -636,7 +663,7 @@ enum Block {
     Unsupported(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TableData {
     /// Pandoc's `+caption_attributes` extension lifts a trailing
     /// `{#id .class kv=...}` from the caption text into the Table's outer
@@ -656,7 +683,7 @@ struct TableData {
 /// One cell in a `TableData` row. `row_span`/`col_span` default to 1 for
 /// pipe/simple/multiline tables (which don't model spans). Grid tables
 /// compute proper span counts via the layout algorithm in `grid_table`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct GridCell {
     row_span: u32,
     col_span: u32,
@@ -673,7 +700,7 @@ impl GridCell {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
 enum Inline {
     Str(String),
@@ -697,7 +724,7 @@ enum Inline {
     Unsupported(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Citation {
     id: String,
     prefix: Vec<Inline>,
@@ -1376,12 +1403,15 @@ fn parse_pandoc_blocks(text: &str) -> Vec<Block> {
     // Swap REFS_CTX with one built from the inner CST so heading auto-ids,
     // reference-link defs, and footnote defs inside the recursive parse
     // resolve against inner offsets/labels rather than the outer document's.
-    // Pandoc itself parses `<div>...</div>` natively in one pass, so its
-    // id-disambiguation is document-wide; here the recursive boundary is
-    // isolated, so cross-boundary slug collisions won't get `-1`/`-2`
-    // suffixes. Acceptable trade-off for the common case.
+    // Outer refs/footnotes/heading-id history are inherited so a `<div>`
+    // body can use a label/footnote defined outside, and inner heading
+    // slugs disambiguate against outer headings. Pandoc parses
+    // `<div>...</div>` natively in one pass, so this approximation
+    // matches the common case (outer-def-before-inner-use, inner-loses
+    // for shared keys); offset-aware document-order resolution would be
+    // needed for full parity but is not exercised by current corpus.
     let outer = REFS_CTX.with(|c| std::mem::take(&mut *c.borrow_mut()));
-    let inner_ctx = build_refs_ctx(&doc);
+    let inner_ctx = build_refs_ctx_inherited(&doc, Some(&outer));
     REFS_CTX.with(|c| *c.borrow_mut() = inner_ctx);
     let mut out = Vec::new();
     for child in doc.children() {
@@ -3377,6 +3407,30 @@ fn render_unresolved_reference_inline(node: &SyntaxNode, out: &mut Vec<Inline>) 
             resolved_text_inlines,
             url,
             String::new(),
+        ));
+        return;
+    }
+
+    // Inherited reference resolution. The parser emits UNRESOLVED_REFERENCE
+    // when the corresponding `[label]: url` def isn't in the same CST, but
+    // when projecting recursively-reparsed content (e.g. a `<div>` body)
+    // the outer document's refs are folded into REFS_CTX. Resolve here so
+    // an outer-defined ref used inside `<div>...</div>` becomes a Link.
+    if let Some((url, title)) = lookup_ref(&label) {
+        let resolved_text_inlines = text_node
+            .as_ref()
+            .map(|n| coalesce_inlines(inlines_from(n)))
+            .unwrap_or_default();
+        let kind = if is_image {
+            Inline::Image
+        } else {
+            Inline::Link
+        };
+        out.push(kind(
+            extract_attr_from_node(node),
+            resolved_text_inlines,
+            url,
+            title,
         ));
         return;
     }

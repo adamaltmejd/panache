@@ -1,0 +1,16 @@
+[ Para
+    [ Str "Outer"
+    , Space
+    , Str "text."
+    , Note [ Para [ Str "footnote" , Space , Str "body." ] ]
+    ]
+, Div
+    ( "d" , [] , [] )
+    [ Para
+        [ Str "Inner"
+        , Space
+        , Str "text."
+        , Note [ Para [ Str "footnote" , Space , Str "body." ] ]
+        ]
+    ]
+]

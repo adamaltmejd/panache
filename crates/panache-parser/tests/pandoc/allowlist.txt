@@ -296,3 +296,8 @@
 262
 263
 264
+
+# html-block (div recursive parse — outer ref-link defs, footnote defs, and heading-slug history inherited into the inner RefsCtx so cross-boundary uses resolve)
+265
+266
+267

@@ -1,0 +1,5 @@
+[ Header 1 ( "section" , [] , [] ) [ Str "Section" ]
+, Div
+    ( "d" , [] , [] )
+    [ Header 1 ( "section-1" , [] , [] ) [ Str "Section" ] ]
+]

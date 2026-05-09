@@ -11,7 +11,169 @@ reverted, what trap to avoid) are the load-bearing content here.
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-09 (Phase 5 — inner-`RefsCtx` for `parse_pandoc_blocks` recursive reparse)
+## Latest session — 2026-05-09 (Phase 5 — cross-boundary RefsCtx inheritance for outer→inner refs/footnotes/heading-slugs)
+
+**html (block + inline) pass count: 72 → 75** (3 new corpus cases —
+all passing).
+**Workspace test count: 0 failing → 0 failing** (all green).
+**Total pandoc conformance: 264/264 → 267/267 (100.0% → 100.0%)**.
+
+### What landed
+
+Projector-only fix in `pandoc_ast.rs` so the recursive `<div>` reparse
+inherits outer-document refs/footnotes/heading-slug history into the
+inner `RefsCtx`. Previous session (264 cases) gave the inner reparse
+its own ctx so inner-defined refs/footnotes/auto-ids worked, but
+*cross-boundary* uses still failed: a `[label]: url` def outside a
+`<div>` couldn't be referenced inside, and an outer `# Section` +
+inner `# Section` produced two `("section", …)` instead of pandoc's
+`("section", …)` + `("section-1", …)`.
+
+Three changes:
+
+1. **`build_refs_ctx_inherited(tree, parent: Option<&RefsCtx>)`** —
+   new variant. Seeds `seen_ids` from `parent.heading_ids` (reverse-
+   engineering counts from final ids: `base` → count >= 1, `base-N` →
+   count >= N+1, max per base). After the inner pre-pass, folds
+   parent `refs` / `footnotes` / `heading_ids` into the inner ctx via
+   `or_insert` (inner-defined keys win on conflict; matches scoping
+   semantics, not pandoc's true document-order rule, but no current
+   corpus exercises an outer-loses-to-inner-on-shared-key case).
+2. **`parse_pandoc_blocks`** — calls `build_refs_ctx_inherited(&doc,
+   Some(&outer))` instead of plain `build_refs_ctx(&doc)`. The `outer`
+   `RefsCtx` was already saved via `mem::take` and restored at end,
+   so inheritance just means reading from `outer` while it's parked.
+3. **`render_unresolved_reference_inline`** — added a `lookup_ref`
+   step before the unresolved fallback. Required because the inner
+   parser produces `UNRESOLVED_REFERENCE` (no def visible in the
+   inner CST), and the inherited `REFS_CTX.refs` only helps if the
+   projector actually queries it. Symmetric for image-shape
+   (`![label]` produces `Image`, link-shape produces `Link`).
+
+`Block`, `Inline`, `TableData`, `GridCell`, `Citation` gained
+`#[derive(Clone)]` so footnote bodies (`Vec<Block>`) can be inherited
+by value across the boundary. No existing call site relied on these
+not being `Clone`.
+
+### Files in committable diff
+
+- `crates/panache-parser/src/pandoc_ast.rs`
+  — `build_refs_ctx` becomes a thin wrapper over new
+  `build_refs_ctx_inherited`; `parse_pandoc_blocks` calls the latter
+  with `Some(&outer)`; `render_unresolved_reference_inline` adds a
+  `lookup_ref` resolution step; AST types gain `Clone`. Net ~50
+  lines added.
+- 3 new corpus directories under
+  `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/`:
+  - `0265-html-block-div-inherits-outer-ref-link` — outer
+    `[example]: url` def used inside `<div>` resolves to Link.
+  - `0266-html-block-div-inherits-outer-footnote` — outer
+    `[^x]: ...` def referenced inside `<div>` produces Note.
+  - `0267-html-block-div-heading-slug-disambiguation` — outer
+    `# Section` + inner `# Section` slugs to `section` /
+    `section-1`.
+- `crates/panache-parser/tests/pandoc/allowlist.txt`
+  — new section `# html-block (div recursive parse — outer
+  ref-link defs, footnote defs, and heading-slug history inherited
+  …)` with ids 265..267.
+- `crates/panache-parser/tests/pandoc/report.txt` +
+  `docs/development/pandoc-report.json` (regenerated; 267/267
+  passing, 100%).
+
+No parser, salsa, or formatter logic changes — pure projector +
+corpus.
+
+### Why projector-only (still)
+
+Same reasoning as the previous session — CST shape is unchanged,
+inner content remains raw TEXT, and the bug is in *how* the
+projector reparses + resolves. Parser-side restructuring (parsing
+inner content into structural blocks at parse time) remains a Phase
+5 target but isn't needed for these gaps; inheritance threading is
+strictly a `RefsCtx`-construction + projection-resolution issue.
+
+### What's still NOT covered
+
+- **Outer-wins-over-inner ref-conflict.** Pandoc's actual rule is
+  "first def in document order wins". With inner-wins-on-conflict we
+  diverge if both halves define the same label. Not exercised by
+  current corpus. Fix requires offset-aware merging when inheriting.
+- **Multi-line open tags** (`<div\n  id="x">\n…</div>` where the
+  open tag's `>` is on a separate line). Still falls back to opaque
+  `HTML_BLOCK`. Edge case.
+- **Cross-boundary cite numbering.** `cite_note_num_by_offset` is
+  built per-CST and not inherited — an inline `Cite` group inside a
+  `<div>` would get `noteNum=1` regardless of how many cites/notes
+  preceded it outside. Fixable by also folding outer's
+  `cite_note_num_by_offset` snapshot, but the offset spaces are
+  disjoint between outer/inner CSTs so the inherited entries never
+  match anyway. Real fix would re-number inner cites starting from
+  outer's terminal counter; corpus doesn't exercise this.
+
+### Suggested next sub-targets, ranked
+
+1. **Bring outer-wins-on-conflict to ref/footnote inheritance.**
+   Currently inner-defined keys win. To match pandoc fully, track
+   the byte-offset of each def relative to the document and prefer
+   the earlier one. Add 1-2 corpus cases (outer-then-inner same
+   label vs inner-then-outer) and tighten the merge in
+   `build_refs_ctx_inherited`. Low ROI unless a real document
+   actually does this — defer until evidence.
+2. **Cross-boundary cite numbering.** Pass outer's terminal cite
+   counter as a starting offset to the inner pre-pass so cites
+   inside `<div>` continue rather than restart. Will need the
+   `collect_cite_note_nums` signature to accept a starting counter
+   (currently hardcoded to 0 at line 164).
+3. **Multi-line open tags.** Still falls back to opaque
+   `HTML_BLOCK` when `<div\n  attrs>` spans real lines without the
+   closing `>` on line 1. The `try_parse_html_block_start` only
+   inspects line 1; teach it to continue scanning until the open
+   tag closes. Edge case; probably low ROI until a real document
+   hits it.
+4. **Projector cleanup.** Now that recursive reparse correctly
+   inherits the outer ctx, the legacy `try_div_html_block` byte-
+   level re-tokenizer's role overlaps with parser-side
+   `HTML_BLOCK_DIV` lift. Audit whether the byte-aware close
+   lookahead in mid-block scenarios is still needed.
+
+### Don't redo / known traps (new this session)
+
+- **`UNRESOLVED_REFERENCE` is what the inner parser emits** —
+  not `LINK_REFERENCE`. The parser resolves refs *during parsing*
+  by checking the same CST's reference defs; when there are none in
+  the same CST (because they're in the outer), it emits the
+  unresolved variant. So inheritance has TWO sides: (a) the inner
+  ctx must hold the outer's refs (handled in
+  `build_refs_ctx_inherited`), AND (b) the projector must
+  re-resolve at projection time when it sees
+  `UNRESOLVED_REFERENCE` (handled in
+  `render_unresolved_reference_inline`). Forgetting (b) means the
+  inherited refs are dead weight — the projector falls back to
+  emitting raw `[label]` bytes.
+- **`Block`, `Inline`, etc. were `Debug`-only by design** until
+  this session. They're projection-only types that previously never
+  needed cloning. Adding `Clone` to all of them was straightforward
+  (no non-cloneable fields), but if you add a future variant with
+  a non-`Clone` payload, you'll need to keep the `Clone` cascade
+  intact or switch to `Rc<...>` for the shared field.
+- **Heading-id reverse-engineering from `heading_ids` set is
+  best-effort.** It can't distinguish "outer has only `section-1`
+  (an explicit id from `# Section {#section-1}`)" from "outer had
+  two `# Section`s and disambiguated to `section-1`". In the first
+  case the inner `# Section` should slug to `section` (count starts
+  at 0 for `section`); in the second it should slug to `section-2`.
+  Current logic conflates them, picking `section-2`. Affects only
+  pathological mixes of explicit + auto ids; no corpus case
+  exercises it.
+- **`lookup_ref` is keyed on `normalize_ref_label`** (case-fold +
+  whitespace-collapse). The unresolved-resolution branch passes the
+  raw `label` text (which is what `text_node.text()` returns), and
+  `lookup_ref` re-normalizes internally. Don't pre-normalize the
+  label at the call site — would double-normalize.
+
+--------------------------------------------------------------------------------
+
+## Earlier session — 2026-05-09 (Phase 5 — inner-`RefsCtx` for `parse_pandoc_blocks` recursive reparse)
 
 **html (block + inline) pass count: 62 → 72** (10 new corpus cases —
 all passing).
