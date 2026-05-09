@@ -11,7 +11,188 @@ reverted, what trap to avoid) are the load-bearing content here.
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-09 (Phase 5 — cross-boundary RefsCtx inheritance for outer→inner refs/footnotes/heading-slugs)
+## Latest session — 2026-05-09 (Phase 1 — multi-line `<div>` open-tag structural HTML_ATTRS lift)
+
+**html (block + inline) pass count: 75 → 76** (1 new corpus case —
+passing).
+**Workspace test count: 0 failing → 0 failing** (all green).
+**Total pandoc conformance: 267/267 → 268/268 (100.0% → 100.0%)**.
+
+### What landed
+
+Parser-side fix to expose the attribute region of a multi-line
+`<div\n  attrs\n>` open tag as a structural `HTML_ATTRS` node (one
+per attribute line). Until now, the parser's
+`emit_div_open_tag_tokens` only handled single-line open tags; if
+the open `>` wasn't on the first line the entire post-`<div`
+content fell through into raw `HTML_BLOCK_CONTENT` TEXT, so the
+salsa anchor walk (which keys on `AttributeNode::cast` over
+`HTML_ATTRS`) missed the `id` and `undefined-anchor` lint fired
+even when the id existed.
+
+Three changes in `crates/panache-parser/src/parser/blocks/html_blocks.rs`:
+
+1. **`find_multiline_div_open_end`** — scans `lines[start_pos..]`
+   for the first unquoted `>` past the `<div` literal, threading
+   quote state across newlines. Returns `None` for single-line
+   opens (existing path keeps owning them) or when `>` is missing
+   entirely.
+2. **`emit_multiline_div_open_tag`** — emits per-line tokens:
+   - Line 0: `WHITESPACE?` (indent) + `TEXT("<div")` + (`WHITESPACE`
+     + `HTML_ATTRS{TEXT}`)? + `NEWLINE`.
+   - Lines 1..N-1: `WHITESPACE?` (indent) + `HTML_ATTRS{TEXT}` +
+     `NEWLINE`.
+   - Line N (last): `WHITESPACE?` + `(HTML_ATTRS{TEXT} +
+     WHITESPACE?)?` + `TEXT(">")` + `TEXT(trailing)?` + `NEWLINE`.
+   Result: each attribute line gets its own structural `HTML_ATTRS`
+   so the existing `AttributeNode` descendants walk picks up the
+   `id` from whichever line declares it.
+3. **`parse_html_block_with_wrapper`** — calls
+   `find_multiline_div_open_end` for `HTML_BLOCK_DIV` wrappers
+   (`bq_depth == 0`) and routes to `emit_multiline_div_open_tag`
+   when a multi-line open is detected. Depth-aware close tracking
+   now sums `count_tag_balance` across *all* open-tag lines (was
+   line 0 only) so the depth counter starts correct for multi-line
+   opens. `same_line_closed` is gated to single-line opens since
+   the `>` of a multi-line open is by definition not on line 0.
+   `current_pos` advances past the consumed open-tag lines.
+
+CST losslessness verified by per-test byte-equality assertion.
+Source bytes unchanged — only structural granularity within the
+open `HTML_BLOCK_TAG` is finer.
+
+### Files in committable diff
+
+- `crates/panache-parser/src/parser/blocks/html_blocks.rs`
+  — multi-line detection + emission + depth tracking; 2 new unit
+  tests (`test_parse_div_block_multiline_open_close_separate_line_pandoc`,
+  `test_parse_div_block_multiline_open_close_inline_pandoc`).
+- 1 new corpus case under
+  `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/`:
+  `0268-html-block-div-multiline-open-tag-gt-on-own-line` —
+  `<div\n  id=...\n  class=...\n>` (close `>` on its own line).
+  Case 0262 already covered the inline-`>` form; 0268 pins the
+  separate-line form. Both now expose attrs structurally as
+  `HTML_ATTRS`.
+- 1 new parser fixture:
+  `crates/panache-parser/tests/fixtures/cases/html_block_div_multiline_open_pandoc/`
+  with snapshot
+  `golden_parser_cases__parser_cst_html_block_div_multiline_open_pandoc.snap`
+  pinning the new per-line `HTML_ATTRS` shape.
+- `crates/panache-parser/tests/golden_parser_cases.rs` (1 new case
+  registration).
+- `crates/panache-parser/tests/pandoc/allowlist.txt`
+  — new section `# html-block (multi-line div open tag — ...)` with
+  id 268.
+- `crates/panache-parser/tests/pandoc/report.txt` +
+  `docs/development/pandoc-report.json` (regenerated; 268/268
+  passing, 100%).
+
+No projector, salsa, or formatter logic changes — pure parser
+shape fix. The salsa indexer's existing `AttributeNode::cast` walk
+picks up the new `HTML_ATTRS` nodes for free.
+
+### Why parser-side (not projector-side)
+
+The projector already handled multi-line opens correctly via its
+recursive byte reparse — `parse --to pandoc-ast` was returning the
+right `Div ("x", ["y"], [])` shape even before this fix. But the
+salsa anchor index walks the structural CST, not the projection,
+so `<div\n  id="anchor">...` produced false-positive
+`undefined-anchor` lint diagnostics. Fixing it in the projector
+wouldn't help salsa; the structural CST was the real gap.
+
+Verified end-to-end:
+
+```
+printf '<div\n  id="anchor-x"\n  class="y">\n\nC.\n\n</div>\n\nSee [link](#anchor-x).\n' \
+  > /tmp/t.md
+panache lint /tmp/t.md
+# before fix: warning: [undefined-anchor] Anchor '#anchor-x' not found
+# after fix:  No issues found in 1 file(s)
+```
+
+### What's still NOT covered
+
+- **Multi-line open with content trailing the `>`** — e.g.
+  `<div\n  id="x">trailing\n</div>`. The trailing-content path
+  works projection-wise, but pandoc emits `Para` while panache
+  emits `Plain` for the `trailing\n` chunk. Out of scope here;
+  this is a Para/Plain promotion gap in the existing recursive
+  reparse (`flush_html_block_text` heuristics in `pandoc_ast.rs`).
+  No corpus case yet.
+- **Multi-line open inside a blockquote** (`bq_depth > 0`). The
+  multi-line detection is gated on `bq_depth == 0` because
+  `find_multiline_div_open_end` doesn't strip blockquote markers
+  per-line; falling back to single-line emission keeps existing
+  blockquote behavior unchanged. No corpus case.
+- **`<span>` multi-line open** — same gap on the inline side. Phase
+  2 handles `<span>`; the same logic (cross-line attribute lift)
+  applies but inline-html-tags can't span newlines today (only
+  single-line `<span ...>` is recognized in
+  `inline_html.rs::try_parse_inline_html`). Edge case; defer until
+  evidence.
+
+### Suggested next sub-targets, ranked
+
+1. **Phase 5 — Para/Plain promotion for trailing content after the
+   open `>` of a multi-line div.** When `<div ...>trailing\nbody\n
+   </div>` lands the inner reparse, pandoc emits `Para` but panache
+   emits `Plain`. Affects single-line opens too when the content
+   isn't blank-separated. Look at `flush_html_block_text` / the
+   recursive reparse promotion logic in `pandoc_ast.rs`.
+2. **Cross-boundary cite numbering** (still deferred — no corpus
+   exercises it). Pass outer's terminal cite counter as the
+   starting offset to the inner pre-pass.
+3. **Outer-wins-on-conflict for inherited refs/footnotes** (still
+   deferred — no corpus exercises it).
+4. **Projector cleanup.** Audit whether the byte-aware close
+   lookahead in `try_div_html_block` is still load-bearing now
+   that parser-side multi-line + nested + balanced opens all lift
+   structurally. Likely some paths can simplify.
+
+### Don't redo / known traps (new this session)
+
+- **`input.lines()` strips newlines; the parser uses
+  `split_lines_inclusive`.** When writing parser unit tests that
+  assert byte-equal losslessness, use
+  `crate::parser::utils::helpers::split_lines_inclusive` to build
+  the `lines: Vec<&str>` input — `input.lines()` returns lines
+  with trailing newlines stripped, which silently breaks
+  losslessness checks. The existing `test_parse_div_block_*` tests
+  used `input.lines()` and got away with it because they only
+  asserted `new_pos`, not byte-equality.
+- **Quote state must thread across line boundaries.** The
+  `find_multiline_div_open_end` scanner explicitly preserves
+  `quote: Option<u8>` across the line transition so `<div\n
+  data-x="multi\nline"\n>` doesn't terminate at the inner `>` on
+  the second line. Don't reset quote state per line.
+- **`emit_div_open_tag_tokens` (single-line) and
+  `emit_multiline_div_open_tag` (multi-line) are both load-bearing.**
+  The dispatch happens in `parse_html_block_with_wrapper` based on
+  `find_multiline_div_open_end`'s return value. Don't try to
+  unify them — single-line has trailing-after-`>` content (e.g.
+  `<div>foo</div>`) that's structurally part of the same `HTML_BLOCK_TAG`,
+  and the depth-aware `same_line_closed` check fires for it.
+  Multi-line never has the close on line 0 by definition.
+- **Salsa is downstream of CST, not projection.** A projection-only
+  fix that produces correct pandoc-native output is invisible to
+  the linter. If the linter (or LSP, or any salsa consumer) shows
+  stale diagnostics after a CST change, check for the
+  `~/.cache/panache/` disk cache — the CLI keys on a tool
+  fingerprint that doesn't invalidate on code changes. `rm -rf
+  ~/.cache/panache/` before CLI verification.
+- **Multi-line `HTML_ATTRS` per attribute line is the right
+  shape.** Not one big `HTML_ATTRS` spanning all attribute lines —
+  newlines/indentation aren't attribute bytes. The
+  `AttributeNode::cast` walk visits each `HTML_ATTRS` separately;
+  `parse_html_attribute_list` parses each line's bytes; whichever
+  line declares `id` registers it. This avoids the awkward case of
+  a synthesized `HTML_ATTRS` containing structural newlines.
+
+--------------------------------------------------------------------------------
+
+## Earlier session — 2026-05-09 (Phase 5 — cross-boundary RefsCtx inheritance for outer→inner refs/footnotes/heading-slugs)
 
 **html (block + inline) pass count: 72 → 75** (3 new corpus cases —
 all passing).
