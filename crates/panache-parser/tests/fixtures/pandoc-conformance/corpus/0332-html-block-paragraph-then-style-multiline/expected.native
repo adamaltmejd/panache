@@ -1,0 +1,18 @@
+[ Para
+    [ Str "foo"
+    , SoftBreak
+    , RawInline (Format "html") "<style>"
+    , SoftBreak
+    , Str "body"
+    , Space
+    , Str "{"
+    , Space
+    , Str "color:"
+    , Space
+    , Str "red;"
+    , Space
+    , Str "}"
+    , SoftBreak
+    , RawInline (Format "html") "</style>"
+    ]
+]

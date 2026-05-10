@@ -1,0 +1,8 @@
+[ Para
+    [ Str "foo"
+    , SoftBreak
+    , RawInline (Format "html") "<style>"
+    , Str "x"
+    , RawInline (Format "html") "</style>"
+    ]
+]

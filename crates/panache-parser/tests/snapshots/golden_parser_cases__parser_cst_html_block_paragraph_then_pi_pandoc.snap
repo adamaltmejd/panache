@@ -1,0 +1,12 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+assertion_line: 97
+expression: cst_output
+---
+DOCUMENT@0..16
+  PARAGRAPH@0..16
+    TEXT@0..3 "foo"
+    NEWLINE@3..4 "\n"
+    INLINE_HTML@4..15
+      INLINE_HTML_CONTENT@4..15 "<?some-pi?>"
+    NEWLINE@15..16 "\n"

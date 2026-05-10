@@ -385,3 +385,8 @@
 327
 328
 329
+
+# html-block (`<style>` and processing instructions cannot interrupt a paragraph under Pandoc — `foo\n<style>x</style>` and `foo\n<?pi?>` stay as a single Para with the tag(s) as RawInline, matching pandoc-native. `<style>` is the lone verbatim tag NOT in `blockHtmlTags` (it lives in `verbatimHtmlBlocks` only); `<pre>`, `<script>`, `<textarea>` are in both lists and DO interrupt. PIs are similarly classified as inline mid-paragraph. Parser-side: extend `cannot_interrupt` in `HtmlBlockParser::detect_prepared` to include `HtmlBlockType::ProcessingInstruction` and `BlockTag { tag_name == "style" }` under Pandoc dialect.)
+330
+331
+332
