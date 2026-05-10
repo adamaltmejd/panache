@@ -1798,22 +1798,35 @@ impl BlockParser for HtmlBlockParser {
         // and `leading text\n<embed src="x">\nmore text\n` both
         // project as a single Para with the tag as RawInline).
         //
-        // Processing instructions and `<style>` likewise cannot interrupt
-        // under Pandoc. Pandoc's `blockHtmlTags` does NOT include `style`
-        // (it lives in `verbatimHtmlBlocks` only), so `isBlockTag` returns
-        // false mid-paragraph; PIs are similarly classified as inline.
-        // `<pre>`, `<script>`, `<textarea>` are verbatim AND in
-        // `blockHtmlTags`, so they do interrupt — `<style>` is the lone
-        // verbatim-only outlier.
+        // The non-interrupt set mirrors pandoc's `isInlineTag` predicate
+        // (`pandoc/src/Text/Pandoc/Readers/HTML.hs`): tags where
+        // `isInlineTag` returns True are consumable by the inline parser
+        // mid-paragraph, so pandoc's `para` keeps them in the running
+        // paragraph instead of terminating. The relevant rules:
+        //   - `eitherBlockOrInline` tags (notMember of `blockTags`) are
+        //     inline — covered by the inline-block / void-block checks
+        //     below.
+        //   - `<style>` open and close are SPECIAL-CASED to always be
+        //     inline (pandoc commit fixing issue #10643), regardless of
+        //     `style` being in `blockHtmlTags`.
+        //   - `</script>` close is similarly special-cased to always be
+        //     inline (`<script>` open is inline only when
+        //     `type="math/tex…"`, which we do not yet detect — see
+        //     `tests/pandoc/blocked.txt`).
+        //   - PIs (`<? … ?>`) and HTML comments are inline.
+        // `<pre>`, `<textarea>`, and `<script>` open without math/tex DO
+        // interrupt — they're in `blockTags` and have no `isInlineTag`
+        // override.
         let is_pandoc = ctx.config.dialect == crate::options::Dialect::Pandoc;
         let cannot_interrupt = matches!(block_type, HtmlBlockType::Type7)
             || (matches!(block_type, HtmlBlockType::Comment) && is_pandoc)
             || (matches!(block_type, HtmlBlockType::ProcessingInstruction) && is_pandoc)
             || (is_pandoc
-                && matches!(&block_type, HtmlBlockType::BlockTag { tag_name, .. }
+                && matches!(&block_type, HtmlBlockType::BlockTag { tag_name, is_closing, .. }
                     if is_pandoc_inline_block_tag_name(tag_name)
                         || is_pandoc_void_block_tag_name(tag_name)
-                        || tag_name.eq_ignore_ascii_case("style")));
+                        || tag_name.eq_ignore_ascii_case("style")
+                        || (*is_closing && tag_name.eq_ignore_ascii_case("script"))));
         let detection = if cannot_interrupt {
             if ctx.has_blank_before || ctx.at_document_start {
                 BlockDetectionResult::Yes

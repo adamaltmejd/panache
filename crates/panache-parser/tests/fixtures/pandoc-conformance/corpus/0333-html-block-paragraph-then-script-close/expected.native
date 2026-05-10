@@ -1,0 +1,6 @@
+[ Para
+    [ Str "foo"
+    , SoftBreak
+    , RawInline (Format "html") "</script>"
+    ]
+]

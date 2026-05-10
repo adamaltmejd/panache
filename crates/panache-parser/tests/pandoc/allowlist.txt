@@ -386,7 +386,10 @@
 328
 329
 
-# html-block (`<style>` and processing instructions cannot interrupt a paragraph under Pandoc — `foo\n<style>x</style>` and `foo\n<?pi?>` stay as a single Para with the tag(s) as RawInline, matching pandoc-native. `<style>` is the lone verbatim tag NOT in `blockHtmlTags` (it lives in `verbatimHtmlBlocks` only); `<pre>`, `<script>`, `<textarea>` are in both lists and DO interrupt. PIs are similarly classified as inline mid-paragraph. Parser-side: extend `cannot_interrupt` in `HtmlBlockParser::detect_prepared` to include `HtmlBlockType::ProcessingInstruction` and `BlockTag { tag_name == "style" }` under Pandoc dialect.)
+# html-block (`<style>` and processing instructions cannot interrupt a paragraph under Pandoc — `foo\n<style>x</style>` and `foo\n<?pi?>` stay as a single Para with the tag(s) as RawInline, matching pandoc-native. The real reason is pandoc's `isInlineTag` predicate (`Readers/HTML.hs`): `<style>` open and close are SPECIAL-CASED to always be inline (commit fixing issue #10643), and PIs match `T.take 1 name == "?"`. `<style>` and `<textarea>` are BOTH in pandoc's `blockHtmlTags`, but only `<style>` gets the `isInlineTag` override — that's why `<pre>`, `<script>` open, `<textarea>` interrupt while `<style>` does not. Parser-side: extend `cannot_interrupt` in `HtmlBlockParser::detect_prepared` to include `HtmlBlockType::ProcessingInstruction` and `BlockTag { tag_name == "style" }` under Pandoc dialect.)
 330
 331
 332
+
+# html-block (`</script>` close cannot interrupt a paragraph under Pandoc — `foo\n</script>\n` stays as `Para[foo, SoftBreak, RawInline</script>]` matching pandoc-native. Pandoc's `isInlineTag` SPECIAL-CASES `</script>` (close form) to always be inline, regardless of `<script>` open being a block start. `<script>` open WITHOUT `type="math/tex…"` still interrupts; `<script>` open WITH `type="math/tex…"` should also be inline (pandoc inlines it) but recognizing this requires plumbing the attr through the BlockTag payload — left for a follow-up. Parser-side: added `is_closing: bool` field to `HtmlBlockType::BlockTag`; `cannot_interrupt` matches `is_closing && tag_name == "script"`.)
+333

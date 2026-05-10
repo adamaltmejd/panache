@@ -293,6 +293,8 @@ golden_test_cases!(
     html_block_paragraph_demote_div_pandoc,
     html_block_paragraph_then_pi_commonmark,
     html_block_paragraph_then_pi_pandoc,
+    html_block_paragraph_then_script_close_commonmark,
+    html_block_paragraph_then_script_close_pandoc,
     html_block_paragraph_then_style_commonmark,
     html_block_paragraph_then_style_pandoc,
     html_block_pre_close_standalone_commonmark,

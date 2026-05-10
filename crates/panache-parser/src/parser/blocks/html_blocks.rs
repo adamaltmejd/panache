@@ -254,12 +254,19 @@ pub(crate) enum HtmlBlockType {
     /// `eitherBlockOrInline` tags (`<embed>`, `<area>`, `<source>`,
     /// `<track>`) which have no closing tag — depth-aware matching
     /// would walk to end-of-input.
+    /// `is_closing` records whether the tag at the start position is a
+    /// closing form (`</tag>`) rather than an opening form (`<tag>`).
+    /// The dispatcher's `cannot_interrupt` consults this to mirror
+    /// pandoc's `isInlineTag` special cases (e.g. `</script>` is inline
+    /// even when `<script>` is not — pandoc treats the close-form as
+    /// always-inline regardless of attributes).
     BlockTag {
         tag_name: String,
         is_verbatim: bool,
         closed_by_blank_line: bool,
         depth_aware: bool,
         closes_at_open_tag: bool,
+        is_closing: bool,
     },
     /// CommonMark §4.6 type 7: complete open or close tag on a line by
     /// itself, tag name not in the type-1 verbatim list. Block ends at
@@ -342,6 +349,7 @@ pub(crate) fn try_parse_html_block_start(
                 closed_by_blank_line: false,
                 depth_aware: false,
                 closes_at_open_tag: true,
+                is_closing: true,
             });
         }
 
@@ -375,6 +383,7 @@ pub(crate) fn try_parse_html_block_start(
                 closed_by_blank_line: is_commonmark && !is_verbatim,
                 depth_aware: !is_commonmark,
                 closes_at_open_tag: false,
+                is_closing,
             });
         }
 
@@ -392,6 +401,7 @@ pub(crate) fn try_parse_html_block_start(
                 closed_by_blank_line: false,
                 depth_aware: !is_closing,
                 closes_at_open_tag: is_closing,
+                is_closing,
             });
         }
 
@@ -413,6 +423,7 @@ pub(crate) fn try_parse_html_block_start(
                 closed_by_blank_line: false,
                 depth_aware: false,
                 closes_at_open_tag: true,
+                is_closing,
             });
         }
 
@@ -428,6 +439,7 @@ pub(crate) fn try_parse_html_block_start(
                 closed_by_blank_line: false,
                 depth_aware: !is_commonmark,
                 closes_at_open_tag: false,
+                is_closing: false,
             });
         }
     }
@@ -1299,6 +1311,7 @@ mod tests {
                 closed_by_blank_line: false,
                 depth_aware: true,
                 closes_at_open_tag: false,
+                is_closing: false,
             })
         );
         assert_eq!(
@@ -1309,6 +1322,7 @@ mod tests {
                 closed_by_blank_line: false,
                 depth_aware: true,
                 closes_at_open_tag: false,
+                is_closing: false,
             })
         );
     }
@@ -1323,6 +1337,7 @@ mod tests {
                 closed_by_blank_line: false,
                 depth_aware: true,
                 closes_at_open_tag: false,
+                is_closing: false,
             })
         );
     }
@@ -1685,6 +1700,7 @@ mod tests {
                 closed_by_blank_line: true,
                 depth_aware: false,
                 closes_at_open_tag: false,
+                is_closing: true,
             })
         );
     }
@@ -1730,6 +1746,7 @@ mod tests {
             closed_by_blank_line: false,
             depth_aware: false,
             closes_at_open_tag: false,
+            is_closing: false,
         };
         assert!(is_closing_marker("</div>", &block_type));
         assert!(is_closing_marker("</DIV>", &block_type)); // Case insensitive
