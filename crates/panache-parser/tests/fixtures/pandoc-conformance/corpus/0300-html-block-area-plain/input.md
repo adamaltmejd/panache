@@ -1,0 +1,1 @@
+<area shape="rect" coords="0,0,82,126" href="foo">

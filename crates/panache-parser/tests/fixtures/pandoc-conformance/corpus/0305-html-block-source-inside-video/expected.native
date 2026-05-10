@@ -1,0 +1,4 @@
+[ RawBlock (Format "html") "<video>"
+, RawBlock (Format "html") "<source src=\"a\">"
+, RawBlock (Format "html") "</video>"
+]

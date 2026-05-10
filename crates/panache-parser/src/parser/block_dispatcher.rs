@@ -31,8 +31,8 @@ use super::blocks::headings::{
 };
 use super::blocks::horizontal_rules::{emit_horizontal_rule, try_parse_horizontal_rule};
 use super::blocks::html_blocks::{
-    HtmlBlockType, is_pandoc_inline_block_tag_name, parse_html_block_with_wrapper,
-    try_parse_html_block_start,
+    HtmlBlockType, is_pandoc_inline_block_tag_name, is_pandoc_void_block_tag_name,
+    parse_html_block_with_wrapper, try_parse_html_block_start,
 };
 use super::blocks::indented_code::{is_indented_code_line, parse_indented_code_block};
 use super::blocks::latex_envs::LatexEnvInfo;
@@ -1776,16 +1776,19 @@ impl BlockParser for HtmlBlockParser {
         // line (no blank above) stays inline as `RawInline (Format "html")`
         // rather than splitting the paragraph into a `RawBlock`. The
         // Pandoc `eitherBlockOrInline` tags (`<iframe>`, `<button>`,
-        // `<video>`, …) likewise never interrupt a running paragraph —
-        // pandoc keeps them inline once a paragraph has started parsing
-        // (verified: `Some text\n<button>X</button>\n` projects as one
-        // Para with `<button>` as RawInline).
+        // `<video>`, …) and their void siblings (`<embed>`, `<area>`,
+        // `<source>`, `<track>`) likewise never interrupt a running
+        // paragraph — pandoc keeps them inline once a paragraph has
+        // started parsing (verified: `Some text\n<button>X</button>\n`
+        // and `leading text\n<embed src="x">\nmore text\n` both
+        // project as a single Para with the tag as RawInline).
         let is_pandoc = ctx.config.dialect == crate::options::Dialect::Pandoc;
         let cannot_interrupt = matches!(block_type, HtmlBlockType::Type7)
             || (matches!(block_type, HtmlBlockType::Comment) && is_pandoc)
             || (is_pandoc
                 && matches!(&block_type, HtmlBlockType::BlockTag { tag_name, .. }
-                    if is_pandoc_inline_block_tag_name(tag_name)));
+                    if is_pandoc_inline_block_tag_name(tag_name)
+                        || is_pandoc_void_block_tag_name(tag_name)));
         let detection = if cannot_interrupt {
             if ctx.has_blank_before || ctx.at_document_start {
                 BlockDetectionResult::Yes

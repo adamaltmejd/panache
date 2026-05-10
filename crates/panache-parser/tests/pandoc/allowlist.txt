@@ -341,3 +341,13 @@
 295
 296
 297
+
+# html-block (eitherBlockOrInline void elements — pandoc's void `eitherBlockOrInline` subset: `<embed>`, `<area>`, `<source>`, `<track>` emit a single RawBlock at fresh-block positions; inside a running paragraph they stay inline as RawInline. The parser closes the block on the open-tag line (no closing tag to match), and the projector splits same-line shapes like `<embed src="x"> trailing` via the same `inline_pending` rule. Case 305 tests `<source>` lifted as a separate RawBlock when nested inside a `<video>` matched-pair lift.)
+298
+299
+300
+301
+302
+303
+304
+305

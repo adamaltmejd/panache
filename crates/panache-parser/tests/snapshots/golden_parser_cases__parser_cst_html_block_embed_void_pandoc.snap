@@ -1,0 +1,12 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..18
+  HTML_BLOCK@0..16
+    HTML_BLOCK_TAG@0..16
+      TEXT@0..15 "<embed src=\"x\">"
+      NEWLINE@15..16 "\n"
+  PARAGRAPH@16..18
+    TEXT@16..17 "b"
+    NEWLINE@17..18 "\n"

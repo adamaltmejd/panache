@@ -186,12 +186,10 @@ pub fn is_pandoc_block_tag_name(name: &str) -> bool {
 /// always split; inline-block tags split only when no inline content
 /// has been buffered since the last splitter.
 ///
-/// Void elements (`area`, `embed`, `source`, `track`) are intentionally
-/// omitted: with no closing tag, `find_matching_html_close` would
-/// consume to end-of-input and the projector's matched-pair lift can't
-/// produce a clean RawBlock. Treating them as inline raw HTML is wrong
-/// vs pandoc-native (pandoc emits a single RawBlock) but doesn't
-/// destroy structure; deferred until void-tag handling lands.
+/// Void elements (`area`, `embed`, `source`, `track`) live in
+/// [`PANDOC_VOID_BLOCK_TAGS`]; they follow the same `inline_pending`
+/// rule as non-void inline-block tags but emit a single RawBlock per
+/// instance instead of a matched-pair lift.
 /// `script` is omitted because it is already verbatim (handled by the
 /// `<script>...</script>` raw-text path) and the strict-block check
 /// fires first regardless.
@@ -206,6 +204,29 @@ const PANDOC_INLINE_BLOCK_TAGS: &[&str] = &[
 pub fn is_pandoc_inline_block_tag_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     PANDOC_INLINE_BLOCK_TAGS.contains(&lower.as_str())
+}
+
+/// Pandoc's void-element subset of `eitherBlockOrInline` (mirrors
+/// `pandoc/src/Text/Pandoc/Readers/HTML/TagCategories.hs`'s void list
+/// minus those handled elsewhere: `br` and `wbr` are inline-only;
+/// `img` and `input` are inline-only; HTML void elements that pandoc
+/// classifies as `eitherBlockOrInline` are `area`, `embed`, `source`,
+/// `track`).
+///
+/// At fresh-block positions (or after a blank line) pandoc emits these
+/// as a single `RawBlock`; inside a running paragraph they stay inline
+/// as `RawInline`. The parser opens a depth-zero HTML block (closes
+/// immediately on the open-tag line — there is no closing tag to
+/// match) so subsequent lines start fresh blocks; the projector's
+/// `split_html_block_by_tags` handles the same-line splitting via
+/// `inline_pending`, emitting one `RawBlock` per void-tag instance.
+const PANDOC_VOID_BLOCK_TAGS: &[&str] = &["area", "embed", "source", "track"];
+
+/// Whether `name` (case-insensitive) is one of pandoc's void
+/// `eitherBlockOrInline` tags (`area`, `embed`, `source`, `track`).
+pub fn is_pandoc_void_block_tag_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    PANDOC_VOID_BLOCK_TAGS.contains(&lower.as_str())
 }
 
 /// Information about a detected HTML block opening.
@@ -228,11 +249,17 @@ pub(crate) enum HtmlBlockType {
     /// `htmlInBalanced`); used under Pandoc dialect to handle nested
     /// `<div>...<div>...</div>...</div>` shapes correctly. Ignored when
     /// `closed_by_blank_line` is true.
+    /// `closes_at_open_tag` short-circuits the close search: the block
+    /// always ends after the open-tag line. Used for void
+    /// `eitherBlockOrInline` tags (`<embed>`, `<area>`, `<source>`,
+    /// `<track>`) which have no closing tag — depth-aware matching
+    /// would walk to end-of-input.
     BlockTag {
         tag_name: String,
         is_verbatim: bool,
         closed_by_blank_line: bool,
         depth_aware: bool,
+        closes_at_open_tag: bool,
     },
     /// CommonMark §4.6 type 7: complete open or close tag on a line by
     /// itself, tag name not in the type-1 verbatim list. Block ends at
@@ -308,6 +335,7 @@ pub(crate) fn try_parse_html_block_start(
                 is_verbatim,
                 closed_by_blank_line: is_commonmark && !is_verbatim,
                 depth_aware: !is_commonmark,
+                closes_at_open_tag: false,
             });
         }
 
@@ -322,6 +350,26 @@ pub(crate) fn try_parse_html_block_start(
                 is_verbatim: false,
                 closed_by_blank_line: false,
                 depth_aware: true,
+                closes_at_open_tag: false,
+            });
+        }
+
+        // Pandoc dialect also recognizes the void subset of
+        // `eitherBlockOrInline` (`area`, `embed`, `source`, `track`).
+        // These have no closing tag, so the parser closes the block
+        // immediately on the open-tag line; the projector's
+        // `split_html_block_by_tags` handles the same-line splitting
+        // (e.g. `<embed src="a"> trailing` → RawBlock + Para). Like
+        // non-void inline-block tags, void tags never interrupt a
+        // running paragraph (gated as `cannot_interrupt` in the
+        // dispatcher).
+        if !is_commonmark && !is_closing && PANDOC_VOID_BLOCK_TAGS.contains(&tag_lower.as_str()) {
+            return Some(HtmlBlockType::BlockTag {
+                tag_name: tag_lower,
+                is_verbatim: false,
+                closed_by_blank_line: false,
+                depth_aware: false,
+                closes_at_open_tag: true,
             });
         }
 
@@ -336,6 +384,7 @@ pub(crate) fn try_parse_html_block_start(
                 is_verbatim: true,
                 closed_by_blank_line: false,
                 depth_aware: !is_commonmark,
+                closes_at_open_tag: false,
             });
         }
     }
@@ -630,13 +679,23 @@ pub(crate) fn parse_html_block_with_wrapper(
 
     // Check if opening line also contains closing marker. Blank-line-terminated
     // blocks (CommonMark types 6 & 7) ignore inline close markers — they only
-    // end at a blank line or end of input.
+    // end at a blank line or end of input. Void `eitherBlockOrInline` tags
+    // (`closes_at_open_tag: true`) close immediately — the block always
+    // ends on the open-tag line since there is no closing tag to find.
+    let void_block = matches!(
+        &block_type,
+        HtmlBlockType::BlockTag {
+            closes_at_open_tag: true,
+            ..
+        }
+    );
     let same_line_closed = !blank_terminated
         && multiline_open_end.is_none()
-        && match &depth_aware_tag {
-            Some(_) => depth <= 0,
-            None => is_closing_marker(first_inner, &block_type),
-        };
+        && (void_block
+            || match &depth_aware_tag {
+                Some(_) => depth <= 0,
+                None => is_closing_marker(first_inner, &block_type),
+            });
     if same_line_closed {
         log::trace!(
             "HTML block at line {} opens and closes on same line",
@@ -1083,6 +1142,7 @@ mod tests {
                 is_verbatim: false,
                 closed_by_blank_line: false,
                 depth_aware: true,
+                closes_at_open_tag: false,
             })
         );
         assert_eq!(
@@ -1092,6 +1152,7 @@ mod tests {
                 is_verbatim: false,
                 closed_by_blank_line: false,
                 depth_aware: true,
+                closes_at_open_tag: false,
             })
         );
     }
@@ -1105,6 +1166,7 @@ mod tests {
                 is_verbatim: true,
                 closed_by_blank_line: false,
                 depth_aware: true,
+                closes_at_open_tag: false,
             })
         );
     }
@@ -1228,15 +1290,76 @@ mod tests {
         // open tags here).
         assert_eq!(try_parse_html_block_start("</button>", false), None);
         assert_eq!(try_parse_html_block_start("</iframe>", false), None);
-        // Void eitherBlockOrInline tags are intentionally skipped —
-        // they fall through to inline raw HTML.
-        for void_tag in ["<embed>", "<area>", "<source>", "<track>"] {
-            assert_eq!(
-                try_parse_html_block_start(void_tag, false),
-                None,
-                "{void_tag} (void) should NOT start an HTML block under Pandoc",
+    }
+
+    #[test]
+    fn test_pandoc_void_block_tag_membership() {
+        // Pandoc's void `eitherBlockOrInline` tags start an HTML block
+        // at fresh-block positions under Pandoc dialect, with
+        // `closes_at_open_tag: true` — the block always ends on the
+        // open-tag line (no closing tag to match).
+        for tag in [
+            "<area>",
+            "<embed>",
+            "<source>",
+            "<track>",
+            "<embed src=\"foo.swf\">",
+            "<source src=\"foo.mp4\" type=\"video/mp4\">",
+        ] {
+            assert!(
+                matches!(
+                    try_parse_html_block_start(tag, false),
+                    Some(HtmlBlockType::BlockTag {
+                        depth_aware: false,
+                        closes_at_open_tag: true,
+                        ..
+                    })
+                ),
+                "{tag} should be a void block-tag start under Pandoc",
             );
         }
+        // Closing forms of void tags must NOT start a block. Void
+        // elements have no closing tag in HTML, but `</embed>` could
+        // appear in the wild — pandoc's `htmlTag isBlockTag` only
+        // matches open tags here, so we mirror that.
+        for closing in ["</area>", "</embed>", "</source>", "</track>"] {
+            assert_eq!(
+                try_parse_html_block_start(closing, false),
+                None,
+                "{closing} (closing form) should NOT start a void block under Pandoc",
+            );
+        }
+        // Under CommonMark dialect, the void-tag block-start path is
+        // skipped. `<source>` and `<track>` are in the CM type-6
+        // BLOCK_TAGS set so they DO start a block, but with CM type-6
+        // semantics (`closed_by_blank_line: true`,
+        // `closes_at_open_tag: false`), not the Pandoc void-tag path.
+        // `<embed>` and `<area>` aren't in the CM type-6 list — they
+        // fall through to type 7 (complete tag on a line by itself).
+        assert_eq!(
+            try_parse_html_block_start("<embed>", true),
+            Some(HtmlBlockType::Type7)
+        );
+        assert_eq!(
+            try_parse_html_block_start("<area>", true),
+            Some(HtmlBlockType::Type7)
+        );
+        assert!(matches!(
+            try_parse_html_block_start("<source src=\"x\">", true),
+            Some(HtmlBlockType::BlockTag {
+                closed_by_blank_line: true,
+                closes_at_open_tag: false,
+                ..
+            })
+        ));
+        assert!(matches!(
+            try_parse_html_block_start("<track src=\"x\">", true),
+            Some(HtmlBlockType::BlockTag {
+                closed_by_blank_line: true,
+                closes_at_open_tag: false,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -1294,6 +1417,7 @@ mod tests {
                 is_verbatim: false,
                 closed_by_blank_line: true,
                 depth_aware: false,
+                closes_at_open_tag: false,
             })
         );
     }
@@ -1338,6 +1462,7 @@ mod tests {
             is_verbatim: false,
             closed_by_blank_line: false,
             depth_aware: false,
+            closes_at_open_tag: false,
         };
         assert!(is_closing_marker("</div>", &block_type));
         assert!(is_closing_marker("</DIV>", &block_type)); // Case insensitive

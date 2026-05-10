@@ -1,0 +1,1 @@
+<embed src="foo.swf">

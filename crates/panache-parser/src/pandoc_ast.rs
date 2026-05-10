@@ -1154,7 +1154,7 @@ fn emit_html_block(node: &SyntaxNode, out: &mut Vec<Block>) {
 ///   splitter — when true, we don't split on inline-block tags.
 fn split_html_block_by_tags(content: &str, out: &mut Vec<Block>) {
     use crate::parser::blocks::html_blocks::{
-        is_pandoc_block_tag_name, is_pandoc_inline_block_tag_name,
+        is_pandoc_block_tag_name, is_pandoc_inline_block_tag_name, is_pandoc_void_block_tag_name,
     };
     use crate::parser::inlines::inline_html::{parse_close_tag, parse_open_tag};
 
@@ -1260,6 +1260,29 @@ fn split_html_block_by_tags(content: &str, out: &mut Vec<Block>) {
             i += tag_end;
             continue;
         }
+        if is_pandoc_void_block_tag_name(name) {
+            // Void `eitherBlockOrInline` tags (`<embed>`, `<area>`,
+            // `<source>`, `<track>`) emit as a single `RawBlock` per
+            // instance at fresh-block positions; inside inline content
+            // (`inline_pending == true`) they pass through as raw
+            // inline HTML. The closing form (`</embed>` etc.) is not
+            // valid HTML for void elements, but if it appears in the
+            // wild pandoc still emits it as a `RawBlock` at fresh-block
+            // positions — mirror that.
+            if !inline_pending {
+                if i > text_start {
+                    flush_html_block_text(&content[text_start..i], out);
+                }
+                out.push(Block::RawBlock("html".to_string(), tag_text.to_string()));
+                i += tag_end;
+                text_start = i;
+                inline_pending = false;
+                continue;
+            }
+            inline_pending = true;
+            i += tag_end;
+            continue;
+        }
         // Non-splitting tag (truly inline-only HTML). Mark that an
         // inline run has started so subsequent `eitherBlockOrInline`
         // tags don't split mid-paragraph.
@@ -1267,15 +1290,21 @@ fn split_html_block_by_tags(content: &str, out: &mut Vec<Block>) {
         i += tag_end;
     }
     if text_start < bytes.len() {
-        flush_html_block_text(&content[text_start..], out);
+        // Tail text — no further tag follows in this HTML block, so the
+        // final `Para` should NOT be demoted to `Plain`. Pandoc only
+        // promotes a paragraph to `Plain` when it is butted up against
+        // the next HTML tag in the same block.
+        flush_html_block_tail_text(&content[text_start..], out);
     }
 }
 
-/// Reparse non-tag inter-tag text as fresh Pandoc markdown and emit each
-/// resulting block. The final `Para` becomes a `Plain` when the text has
-/// no trailing blank line (i.e. a closing tag follows immediately): pandoc
-/// promotes the last paragraph to `Plain` whenever it is butted up against
-/// the next HTML tag.
+/// Reparse inter-tag text as fresh Pandoc markdown. The final `Para`
+/// becomes a `Plain` when the text has no trailing blank line (i.e. a
+/// closing tag follows immediately): pandoc promotes the last paragraph
+/// to `Plain` whenever it is butted up against the next HTML tag.
+///
+/// Use [`flush_html_block_tail_text`] for text at the END of the HTML
+/// block (no tag follows) — the demotion would be wrong there.
 fn flush_html_block_text(text: &str, out: &mut Vec<Block>) {
     if text.trim().is_empty() {
         return;
@@ -1291,6 +1320,17 @@ fn flush_html_block_text(text: &str, out: &mut Vec<Block>) {
     {
         blocks.push(Block::Plain(inlines));
     }
+    out.extend(blocks);
+}
+
+/// Reparse trailing text at the end of an HTML block (no tag follows).
+/// Unlike [`flush_html_block_text`], the final `Para` is preserved —
+/// pandoc only demotes to `Plain` when butted up against the next tag.
+fn flush_html_block_tail_text(text: &str, out: &mut Vec<Block>) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let blocks = parse_pandoc_blocks(text);
     out.extend(blocks);
 }
 

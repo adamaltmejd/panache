@@ -11,7 +11,189 @@ reverted, what trap to avoid) are the load-bearing content here.
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-09 (Phase 3 — `eitherBlockOrInline` lift with context-aware projector; unblocks #287)
+## Latest session — 2026-05-10 (Phase 3 — void-element `eitherBlockOrInline` lift; bonus tail-text Plain→Para fix and `<source>`-inside-`<video>` parity)
+
+**html (block + inline) pass count: 105 → 113** (+8; 8 new corpus cases
+passing — void elements `<embed>`, `<area>`, `<source>`, `<track>` + a
+trailing-text shape + a back-to-back shape + the `<source>` inside
+`<video>` parity case).
+**Workspace test count: 0 failing → 0 failing** (all green).
+**Total pandoc conformance: 297/297 → 305/305 (100.0% maintained)**.
+**New parser fixtures: 2** (paired `<embed>` Pandoc / CommonMark CST
+shape).
+
+### What landed
+
+Closes the previous session's "Suggested next sub-target #1": void
+`eitherBlockOrInline` tags (`<embed>`, `<area>`, `<source>`,
+`<track>`) now lift to a single RawBlock at fresh-block positions,
+stay inline mid-paragraph (verified `leading <source>` keeps source
+as RawInline in the Para), and split inside an existing strict-block
+parent (`<video>\n<source>\n</video>` is now 3 RawBlocks instead of
+RawBlock+Plain[RawInline]+RawBlock).
+
+Three changes, one bonus fix:
+
+1. **`PANDOC_VOID_BLOCK_TAGS` constant + `is_pandoc_void_block_tag_name`
+   pub fn** in `parser/blocks/html_blocks.rs`. Holds the 4 non-void
+   pandoc void-tag set; `script` and the non-void inline-block tags
+   are tracked separately.
+
+2. **New `BlockTag` field `closes_at_open_tag: bool`.** Distinct from
+   `depth_aware` (which counts opens/closes — for void tags with no
+   close, it would walk to end-of-input) and `closed_by_blank_line`
+   (CM type-6 semantics). When `closes_at_open_tag: true` the block
+   always ends on the open-tag line. Set for void tags only;
+   defaulted false everywhere else (including tests).
+   `try_parse_html_block_start` adds a new branch that fires after
+   the inline-block check, gated on Pandoc dialect + non-closing
+   form + membership.
+
+3. **Block dispatcher** (`block_dispatcher.rs`) extends
+   `cannot_interrupt` to include void tags. Without this,
+   `leading text\n<embed src="x">\nmore text` would split the
+   paragraph (it doesn't in pandoc).
+
+4. **Projector** (`pandoc_ast.rs::split_html_block_by_tags`) gets a
+   third tag-classification branch: void tags emit a single RawBlock
+   at fresh-block positions (`!inline_pending`), pass through inline
+   when `inline_pending == true`. No matched-pair lookup — a single
+   tag IS the splitter.
+
+**Bonus fix landed alongside**: the projector's
+`flush_html_block_text` always demoted a trailing `Para` to `Plain`
+when the text didn't end with `\n\n`. That was correct for
+inter-tag text (next tag follows) but wrong for tail text
+(end-of-block — nothing follows). Split into two functions:
+`flush_html_block_text` (inter-tag, demotes) and
+`flush_html_block_tail_text` (tail, preserves Para). Without this
+fix, `<embed src="x"> trailing text` would project as
+`RawBlock + Plain` instead of `RawBlock + Para`. The same pre-existing
+bug also affected `<form>\nfoo\n` (verified: now correctly emits
+`RawBlock + Para`).
+
+8 new passing cases under `# html-block (eitherBlockOrInline void
+elements …)`:
+- `0298-html-block-embed-plain` — bare `<embed>`
+- `0299-html-block-embed-with-attrs` — `<embed src="foo.swf">`
+- `0300-html-block-area-plain` — `<area shape coords href>`
+- `0301-html-block-source-plain` — `<source src type>`
+- `0302-html-block-track-plain` — `<track src kind>`
+- `0303-html-block-embed-trailing-text` — exercises the tail
+  Plain→Para fix (`<embed src="..."> trailing text`)
+- `0304-html-block-void-back-to-back` — two voids on consecutive
+  lines, both lift
+- `0305-html-block-source-inside-video` — `<source>` lifts as a
+  separate RawBlock when nested inside `<video>...</video>`. Also
+  closes the previous session's "Suggested next sub-target #2" as a
+  free byproduct.
+
+Plus 2 paired parser fixtures
+(`html_block_embed_void_pandoc` / `_commonmark`) pinning the new
+dialect-divergent CST shape — Pandoc closes the HTML_BLOCK on the
+void-tag line, CommonMark continues until blank line.
+
+Plus a unit test (`test_pandoc_void_block_tag_membership`) covering
+the 4 void tags + closing-form rejection + CommonMark dialect path
+(where `<embed>`/`<area>` fall through to type 7 and
+`<source>`/`<track>` start CM type-6 blocks).
+
+### Files in committable diff
+
+- `crates/panache-parser/src/parser/blocks/html_blocks.rs` — new
+  `PANDOC_VOID_BLOCK_TAGS` const + `is_pandoc_void_block_tag_name`
+  pub fn; new `closes_at_open_tag` field on `BlockTag`; new branch in
+  `try_parse_html_block_start`; updated `same_line_closed` logic;
+  doc-comment update on `PANDOC_INLINE_BLOCK_TAGS`; new unit test;
+  existing tests updated for the new field. ~85 lines net.
+- `crates/panache-parser/src/parser/block_dispatcher.rs` — extend
+  `cannot_interrupt` for Pandoc void block tags. ~3 lines.
+- `crates/panache-parser/src/pandoc_ast.rs` — new
+  `is_pandoc_void_block_tag_name` import; new void-tag branch in
+  `split_html_block_by_tags`; split `flush_html_block_text` into two
+  variants (inter-tag vs tail). ~30 lines.
+- 8 new corpus directories
+  `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/0298..0305-…/`
+  (input.md + expected.native).
+- `crates/panache-parser/tests/pandoc/allowlist.txt` — new
+  `# html-block (eitherBlockOrInline void elements …)` section with
+  ids 298..305.
+- `crates/panache-parser/tests/pandoc/report.txt` +
+  `docs/development/pandoc-report.json` — regenerated (305/305).
+- 2 new parser fixtures + 2 new CST snapshots
+  (`html_block_embed_void_{pandoc,commonmark}`).
+- `crates/panache-parser/tests/golden_parser_cases.rs` — register
+  the 2 new cases.
+
+No salsa, formatter, linter, LSP, or other host-side changes.
+
+### Suggested next sub-targets, ranked
+
+1. **`<video>\n<source>\nfallback\n</video>` — outer-wins-on-conflict
+   for nested void+text inside parent.** Pandoc emits 2 RawBlocks
+   (`<video>`, `<source>`) then a Para containing
+   `fallback\n</video>` (close tag becomes RawInline because the
+   matched-pair lift was abandoned once `<source>` split out).
+   Today panache emits 4 blocks (RawBlock + RawBlock + Plain[fallback]
+   + RawBlock(`</video>`)). The fix needs the projector to
+   recognize that once a strict-block tag has emitted *inside* the
+   matched-pair scan, the outer tag's closing should be downgraded
+   to inline. Likely a state flag in
+   `find_matching_html_close_with_start` or a post-process pass.
+   No corpus case yet — add a deliberately-blocked entry first.
+2. **Multi-line void open tags** (`<embed\n  src="x">`). Today the
+   parser's `try_parse_html_block_start` only inspects the first
+   line, so the line falls through to inline raw HTML. Pandoc
+   handles this correctly. Probably needs the multi-line open-tag
+   path that already exists for `<div>`, generalized.
+3. **Phase 4 — Comments, processing instructions, declarations,
+   CDATA projection.** Mostly correct (covered through 0240); probe
+   for any HTML5 additions (`<!--[if IE]>` conditionals,
+   `<?xml-stylesheet?>`).
+4. **Audit `parse_html_attrs` and `find_matching_html_close` for
+   literal-byte hazards** (still on the list from earlier sessions).
+5. **Outer-wins-on-conflict for inherited refs/footnotes** (still
+   deferred — no corpus exercises it).
+
+### Don't redo / known traps (new this session)
+
+- **`closes_at_open_tag` is the right model for void tags.** Don't
+  try to force them through `depth_aware` — the close count never
+  reaches zero (no closing tag in HTML). Don't try
+  `closed_by_blank_line` either; that requires a blank line to
+  terminate, but `<embed>\nb\n` should NOT swallow `b` (CommonMark
+  does — Pandoc doesn't).
+- **Tail text in a split HTML block must NOT demote Para→Plain.**
+  The pre-existing `flush_html_block_text` was applied uniformly,
+  silently breaking `<form>\nfoo\n` and would have broken
+  `<embed src="x"> trailing text` too. Split into
+  `flush_html_block_text` (inter-tag, demotes) and
+  `flush_html_block_tail_text` (tail, preserves). The tail caller
+  is exactly the fall-through after the byte loop.
+- **Void tags fall through to CM type 7 when not in BLOCK_TAGS.**
+  `<embed>` and `<area>` aren't in CM's BLOCK_TAGS list, but they
+  ARE complete tags on a line by themselves → type 7. Tests that
+  assert `try_parse_html_block_start("<embed>", true) == None`
+  would be wrong; assert `Type7` instead. `<source>` and `<track>`
+  ARE in CM BLOCK_TAGS so they go through the type-6 branch with
+  `closed_by_blank_line: true`.
+- **`<source>` inside `<video>` matched-pair works for free** once
+  void tags emit as RawBlock at fresh-block positions. The
+  recursive `flush_html_block_text(interior, ...)` call inside the
+  `<video>` matched-pair branch re-parses the interior under the
+  Pandoc parser, which now sees `<source>` as a void block start →
+  emits HTML_BLOCK → projector recursively splits → RawBlock. No
+  separate code path needed.
+- **The `is_pandoc_void_block_tag_name` import in
+  `pandoc_ast.rs::split_html_block_by_tags` is local-scoped** to
+  the function (existing pattern with `is_pandoc_block_tag_name`
+  and `is_pandoc_inline_block_tag_name`). Don't lift it to the
+  module level — keeps the projector's tag-classification cluster
+  in one spot.
+
+--------------------------------------------------------------------------------
+
+## Earlier session — 2026-05-09 (Phase 3 — `eitherBlockOrInline` lift with context-aware projector; unblocks #287)
 
 **html (block + inline) pass count: 94 → 105** (+11; 11 new corpus cases
 passing — `<iframe>` unblocked + 10 new `eitherBlockOrInline` tags).
