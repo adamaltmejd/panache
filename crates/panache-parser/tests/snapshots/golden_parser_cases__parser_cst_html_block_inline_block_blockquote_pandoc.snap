@@ -8,7 +8,8 @@ DOCUMENT@0..32
     WHITESPACE@1..2 " "
     HTML_BLOCK@2..32
       HTML_BLOCK_TAG@2..10
-        TEXT@2..9 "<video>"
+        TEXT@2..8 "<video"
+        TEXT@8..9 ">"
         NEWLINE@9..10 "\n"
       PLAIN@10..21
         BLOCK_QUOTE_MARKER@10..11 ">"

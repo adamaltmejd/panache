@@ -231,11 +231,16 @@ back into a session entry only if it's purely historical.
   2026-05-11 (Fix #4 shape-lift extension) the same walk also picks up
   non-div strict-block tag ids (`<section id="x">`, `<form id="x">`,
   `<p id="x">`, etc.) because the parser now emits `HTML_ATTRS` for
-  those tags too. Diverges from pandoc-native (which keeps them as
-  RawBlock without lifting attrs), but matches user intent for
-  anchor-link resolution — the linter no longer false-positives
-  `undefined-anchor` against `<section id>`. No parallel salsa walk
-  for HTML attrs.
+  those tags too. **Fix #5 followup (2026-05-11):** the bq case
+  (`> <section id="x">`) also tokenizes HTML_ATTRS via
+  `bq_strict_attr_emit_tag_name` — single-line opens only; the
+  multi-line open inside bq still goes through the legacy whole-line
+  TEXT path (`multiline_open_end` is gated on `bq_depth == 0`).
+  Diverges from pandoc-native (which keeps them as RawBlock without
+  lifting attrs), but matches user intent for anchor-link
+  resolution — the linter no longer false-positives
+  `undefined-anchor` against `<section id>` either outside or inside
+  bq. No parallel salsa walk for HTML attrs.
 
 ### Out of scope / known divergences
 
@@ -395,88 +400,81 @@ and stay.
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-11 (Phase 6 / Fix #5 bq lift — generalized to non-div + inline-block + depth > 1)
+## Latest session — 2026-05-11 (Phase 6 / Fix #5 followup — HTML_ATTRS in bq for non-div strict-block tags)
 
-Generalized the bq-wrapped clean-shape `<div>` lift from the
-previous session to also cover non-div strict-block tags
-(`<form>`, `<section>`, …) and inline-block matched-pair tags
-(`<video>`, `<iframe>`, …) inside blockquotes. Same lift gate,
-just dispatched on `wrapper_kind` + `block_type`: HTML_BLOCK_DIV
-uses `LastParaDemote::Never` (pandoc preserves Para inside Div);
-HTML_BLOCK + eligible strict-block / inline-block uses
-`LastParaDemote::OnlyIfLast` (matches pandoc's RawBlock + Plain +
-RawBlock shape). Inline-block tags also gate on
-`inline_block_void_interior_abandons` (mirrors non-bq matched-pair
-abandon rule).
+Extended the open-tag HTML_ATTRS tokenization to fire inside a
+blockquote for non-div Pandoc strict-block / inline-block tags.
+Previously the bq path (`bq_depth > 0`) emitted the whole open-tag
+line as a single TEXT token, so `<section id="x">` inside `>`
+quotes hid the `id` from the salsa anchor walk and the linter
+flagged any link to `#x` as `undefined-anchor`. With this session
+the parser tokenizes `TEXT("<section") + WS + HTML_ATTRS{TEXT(id=…)}
++ TEXT(">")` for the single-line bq open, and
+`AttributeNode::cast` picks up the id via the existing descendants
+walk — no parallel salsa work needed.
 
-Also pinned depth-2 blockquote `<div>` (`> > <div>…`) — the lift
-gate is depth-agnostic so this works transparently; just added a
-paired fixture.
+The change does not enable a body lift (that's still the
+`bq_clean_lift` path); it only re-tokenizes the open-tag bytes.
+CST is byte-identical to source.
 
-Projector fix: `open_tag_raw_block_text` now strips
-`BLOCK_QUOTE_MARKER + WHITESPACE` prefix tokens from the close
-`HTML_BLOCK_TAG` before emitting RawBlock text — without this,
-bq-wrapped close tags rendered as `"> </form>"` instead of
-`"</form>"`.
-
-**Pass count**: html stable 159, total stable 352 (saturated
-before session). Workspace test count: 3053 → 3060 (+7 new
-fixtures). The win is architectural — bq-wrapped non-div
-strict-block and inline-block matched-pair bodies move from the
-projector byte walker to the structural walk.
+**Pass count**: html stable 159, total stable 352 (saturated).
+Workspace test count: 3060 → 3061 (+1 linter regression test).
+The win is consumer-facing — no more false `undefined-anchor`
+diagnostics against `<section id>` / `<form id>` / `<video id>`
+inside blockquotes.
 
 ### What landed
 
-- `bq_div_clean_lift` renamed to `bq_clean_lift` and generalized:
-  routes via `bq_lift_tag` resolver (HTML_BLOCK_DIV vs
-  HTML_BLOCK + lift-eligible tag) and dispatches demote policy
-  per wrapper.
-- Inline-block void-interior abandon check at the bq lift gate.
-- `open_tag_raw_block_text`: bq-prefix stripping on the close tag
-  RawBlock emission path (token-walk skipping
-  `BLOCK_QUOTE_MARKER + WHITESPACE`).
-- 3 paired parser fixtures: depth-2 (`html_block_div_blockquote_depth_2`),
-  non-div strict-block in bq (`html_block_strict_block_blockquote`),
-  inline-block matched-pair in bq (`html_block_inline_block_blockquote`).
-- Formatter golden `html_block_strict_blockquote_idempotent`.
+- New helper `bq_strict_attr_emit_tag_name` in `html_blocks.rs`:
+  same shape predicate as the existing `strict_block_tag_name`
+  gate, minus the `bq_depth == 0` guard. Returns the tag name
+  for single-line non-div lift-eligible block tags inside bq.
+- Extra emission branch in `parse_html_block_with_wrapper` calls
+  `emit_open_tag_tokens(.., name, /*lift_trailing=*/false)` when
+  the helper matches — same tokenizer as the non-bq path, but
+  with `lift_trailing: false` so no body-lift coupling.
+- Linter regression `resolves_explicit_id_on_html_strict_block_inside_blockquote`
+  pinning `<section id="sec-a">` inside bq + `[link](#sec-a)`.
+- Snapshot updates to `html_block_strict_block_blockquote_pandoc`
+  and `html_block_inline_block_blockquote_pandoc` (now match the
+  non-bq counterparts' tokenization: `<form>` → `<form` + `>`;
+  `<section id="x">` exposes HTML_ATTRS; `<video>` → `<video` + `>`).
 
 ### Suggested next sub-targets
 
-1. **Extend bq lift to non-clean shapes** (medium-hard).
+1. **Extend bq lift to non-clean shapes** (medium-hard, unchanged).
    Butted-close (`> foo</div>`), open-trailing (`> <div>foo`),
-   same-line (`> <div>foo</div>`) inside bq — for `<div>`,
-   non-div strict-block, and inline-block matched-pair. Each
-   shape needs different prefix-injection logic (close-line
-   leading bytes vs trailing-on-open). Current projector byte
-   walker handles these correctly but blocks pruning.
-2. **Prune projector byte walkers** once #1 lands. With all bq
-   shapes lifted, `collect_html_block_text_skip_bq_markers` and
+   same-line (`> <div>foo</div>`) inside bq — for `<div>`, non-div
+   strict-block, and inline-block matched-pair. Each shape needs
+   different prefix-injection logic. Current projector byte walker
+   still handles these.
+2. **Multi-line open tag inside bq**. `multiline_open_end` is
+   gated on `bq_depth == 0`, so `> <section\n>   id="x">\n` falls
+   back to opaque per-line TEXT. Rare in practice; defer until a
+   corpus case demands it.
+3. **Prune projector byte walkers** once #1 lands.
+   `collect_html_block_text_skip_bq_markers` and
    `try_div_html_block` become dead code; matched-pair
    `split_html_block_by_tags` branch and
    `interior_starts_with_void_block_tag` can go too.
-3. **Emit `HTML_ATTRS` for non-div strict-block tags inside bq**
-   so salsa picks up `<section id>` declarations inside bq (Fix
-   #4 covers this only at `bq_depth == 0`). Small extension to
-   the open-tag tokenization in
-   `parse_html_block_with_wrapper`'s single-line branch.
 
 ### Files in committable diff
 
 - `crates/panache-parser/src/parser/blocks/html_blocks.rs` —
-  bq_clean_lift gate generalization (~80 net ins).
-- `crates/panache-parser/src/pandoc_ast.rs` —
-  `open_tag_raw_block_text` bq-strip (~20 net ins).
-- 3 paired parser fixtures + snapshots.
-- 1 formatter golden + runner registration.
+  `bq_strict_attr_emit_tag_name` helper + extra emission branch
+  (~30 net ins).
+- `src/linter/rules/undefined_anchor.rs` — one new regression
+  test.
+- 2 snapshot updates in `crates/panache-parser/tests/snapshots/`.
 
 ### New trap
 
-Folded into Persistent traps under "Projector tag splitting":
-`open_tag_raw_block_text` must strip `BLOCK_QUOTE_MARKER +
-WHITESPACE` prefix tokens; bq-wrapped close tags carry them as
-leading children of `HTML_BLOCK_TAG`, and the literal
-`tag.text()` includes them. Without the strip, RawBlock close
-emissions diverge from pandoc-native.
+Folded into Persistent traps under "Refs / footnotes /
+heading-id resolution": Fix #5 followup note that bq strict-block
+open-tag HTML_ATTRS is wired via `bq_strict_attr_emit_tag_name`
+for single-line opens only; multi-line opens inside bq still take
+the opaque TEXT path because `multiline_open_end` is gated on
+`bq_depth == 0`.
 
 --------------------------------------------------------------------------------
 
@@ -485,11 +483,9 @@ emissions diverge from pandoc-native.
 Newest first. One line per session: date — phase/sub-target — pass
 count delta — root cause / lever.
 
-- 2026-05-11 — Phase 6 / Fix #5 bq-wrapped `<div>` clean-shape lift — html stable 159 (saturated) — `BqPrefixState` per-line prefix re-injection; `emit_html_block_body_lifted_bq`; `bq_div_clean_lift` gate; `BLANK_LINE` token advances line_idx alongside `NEWLINE`.
-- 2026-05-11 — Phase 6 / matched-pair inline-block body lift (`<video>`/`<iframe>`/`<button>`/…) — html stable 159 (saturated) — `is_pandoc_lift_eligible_block_tag` rename; `inline_block_void_interior_abandons` 3-shape void probe; `locate_open_tag_close_gt`.
-- 2026-05-11 — Phase 6 / Fix #4 multi-line open-tag lift for non-div strict-block tags — html 157 → 159 — `emit_multiline_open_tag_with_attrs` generalization; `open_tag_raw_block_text` canonicalizer for lifted multi-line opens.
-- 2026-05-11 — Phase 6 / Fix #4 non-div strict-block shape sweep (clean multi-line body, butted-close, open-trailing, same-line, empty `<div>`, bq-wrapped projector marker-strip, `<div>` shape lifts) — html 142 → 157 — `is_pandoc_lift_eligible_strict_block_tag`, `html_block_has_structural_lift`, `LastParaDemote::OnlyIfLast/SkipTrailingBlanks/Never`, `parse_with_refdefs` graft, `collect_html_block_text_skip_bq_markers`, generalized `emit_open_tag_tokens` + `probe_same_line_lift`.
-- 2026-05-10 → 2026-05-11 — Phase 6 cannot_interrupt (`<style>`, PI, `</script>`, `<script type=math/tex>`) + Fix #1/#2 — html 132 → 142 — PARAGRAPH→PLAIN retag at YesCanInterrupt; `is_closing` field; `is_math_tex_script_open`; pandoc `isInlineTag` (issue #10643).
-- 2026-05-10 — Strict-block/verbatim closing-form lift, multi-line void open-tag, incomplete-open recursion fix, Phase 3 void `eitherBlockOrInline` — html 105 → 132 — close-tag branches, `closes_at_open_tag`, `pandoc_html_open_tag_closes` gate, `PANDOC_VOID_BLOCK_TAGS`.
+- 2026-05-11 — Phase 6 / Fix #5 bq lift + generalization across `<div>` / non-div strict-block / inline-block matched-pair + depth > 1 — html stable 159 — `bq_clean_lift` gate, `BqPrefixState` re-injection, `inline_block_void_interior_abandons`, `open_tag_raw_block_text` bq-prefix strip, depth-2 fixture.
+- 2026-05-11 — Phase 6 / Fix #4 non-div strict-block shape sweep + multi-line open-tag lift — html 142 → 159 — `is_pandoc_lift_eligible_block_tag`, `html_block_has_structural_lift`, `LastParaDemote::{OnlyIfLast,SkipTrailingBlanks,Never}`, `parse_with_refdefs` graft, `emit_multiline_open_tag_with_attrs`, `open_tag_raw_block_text` canonicalizer.
+- 2026-05-10 → 2026-05-11 — Phase 6 cannot_interrupt + Fix #1/#2 — html 132 → 142 — PARAGRAPH→PLAIN retag at YesCanInterrupt; `is_closing` field; `is_math_tex_script_open`; pandoc `isInlineTag` (issue #10643).
+- 2026-05-10 — Strict-block/verbatim closing-form lift, multi-line void open-tag, incomplete-open recursion fix, Phase 3 void `eitherBlockOrInline` — html 105 → 132 — `closes_at_open_tag`, `pandoc_html_open_tag_closes` gate, `PANDOC_VOID_BLOCK_TAGS`.
 - 2026-05-09 — Phase 3 + Phase 5 (non-void eitherBlockOrInline; HTML5 sectioning; `<DIV>` losslessness; Plain/Para; multi-line attrs; refs inheritance) — html 62 → 105 — projector `inline_pending` + parser `cannot_interrupt`; CM/Pandoc blockHtmlTags split; `build_refs_ctx_inherited`.
 - 2026-05-08 — Phases 1-5 seed (issue #263 closed) — html 0 → 62 — `HTML_BLOCK_DIV`/`INLINE_HTML_SPAN` retag, `HTML_ATTRS` tokenization, sectioning/verbatim corpus pin, depth-aware nested `<div>`.

@@ -8,7 +8,8 @@ DOCUMENT@0..66
     WHITESPACE@1..2 " "
     HTML_BLOCK@2..26
       HTML_BLOCK_TAG@2..9
-        TEXT@2..8 "<form>"
+        TEXT@2..7 "<form"
+        TEXT@7..8 ">"
         NEWLINE@8..9 "\n"
       PLAIN@9..16
         BLOCK_QUOTE_MARKER@9..10 ">"
@@ -27,7 +28,11 @@ DOCUMENT@0..66
     WHITESPACE@28..29 " "
     HTML_BLOCK@29..66
       HTML_BLOCK_TAG@29..46
-        TEXT@29..45 "<section id=\"x\">"
+        TEXT@29..37 "<section"
+        WHITESPACE@37..38 " "
+        HTML_ATTRS@38..44
+          TEXT@38..44 "id=\"x\""
+        TEXT@44..45 ">"
         NEWLINE@45..46 "\n"
       PLAIN@46..53
         BLOCK_QUOTE_MARKER@46..47 ">"

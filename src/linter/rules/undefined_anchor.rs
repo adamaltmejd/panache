@@ -204,6 +204,22 @@ mod tests {
     }
 
     #[test]
+    fn resolves_explicit_id_on_html_strict_block_inside_blockquote() {
+        // Sibling of resolves_explicit_id_on_html_div_block for non-div
+        // strict-block tags inside a blockquote. The parser's bq clean-shape
+        // lift covers `<section>`/`<form>`/... inside `>` quotes; for the
+        // salsa anchor walk to pick up `id` the open tag's attribute region
+        // must be tokenized as HTML_ATTRS even at bq_depth > 0.
+        let input = "> <section id=\"sec-a\">\n>\n> Body text.\n>\n> </section>\n\nSee [the section](#sec-a).\n";
+        let diagnostics = parse_and_lint(input);
+        assert!(
+            diagnostics.is_empty(),
+            "expected no diagnostics, got {:?}",
+            diagnostics
+        );
+    }
+
+    #[test]
     fn resolves_explicit_id_on_html_inline_span_inside_paragraph() {
         let input =
             "Body text with a <span id=\"sec-a\">marker</span> inline.\n\nLink: [here](#sec-a).\n";

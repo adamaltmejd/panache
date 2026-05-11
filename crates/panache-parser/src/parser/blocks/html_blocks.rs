@@ -262,6 +262,37 @@ fn is_pandoc_lift_eligible_block_tag(name: &str) -> bool {
         || PANDOC_INLINE_BLOCK_TAGS.contains(&lower.as_str())
 }
 
+/// Open-tag-attribute tokenization gate for non-div strict-block tags
+/// inside a blockquote (`bq_depth > 0`). Returns the tag name when the
+/// open tag is eligible for finer-grained tokenization
+/// (`TEXT("<tag") + WS + HTML_ATTRS{TEXT(attrs)} + TEXT(">")`) without
+/// driving the full body lift — that's the `bq_clean_lift` path. The
+/// HTML_ATTRS region lets `AttributeNode::cast` register any `id` with
+/// the salsa anchor index.
+///
+/// `<div>` is handled by its own structural path (`HTML_BLOCK_DIV`
+/// wrapper) regardless of bq depth, so this gate skips it.
+fn bq_strict_attr_emit_tag_name(
+    wrapper_kind: SyntaxKind,
+    block_type: &HtmlBlockType,
+    bq_depth: usize,
+) -> Option<&str> {
+    if bq_depth == 0 || wrapper_kind != SyntaxKind::HTML_BLOCK {
+        return None;
+    }
+    match block_type {
+        HtmlBlockType::BlockTag {
+            tag_name,
+            is_verbatim: false,
+            closed_by_blank_line: false,
+            depth_aware: true,
+            closes_at_open_tag: false,
+            is_closing: false,
+        } if is_pandoc_lift_eligible_block_tag(tag_name) => Some(tag_name.as_str()),
+        _ => None,
+    }
+}
+
 /// Information about a detected HTML block opening.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HtmlBlockType {
@@ -917,6 +948,16 @@ pub(crate) fn parse_html_block_with_wrapper(
                     pre_content.push_str(trailing);
                     pre_content.push_str(newline_str);
                 }
+            } else if let Some(name) =
+                bq_strict_attr_emit_tag_name(wrapper_kind, &block_type, bq_depth)
+            {
+                // Inside a blockquote we don't drive the full body lift
+                // here (that's the `bq_clean_lift` path further below),
+                // but we still tokenize the open tag's attribute region
+                // as HTML_ATTRS so `AttributeNode::cast` registers any
+                // `id` with the salsa anchor index. CST bytes stay
+                // byte-identical to source.
+                emit_open_tag_tokens(builder, line_without_newline, name, false);
             } else {
                 builder.token(SyntaxKind::TEXT.into(), line_without_newline);
             }
