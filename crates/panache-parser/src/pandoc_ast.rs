@@ -1191,9 +1191,12 @@ fn div_has_structural_inner(node: &SyntaxNode) -> bool {
 }
 
 /// True when the open `HTML_BLOCK_TAG` carries no inner content after
-/// its closing `>`: the tag's children, in order, end with the `>`
-/// TEXT followed only by zero or more NEWLINE tokens. Trailing
-/// content (e.g. `<div id="x">foo\n`) returns false.
+/// its closing `>`: the tag's children, in order, end with a TEXT
+/// token whose last byte is `>` (either the dedicated `>` token used
+/// by the structural `<div>` emission, or the whole-line TEXT used by
+/// non-div strict-block emission like `<form>` / `<section>`),
+/// followed only by zero or more NEWLINE tokens. Trailing content
+/// (e.g. `<div id="x">foo\n`) returns false.
 fn html_block_open_tag_is_clean(open_tag: &SyntaxNode) -> bool {
     let mut seen_gt = false;
     for child in open_tag.children_with_tokens() {
@@ -1203,7 +1206,7 @@ fn html_block_open_tag_is_clean(open_tag: &SyntaxNode) -> bool {
             continue;
         };
         if !seen_gt {
-            if t.kind() == SyntaxKind::TEXT && t.text() == ">" {
+            if t.kind() == SyntaxKind::TEXT && t.text().ends_with('>') {
                 seen_gt = true;
             }
         } else if t.kind() != SyntaxKind::NEWLINE {
@@ -1269,6 +1272,17 @@ fn cst_div_open_tag_attr(node: &SyntaxNode) -> Attr {
 /// (anywhere in the block) lifts to `Block::Div` via `try_div_html_block`,
 /// matching pandoc's `native_divs`.
 fn emit_html_block(node: &SyntaxNode, out: &mut Vec<Block>) {
+    // Fix #4 / Phase 6 structural lift: when the parser has lifted the
+    // body into structural CST children (open `HTML_BLOCK_TAG` + body
+    // blocks + close `HTML_BLOCK_TAG`, no `HTML_BLOCK_CONTENT`), walk
+    // the children directly. This avoids the byte-reparse path that
+    // would re-disambiguate heading auto-ids against a fresh inner
+    // `RefsCtx` (producing `heading-1` instead of `heading` when the
+    // outer ctx already saw the heading).
+    if html_block_has_structural_lift(node) {
+        emit_html_block_structural(node, out);
+        return;
+    }
     // Strip BLOCK_QUOTE_MARKER + WHITESPACE prefix tokens so the
     // byte-level walkers below see clean HTML — same rationale as
     // `html_div_block`, see `collect_html_block_text_skip_bq_markers`.
@@ -1296,6 +1310,59 @@ fn emit_html_block(node: &SyntaxNode, out: &mut Vec<Block>) {
         return;
     }
     split_html_block_by_tags(&content, out);
+}
+
+/// True when an `HTML_BLOCK` carries the Fix #4 structural lift shape:
+/// exactly two `HTML_BLOCK_TAG` children (open + close), both "clean"
+/// (open ends at `>`, close starts with `</`), and no
+/// `HTML_BLOCK_CONTENT` (which would mark an unlifted opaque body).
+/// Empty bodies (only the two tags, with optional `BLANK_LINE` in
+/// between) still count as lifted — they project as RawBlock +
+/// RawBlock with nothing in between, matching pandoc.
+fn html_block_has_structural_lift(node: &SyntaxNode) -> bool {
+    let mut tags = node
+        .children()
+        .filter(|c| c.kind() == SyntaxKind::HTML_BLOCK_TAG);
+    let Some(open_tag) = tags.next() else {
+        return false;
+    };
+    let Some(close_tag) = tags.next() else {
+        return false;
+    };
+    if tags.next().is_some() {
+        return false;
+    }
+    if !html_block_open_tag_is_clean(&open_tag) {
+        return false;
+    }
+    if !html_block_close_tag_is_clean(&close_tag) {
+        return false;
+    }
+    !node
+        .children()
+        .any(|c| c.kind() == SyntaxKind::HTML_BLOCK_CONTENT)
+}
+
+/// Emit an `HTML_BLOCK` whose body has been structurally lifted: walk
+/// its CST children, projecting the open/close `HTML_BLOCK_TAG`s as
+/// `RawBlock` (one each, trailing newlines trimmed to match pandoc-
+/// native's tag-only emission) and inner block children through
+/// `collect_block`. `BLANK_LINE` children are skipped (they don't
+/// project to anything in pandoc-native).
+fn emit_html_block_structural(node: &SyntaxNode, out: &mut Vec<Block>) {
+    for child in node.children() {
+        match child.kind() {
+            SyntaxKind::HTML_BLOCK_TAG => {
+                let mut text = child.text().to_string();
+                while text.ends_with('\n') {
+                    text.pop();
+                }
+                out.push(Block::RawBlock("html".to_string(), text));
+            }
+            SyntaxKind::BLANK_LINE => {}
+            _ => collect_block(&child, out),
+        }
+    }
 }
 
 /// Walk `content`'s bytes and split at every complete block-level HTML tag.

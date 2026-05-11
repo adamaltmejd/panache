@@ -1,0 +1,41 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..81
+  HTML_BLOCK@0..24
+    HTML_BLOCK_TAG@0..7
+      TEXT@0..6 "<form>"
+      NEWLINE@6..7 "\n"
+    PARAGRAPH@7..11
+      TEXT@7..10 "foo"
+      NEWLINE@10..11 "\n"
+    BLANK_LINE@11..12
+      BLANK_LINE@11..12 "\n"
+    PLAIN@12..16
+      TEXT@12..15 "bar"
+      NEWLINE@15..16 "\n"
+    HTML_BLOCK_TAG@16..24
+      TEXT@16..23 "</form>"
+      NEWLINE@23..24 "\n"
+  BLANK_LINE@24..25
+    BLANK_LINE@24..25 "\n"
+  HTML_BLOCK@25..81
+    HTML_BLOCK_TAG@25..46
+      TEXT@25..45 "<section id=\"intro\">"
+      NEWLINE@45..46 "\n"
+    HEADING@46..56
+      ATX_HEADING_MARKER@46..47
+        ATX_HEADING_MARKER@46..47 "#"
+      WHITESPACE@47..48 " "
+      HEADING_CONTENT@48..55
+        TEXT@48..55 "Heading"
+      NEWLINE@55..56 "\n"
+    BLANK_LINE@56..57
+      BLANK_LINE@56..57 "\n"
+    PLAIN@57..70
+      TEXT@57..69 "A paragraph."
+      NEWLINE@69..70 "\n"
+    HTML_BLOCK_TAG@70..81
+      TEXT@70..80 "</section>"
+      NEWLINE@80..81 "\n"

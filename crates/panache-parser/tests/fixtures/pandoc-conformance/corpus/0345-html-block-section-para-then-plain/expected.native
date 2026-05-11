@@ -1,0 +1,5 @@
+[ RawBlock (Format "html") "<section>"
+, Para [ Str "foo" ]
+, Plain [ Str "bar" ]
+, RawBlock (Format "html") "</section>"
+]

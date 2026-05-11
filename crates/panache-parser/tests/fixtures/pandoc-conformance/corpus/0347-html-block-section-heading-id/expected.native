@@ -1,0 +1,8 @@
+[ RawBlock (Format "html") "<section>"
+, Header 1 ( "welcome" , [] , [] ) [ Str "Welcome" ]
+, Para
+    [ Link ( "" , [] , [] ) [ Str "Go" ] ( "#welcome" , "" )
+    , Str "."
+    ]
+, RawBlock (Format "html") "</section>"
+]

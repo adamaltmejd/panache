@@ -1,5 +1,6 @@
 ---
 source: crates/panache-parser/tests/golden_parser_cases.rs
+assertion_line: 97
 expression: cst_output
 ---
 DOCUMENT@0..839
@@ -102,23 +103,41 @@ DOCUMENT@0..839
     HTML_BLOCK_TAG@243..251
       TEXT@243..250 "<table>"
       NEWLINE@250..251 "\n"
-    HTML_BLOCK_CONTENT@251..328
-      TEXT@251..255 "<tr>"
-      NEWLINE@255..256 "\n"
-      TEXT@256..260 "<td>"
-      NEWLINE@260..261 "\n"
-      TEXT@261..281 "This is *emphasized*"
-      NEWLINE@281..282 "\n"
-      TEXT@282..287 "</td>"
-      NEWLINE@287..288 "\n"
-      TEXT@288..292 "<td>"
-      NEWLINE@292..293 "\n"
-      TEXT@293..315 "And this is **strong**"
-      NEWLINE@315..316 "\n"
-      TEXT@316..321 "</td>"
-      NEWLINE@321..322 "\n"
-      TEXT@322..327 "</tr>"
-      NEWLINE@327..328 "\n"
+    HTML_BLOCK@251..328
+      HTML_BLOCK_TAG@251..256
+        TEXT@251..255 "<tr>"
+        NEWLINE@255..256 "\n"
+      HTML_BLOCK@256..288
+        HTML_BLOCK_TAG@256..261
+          TEXT@256..260 "<td>"
+          NEWLINE@260..261 "\n"
+        PLAIN@261..282
+          TEXT@261..269 "This is "
+          EMPHASIS@269..281
+            EMPHASIS_MARKER@269..270 "*"
+            TEXT@270..280 "emphasized"
+            EMPHASIS_MARKER@280..281 "*"
+          NEWLINE@281..282 "\n"
+        HTML_BLOCK_TAG@282..288
+          TEXT@282..287 "</td>"
+          NEWLINE@287..288 "\n"
+      HTML_BLOCK@288..322
+        HTML_BLOCK_TAG@288..293
+          TEXT@288..292 "<td>"
+          NEWLINE@292..293 "\n"
+        PLAIN@293..316
+          TEXT@293..305 "And this is "
+          STRONG@305..315
+            STRONG_MARKER@305..307 "**"
+            TEXT@307..313 "strong"
+            STRONG_MARKER@313..315 "**"
+          NEWLINE@315..316 "\n"
+        HTML_BLOCK_TAG@316..322
+          TEXT@316..321 "</td>"
+          NEWLINE@321..322 "\n"
+      HTML_BLOCK_TAG@322..328
+        TEXT@322..327 "</tr>"
+        NEWLINE@327..328 "\n"
     HTML_BLOCK_TAG@328..337
       TEXT@328..336 "</table>"
       NEWLINE@336..337 "\n"

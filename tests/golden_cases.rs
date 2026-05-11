@@ -237,6 +237,7 @@ golden_test_cases!(
     html_block_paragraph_demote,
     html_block_paragraph_then_style,
     html_block_pre_close_tag_inline_commonmark,
+    html_block_strict_block_inner_lift,
     html_inline_span_idempotent,
     ignore_directives,
     images,

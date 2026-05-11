@@ -412,3 +412,8 @@
 342
 343
 344
+
+# html-block (Fix #4 strict-block body structural lift — `<section>foo\n\nbar\n</section>` and friends project as `RawBlock + Para + Plain + RawBlock` with the trailing paragraph demoted to Plain when no blank line precedes the close, matching pandoc's `markdown_in_html_blocks` adjacency rule. Parser now lifts the inner body of clean multi-line non-div Pandoc strict-block tags (`PANDOC_BLOCK_TAGS` minus verbatim / inline-block / void / `<div>`) into structural CST children (PARAGRAPH/PLAIN/HEADING/LIST/...) when (a) outside any blockquote, (b) open tag is on its own line with no trailing content after `>`, (c) close tag is on its own line with at most whitespace indent, (d) no multi-line open. Same-line / open-trailing / butted-close / BQ-wrapped shapes stay opaque and fall through to the projector byte walker. PARAGRAPH→PLAIN retag at parse time follows the `LastParaDemote::OnlyIfLast` rule — demote only when no trailing `BLANK_LINE` separates the last paragraph from the close tag. Projector adds `html_block_has_structural_lift` + `emit_html_block_structural` to walk the lifted children directly (open `HTML_BLOCK_TAG` → RawBlock, body children → collect_block, close `HTML_BLOCK_TAG` → RawBlock), avoiding the byte-reparse path that would re-disambiguate heading auto-ids against a fresh inner `RefsCtx`. `html_block_open_tag_is_clean` predicate loosened from "TEXT exactly equal to `>`" to "TEXT ending in `>`" so it accepts both `<div>`'s split-`>` emission and non-div's whole-line TEXT.)
+345
+346
+347
