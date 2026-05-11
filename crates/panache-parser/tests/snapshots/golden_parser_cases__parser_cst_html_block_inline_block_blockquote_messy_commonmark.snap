@@ -1,0 +1,20 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+assertion_line: 97
+expression: cst_output
+---
+DOCUMENT@0..33
+  BLOCK_QUOTE@0..33
+    BLOCK_QUOTE_MARKER@0..1 ">"
+    WHITESPACE@1..2 " "
+    PARAGRAPH@2..33
+      INLINE_HTML@2..9
+        INLINE_HTML_CONTENT@2..9 "<video>"
+      TEXT@9..17 "fallback"
+      NEWLINE@17..18 "\n"
+      BLOCK_QUOTE_MARKER@18..19 ">"
+      WHITESPACE@19..20 " "
+      TEXT@20..24 "more"
+      INLINE_HTML@24..32
+        INLINE_HTML_CONTENT@24..32 "</video>"
+      NEWLINE@32..33 "\n"

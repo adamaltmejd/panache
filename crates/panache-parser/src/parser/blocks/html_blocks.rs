@@ -940,6 +940,56 @@ pub(crate) fn parse_html_block_with_wrapper(
         None
     };
 
+    // Messy-shape lift inside a blockquote — covers open-trailing
+    // (`> <div>foo\n> </div>`), butted-close (`> <div>\n> foo</div>`),
+    // and open-trailing + butted-close (`> <div>foo\n> bar</div>`).
+    // The open line does NOT balance the block (depth > 0 after the
+    // open line, distinguishing this from `same_line_bq_lift_tag` which
+    // requires depth <= 0). The close line — possibly with leading body
+    // text — closes the block when depth returns to 0. Body lines (incl.
+    // open trailing and close leading) graft via prefix re-injection.
+    let bq_messy_lift_tag: Option<&str> =
+        if bq_depth > 0 && multiline_open_end.is_none() && depth_aware_tag.is_some() && depth > 0 {
+            if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+                Some("div")
+            } else if wrapper_kind == SyntaxKind::HTML_BLOCK {
+                match &block_type {
+                    HtmlBlockType::BlockTag {
+                        tag_name,
+                        is_verbatim: false,
+                        closed_by_blank_line: false,
+                        depth_aware: true,
+                        closes_at_open_tag: false,
+                        is_closing: false,
+                    } if is_pandoc_lift_eligible_block_tag(tag_name) => {
+                        // Inline-block matched-pair tags (`<video>`, `<iframe>`,
+                        // …) abandon the lift when the body starts at a
+                        // fresh-block position with a void block tag. Same gate
+                        // as the non-bq matched-pair lift (`strict_block_lift`).
+                        if is_pandoc_inline_block_tag_name(tag_name)
+                            && inline_block_void_interior_abandons(
+                                first_inner,
+                                lines,
+                                start_pos,
+                                multiline_open_end,
+                                bq_depth,
+                                tag_name,
+                            )
+                        {
+                            None
+                        } else {
+                            Some(tag_name.as_str())
+                        }
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
     // Whether this block participates in the Phase 6 structural lift
     // (recursively parse body as Pandoc markdown and graft children).
     // Covers `<div>` outside blockquote context. For same-line shapes
@@ -950,7 +1000,8 @@ pub(crate) fn parse_html_block_with_wrapper(
         && bq_depth == 0
         && (!is_same_line_div || same_line_div_lift_safe))
         || strict_block_lift
-        || same_line_bq_lift_tag.is_some();
+        || same_line_bq_lift_tag.is_some()
+        || bq_messy_lift_tag.is_some();
 
     // Trailing content from the open tag (after `>`). When the lift is
     // active and the open line is `<div ATTRS>foo\n`, this captures
@@ -998,16 +1049,16 @@ pub(crate) fn parse_html_block_with_wrapper(
             } else if let Some(name) =
                 bq_strict_attr_emit_tag_name(wrapper_kind, &block_type, bq_depth)
             {
-                // Inside a blockquote we don't drive the full body lift
-                // here for the multi-line / butted-close / open-trailing
-                // shapes (those go through the `bq_clean_lift` path or
-                // the projector byte walker). But for the same-line bq
-                // shape (`> <tag>body</tag>`) we DO lift trailing bytes
-                // into `pre_content` so the `same_line_closed` branch
-                // can graft the body and emit a separate close tag.
-                // CST bytes stay byte-identical to source either way —
-                // we only tokenize at finer granularity.
-                let lift_trailing = same_line_bq_lift_tag == Some(name);
+                // Inside a blockquote, lift trailing bytes into
+                // `pre_content` when either the same-line bq gate fires
+                // (`> <tag>body</tag>` — handled by `same_line_closed`)
+                // or the messy-shape bq gate fires (`> <tag>foo\n…\n>
+                // </tag>` and butted-close — handled at the close-marker
+                // site below). For the clean-shape bq lift the open has
+                // no trailing bytes regardless, so `lift_trailing=true`
+                // is a no-op there.
+                let lift_trailing =
+                    same_line_bq_lift_tag == Some(name) || bq_messy_lift_tag == Some(name);
                 let trailing =
                     emit_open_tag_tokens(builder, line_without_newline, name, lift_trailing);
                 if lift_trailing && !trailing.is_empty() {
@@ -1245,6 +1296,59 @@ pub(crate) fn parse_html_block_with_wrapper(
                 break;
             }
 
+            // Bq messy-shape lift — single-line open with trailing or
+            // butted-close (or both). `pre_content` already captures any
+            // open-trailing bytes (open `HTML_BLOCK_TAG` ends at `>`);
+            // strip the close line's bq markers before splitting so
+            // `leading` and `close_part` are bq-prefix-free. Body parses
+            // recursively from `pre_content + stripped(content_lines) +
+            // leading`, with per-line bq prefixes re-injected so the CST
+            // stays byte-equal to the source. Demote: div is keyed on
+            // close-butted-ness (Plain when leading non-empty, Para
+            // otherwise); non-div uses OnlyIfLast either way.
+            if let Some(tag_name) = bq_messy_lift_tag {
+                let close_stripped = strip_n_blockquote_markers(line, bq_depth);
+                let close_prefix_len = line.len() - close_stripped.len();
+                let close_prefix = &line[..close_prefix_len];
+                if let Some((leading, close_part)) = try_split_close_line(close_stripped, tag_name)
+                {
+                    let policy = if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+                        if leading.is_empty() {
+                            LastParaDemote::Never
+                        } else {
+                            LastParaDemote::SkipTrailingBlanks
+                        }
+                    } else {
+                        LastParaDemote::OnlyIfLast
+                    };
+                    emit_html_block_body_lifted_bq_messy(
+                        builder,
+                        &pre_content,
+                        &content_lines,
+                        leading,
+                        close_prefix,
+                        bq_depth,
+                        policy,
+                        config,
+                    );
+                    builder.start_node(SyntaxKind::HTML_BLOCK_TAG.into());
+                    // When `leading` is empty, no recursive-parse output carries
+                    // the close line's bq prefix, so emit it here before the
+                    // close tag. When `leading` is non-empty,
+                    // `emit_html_block_body_lifted_bq_messy` already injected
+                    // the prefix at the start of the leading bytes (via the
+                    // BqPrefixState entry); emitting again would double the
+                    // prefix bytes and break losslessness.
+                    if leading.is_empty() {
+                        emit_bq_prefix_tokens(builder, close_prefix);
+                    }
+                    emit_html_block_line(builder, close_part, 0);
+                    builder.finish_node();
+                    current_pos += 1;
+                    break;
+                }
+            }
+
             // Under lift mode, try to split the close line into a
             // leading "body content" prefix and a clean `</tag>...`
             // remainder. Lift only when the close line has exactly one
@@ -1462,6 +1566,60 @@ fn emit_html_block_body_lifted_bq(
         "",
         &stripped_lines,
         "",
+        demote_policy,
+        config,
+        &mut bq,
+    )
+}
+
+/// Body-lift variant for the bq messy-shape lift — open-trailing,
+/// butted-close, or both. The open-trailing bytes (if any) sit in
+/// `pre_content` (line 0 of the body — no bq prefix in source because
+/// line 0's `> ` is consumed by the outer BLOCK_QUOTE). Content lines
+/// each carry their own bq prefix. The close line's `leading` (body
+/// bytes before `</tag>`) sits on the close line, prefixed in source
+/// by `close_line_prefix` (the bq prefix captured from `line`).
+///
+/// Builds `prefixes` so each emitted line in the recursive parse
+/// output gets the right per-line bq prefix re-injected at line start:
+/// `pre_content` → empty prefix (no source `> ` precedes it); each
+/// content line → its stripped prefix; `leading` → `close_line_prefix`.
+/// Result CST stays byte-equal to source.
+#[allow(clippy::too_many_arguments)]
+fn emit_html_block_body_lifted_bq_messy(
+    builder: &mut GreenNodeBuilder<'static>,
+    pre_content: &str,
+    content_lines: &[&str],
+    leading: &str,
+    close_line_prefix: &str,
+    bq_depth: usize,
+    demote_policy: LastParaDemote,
+    config: &ParserOptions,
+) {
+    let mut prefixes: Vec<String> = Vec::new();
+    if !pre_content.is_empty() {
+        prefixes.push(String::new());
+    }
+    let mut stripped_lines: Vec<&str> = Vec::with_capacity(content_lines.len());
+    for cl in content_lines {
+        let stripped = strip_n_blockquote_markers(cl, bq_depth);
+        let prefix_len = cl.len() - stripped.len();
+        prefixes.push(cl[..prefix_len].to_string());
+        stripped_lines.push(stripped);
+    }
+    if !leading.is_empty() {
+        prefixes.push(close_line_prefix.to_string());
+    }
+    let mut bq = Some(BqPrefixState {
+        prefixes,
+        line_idx: 0,
+        at_line_start: true,
+    });
+    emit_html_block_body_lifted_inner(
+        builder,
+        pre_content,
+        &stripped_lines,
+        leading,
         demote_policy,
         config,
         &mut bq,
