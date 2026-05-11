@@ -1,0 +1,25 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..45
+  HTML_BLOCK@0..21
+    HTML_BLOCK_TAG@0..8
+      TEXT@0..7 "<VIDEO>"
+      NEWLINE@7..8 "\n"
+    HTML_BLOCK_CONTENT@8..21
+      TEXT@8..11 "foo"
+      NEWLINE@11..12 "\n"
+      TEXT@12..20 "</VIDEO>"
+      NEWLINE@20..21 "\n"
+  BLANK_LINE@21..22
+    BLANK_LINE@21..22 "\n"
+  HTML_BLOCK@22..45
+    HTML_BLOCK_TAG@22..31
+      TEXT@22..30 "<Iframe>"
+      NEWLINE@30..31 "\n"
+    HTML_BLOCK_CONTENT@31..45
+      TEXT@31..34 "bar"
+      NEWLINE@34..35 "\n"
+      TEXT@35..44 "</Iframe>"
+      NEWLINE@44..45 "\n"

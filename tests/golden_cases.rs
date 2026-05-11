@@ -232,6 +232,7 @@ golden_test_cases!(
     horizontal_rules,
     html_block,
     html_block_commonmark_type6_type7,
+    html_block_div_blockquote_idempotent,
     html_block_div_idempotent,
     html_block_div_nested_idempotent,
     html_block_paragraph_demote,

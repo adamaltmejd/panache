@@ -14,10 +14,15 @@ DOCUMENT@0..58
           TEXT@7..30 "id=\"warn\" class=\"alert\""
         TEXT@30..31 ">"
         NEWLINE@31..32 "\n"
-      HTML_BLOCK_CONTENT@32..49
+      PARAGRAPH@32..49
         BLOCK_QUOTE_MARKER@32..33 ">"
         WHITESPACE@33..34 " "
-        TEXT@34..48 "Hello *world*."
+        TEXT@34..40 "Hello "
+        EMPHASIS@40..47
+          EMPHASIS_MARKER@40..41 "*"
+          TEXT@41..46 "world"
+          EMPHASIS_MARKER@46..47 "*"
+        TEXT@47..48 "."
         NEWLINE@48..49 "\n"
       HTML_BLOCK_TAG@49..58
         BLOCK_QUOTE_MARKER@49..50 ">"

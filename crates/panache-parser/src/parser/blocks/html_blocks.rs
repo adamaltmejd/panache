@@ -1050,6 +1050,45 @@ pub(crate) fn parse_html_block_with_wrapper(
             log::trace!("Found HTML block closing at line {}", current_pos + 1);
             found_closing = true;
 
+            // Pandoc-dialect blockquote-wrapped `<div>` clean-shape lift:
+            // when the open and close tags stand alone on their source
+            // lines (no trailing on open, no body content on close after
+            // stripping bq markers), lift the body lines structurally so
+            // the projector walks CST children instead of byte-reparsing
+            // via `collect_html_block_text_skip_bq_markers`. Other shapes
+            // (butted-close / open-trailing / same-line inside bq) still
+            // fall through to the opaque path.
+            let bq_div_clean_lift = wrapper_kind == SyntaxKind::HTML_BLOCK_DIV
+                && bq_depth > 0
+                && multiline_open_end.is_none()
+                && pre_content.is_empty()
+                && {
+                    let (open_no_nl, _) = strip_newline(first_inner);
+                    open_no_nl.trim_end_matches([' ', '\t']).ends_with('>')
+                }
+                && {
+                    let close_stripped = strip_n_blockquote_markers(line, bq_depth);
+                    let (close_no_nl, _) = strip_newline(close_stripped);
+                    close_no_nl
+                        .trim_start_matches([' ', '\t'])
+                        .starts_with("</")
+                };
+
+            if bq_div_clean_lift {
+                emit_html_block_body_lifted_bq(
+                    builder,
+                    &content_lines,
+                    bq_depth,
+                    LastParaDemote::Never,
+                    config,
+                );
+                builder.start_node(SyntaxKind::HTML_BLOCK_TAG.into());
+                emit_html_block_line(builder, line, bq_depth);
+                builder.finish_node();
+                current_pos += 1;
+                break;
+            }
+
             // Under lift mode, try to split the close line into a
             // leading "body content" prefix and a clean `</tag>...`
             // remainder. Lift only when the close line has exactly one
@@ -1224,6 +1263,64 @@ fn emit_html_block_body_lifted(
     demote_policy: LastParaDemote,
     config: &ParserOptions,
 ) {
+    emit_html_block_body_lifted_inner(
+        builder,
+        pre_content,
+        content_lines,
+        post_content,
+        demote_policy,
+        config,
+        &mut None,
+    )
+}
+
+/// Body-lift variant for `<div>` inside a blockquote. Strips
+/// `bq_depth` levels of blockquote markers from each `content_line`,
+/// captures the per-line prefix bytes, and grafts the recursive parse
+/// with prefix injection so the output CST stays byte-equal to the
+/// source. `pre_content` and `post_content` must be empty (the bq
+/// clean lift only handles the shape where the open and close tags
+/// stand alone on their source lines).
+fn emit_html_block_body_lifted_bq(
+    builder: &mut GreenNodeBuilder<'static>,
+    content_lines: &[&str],
+    bq_depth: usize,
+    demote_policy: LastParaDemote,
+    config: &ParserOptions,
+) {
+    let mut prefixes: Vec<String> = Vec::with_capacity(content_lines.len());
+    let mut stripped_lines: Vec<&str> = Vec::with_capacity(content_lines.len());
+    for cl in content_lines {
+        let stripped = strip_n_blockquote_markers(cl, bq_depth);
+        let prefix_len = cl.len() - stripped.len();
+        prefixes.push(cl[..prefix_len].to_string());
+        stripped_lines.push(stripped);
+    }
+    let mut bq = Some(BqPrefixState {
+        prefixes,
+        line_idx: 0,
+        at_line_start: true,
+    });
+    emit_html_block_body_lifted_inner(
+        builder,
+        "",
+        &stripped_lines,
+        "",
+        demote_policy,
+        config,
+        &mut bq,
+    )
+}
+
+fn emit_html_block_body_lifted_inner(
+    builder: &mut GreenNodeBuilder<'static>,
+    pre_content: &str,
+    content_lines: &[&str],
+    post_content: &str,
+    demote_policy: LastParaDemote,
+    config: &ParserOptions,
+    bq: &mut Option<BqPrefixState>,
+) {
     if pre_content.is_empty() && content_lines.is_empty() && post_content.is_empty() {
         return;
     }
@@ -1242,7 +1339,23 @@ fn emit_html_block_body_lifted(
     let refdefs = config.refdef_labels.clone().unwrap_or_default();
     inner_options.refdef_labels = Some(refdefs.clone());
     let inner_root = crate::parser::parse_with_refdefs(&inner_text, Some(inner_options), refdefs);
-    graft_document_children(builder, &inner_root, demote_policy);
+    graft_document_children(builder, &inner_root, demote_policy, bq);
+}
+
+/// Per-line blockquote-prefix injection state used by the graft helpers
+/// when the lifted body originated inside a `> …` blockquote: the
+/// recursive parse was fed the bq-stripped text, so the prefix bytes
+/// (`BLOCK_QUOTE_MARKER` + `WHITESPACE`) must be re-emitted at the
+/// start of each source line to keep the CST byte-equal to the source.
+///
+/// `prefixes[i]` is the literal prefix bytes for source line `i` of the
+/// body (e.g. `"> "`, `">  "`, or `">"`). `line_idx` is the index of
+/// the next prefix to emit; `at_line_start` flips to `true` after every
+/// `NEWLINE` so the next token triggers prefix emission.
+struct BqPrefixState {
+    prefixes: Vec<String>,
+    line_idx: usize,
+    at_line_start: bool,
 }
 
 /// Walk a parsed inner document's top-level children and re-emit them
@@ -1251,10 +1364,15 @@ fn emit_html_block_body_lifted(
 ///
 /// `demote_policy` controls whether a trailing `PARAGRAPH` is retagged
 /// as `PLAIN` — see [`LastParaDemote`].
+///
+/// `bq` is `Some` when grafting a body that lived inside a blockquote
+/// — token emission then injects `BLOCK_QUOTE_MARKER + WHITESPACE`
+/// prefix tokens at line starts. See [`BqPrefixState`].
 fn graft_document_children(
     builder: &mut GreenNodeBuilder<'static>,
     doc: &SyntaxNode,
     demote_policy: LastParaDemote,
+    bq: &mut Option<BqPrefixState>,
 ) {
     let children: Vec<rowan::NodeOrToken<SyntaxNode, _>> = doc.children_with_tokens().collect();
 
@@ -1290,13 +1408,13 @@ fn graft_document_children(
         match child {
             rowan::NodeOrToken::Node(n) => {
                 if Some(i) == demote_idx {
-                    graft_subtree_as(builder, &n, SyntaxKind::PLAIN);
+                    graft_subtree_as(builder, &n, SyntaxKind::PLAIN, bq);
                 } else {
-                    graft_subtree(builder, &n);
+                    graft_subtree(builder, &n, bq);
                 }
             }
             rowan::NodeOrToken::Token(t) => {
-                builder.token(t.kind().into(), t.text());
+                emit_grafted_token(builder, t.kind(), t.text(), bq);
             }
         }
     }
@@ -1304,25 +1422,78 @@ fn graft_document_children(
 
 /// Recursively re-emit `node` and its descendants into `builder`.
 /// Token text is copied verbatim so the result is byte-identical to
-/// the input span.
-fn graft_subtree(builder: &mut GreenNodeBuilder<'static>, node: &SyntaxNode) {
-    graft_subtree_as(builder, node, node.kind());
+/// the input span (modulo bq prefix tokens injected at line starts
+/// when `bq` is `Some`).
+fn graft_subtree(
+    builder: &mut GreenNodeBuilder<'static>,
+    node: &SyntaxNode,
+    bq: &mut Option<BqPrefixState>,
+) {
+    graft_subtree_as(builder, node, node.kind(), bq);
 }
 
 /// Like `graft_subtree` but the outer wrapper's `SyntaxKind` is
 /// overridden. Used to retag a top-level `PARAGRAPH` as `PLAIN` for
 /// the close-butted demotion rule.
-fn graft_subtree_as(builder: &mut GreenNodeBuilder<'static>, node: &SyntaxNode, kind: SyntaxKind) {
+fn graft_subtree_as(
+    builder: &mut GreenNodeBuilder<'static>,
+    node: &SyntaxNode,
+    kind: SyntaxKind,
+    bq: &mut Option<BqPrefixState>,
+) {
     builder.start_node(kind.into());
     for child in node.children_with_tokens() {
         match child {
-            rowan::NodeOrToken::Node(n) => graft_subtree(builder, &n),
+            rowan::NodeOrToken::Node(n) => graft_subtree(builder, &n, bq),
             rowan::NodeOrToken::Token(t) => {
-                builder.token(t.kind().into(), t.text());
+                emit_grafted_token(builder, t.kind(), t.text(), bq);
             }
         }
     }
     builder.finish_node();
+}
+
+/// Emit a single token while optionally injecting blockquote prefix
+/// tokens at line starts. When `bq` is `None`, this is a plain
+/// `builder.token()` passthrough.
+fn emit_grafted_token(
+    builder: &mut GreenNodeBuilder<'static>,
+    kind: SyntaxKind,
+    text: &str,
+    bq: &mut Option<BqPrefixState>,
+) {
+    if let Some(state) = bq.as_mut() {
+        if state.at_line_start {
+            if let Some(prefix) = state.prefixes.get(state.line_idx) {
+                emit_bq_prefix_tokens(builder, prefix);
+            }
+            state.at_line_start = false;
+        }
+        builder.token(kind.into(), text);
+        // `BLANK_LINE` token represents an entirely blank source line —
+        // its text is `\n`. Treat both `NEWLINE` and the `BLANK_LINE`
+        // token as line-ending so the per-line prefix index advances
+        // correctly.
+        if kind == SyntaxKind::NEWLINE || kind == SyntaxKind::BLANK_LINE {
+            state.line_idx += 1;
+            state.at_line_start = true;
+        }
+    } else {
+        builder.token(kind.into(), text);
+    }
+}
+
+/// Emit a captured per-line bq prefix as a stream of `BLOCK_QUOTE_MARKER`
+/// (`>`) and `WHITESPACE` (everything else, byte-by-byte) tokens.
+fn emit_bq_prefix_tokens(builder: &mut GreenNodeBuilder<'static>, prefix: &str) {
+    for ch in prefix.chars() {
+        if ch == '>' {
+            builder.token(SyntaxKind::BLOCK_QUOTE_MARKER.into(), ">");
+        } else {
+            let mut buf = [0u8; 4];
+            builder.token(SyntaxKind::WHITESPACE.into(), ch.encode_utf8(&mut buf));
+        }
+    }
 }
 
 /// Locate the byte index (within `line`) of the open-tag's closing `>`
