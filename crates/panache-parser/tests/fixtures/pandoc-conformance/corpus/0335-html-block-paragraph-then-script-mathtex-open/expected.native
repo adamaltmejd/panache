@@ -1,0 +1,10 @@
+[ Para
+    [ Str "foo"
+    , SoftBreak
+    , RawInline (Format "html") "<script type=\"math/tex\">"
+    , Str "x^2"
+    , RawInline (Format "html") "</script>"
+    , SoftBreak
+    , Str "bar"
+    ]
+]

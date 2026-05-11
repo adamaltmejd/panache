@@ -56,6 +56,7 @@ use super::blocks::tables::{
     try_parse_pipe_table, try_parse_simple_table,
 };
 use super::inlines::links::{LinkScanContext, try_parse_inline_image};
+use super::utils::attributes::parse_html_tag_attributes;
 use super::utils::container_stack::{byte_index_at_column, leading_indent};
 use super::utils::helpers::{strip_newline, trim_end_newlines};
 use super::utils::marker_utils::parse_blockquote_marker_info;
@@ -1742,6 +1743,27 @@ impl BlockParser for FencedCodeBlockParser {
 // HTML Block Parser (position #9)
 // ============================================================================
 
+/// Whether the leading `<script ...>` open tag in `content` has a
+/// `type` attribute whose value starts with `math/tex` (case-insensitive).
+/// Mirrors pandoc's `isInlineTag` special case for `<script>` opens:
+/// only the `math/tex…` flavor is treated as inline mid-paragraph;
+/// every other `<script>` open is a `RawBlock` start.
+fn is_math_tex_script_open(content: &str) -> bool {
+    let trimmed = content.trim_start();
+    if !trimmed
+        .get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("<script"))
+    {
+        return false;
+    }
+    let Some(attrs) = parse_html_tag_attributes(trimmed) else {
+        return false;
+    };
+    attrs.key_values.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("type") && v.to_ascii_lowercase().starts_with("math/tex")
+    })
+}
+
 pub(crate) struct HtmlBlockParser;
 
 impl BlockParser for HtmlBlockParser {
@@ -1810,12 +1832,12 @@ impl BlockParser for HtmlBlockParser {
         //     inline (pandoc commit fixing issue #10643), regardless of
         //     `style` being in `blockHtmlTags`.
         //   - `</script>` close is similarly special-cased to always be
-        //     inline (`<script>` open is inline only when
-        //     `type="math/tex…"`, which we do not yet detect — see
-        //     `tests/pandoc/blocked.txt`).
+        //     inline. `<script>` open is inline only when its `type`
+        //     attribute starts with `math/tex` (case-insensitive prefix
+        //     match on 8 chars, e.g. `math/tex`, `math/tex; mode=display`).
         //   - PIs (`<? … ?>`) and HTML comments are inline.
-        // `<pre>`, `<textarea>`, and `<script>` open without math/tex DO
-        // interrupt — they're in `blockTags` and have no `isInlineTag`
+        // `<pre>`, `<textarea>`, and `<script>` open without `type="math/tex…"`
+        // DO interrupt — they're in `blockTags` and have no `isInlineTag`
         // override.
         let is_pandoc = ctx.config.dialect == crate::options::Dialect::Pandoc;
         let cannot_interrupt = matches!(block_type, HtmlBlockType::Type7)
@@ -1826,7 +1848,10 @@ impl BlockParser for HtmlBlockParser {
                     if is_pandoc_inline_block_tag_name(tag_name)
                         || is_pandoc_void_block_tag_name(tag_name)
                         || tag_name.eq_ignore_ascii_case("style")
-                        || (*is_closing && tag_name.eq_ignore_ascii_case("script"))));
+                        || (*is_closing && tag_name.eq_ignore_ascii_case("script"))
+                        || (!*is_closing
+                            && tag_name.eq_ignore_ascii_case("script")
+                            && is_math_tex_script_open(ctx.content))));
         let detection = if cannot_interrupt {
             if ctx.has_blank_before || ctx.at_document_start {
                 BlockDetectionResult::Yes

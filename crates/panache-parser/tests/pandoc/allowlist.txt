@@ -391,8 +391,11 @@
 331
 332
 
-# html-block (`</script>` close cannot interrupt a paragraph under Pandoc — `foo\n</script>\n` stays as `Para[foo, SoftBreak, RawInline</script>]` matching pandoc-native. Pandoc's `isInlineTag` SPECIAL-CASES `</script>` (close form) to always be inline, regardless of `<script>` open being a block start. `<script>` open WITHOUT `type="math/tex…"` still interrupts; `<script>` open WITH `type="math/tex…"` should also be inline (pandoc inlines it) but recognizing this requires plumbing the attr through the BlockTag payload — left for a follow-up. Parser-side: added `is_closing: bool` field to `HtmlBlockType::BlockTag`; `cannot_interrupt` matches `is_closing && tag_name == "script"`.)
+# html-block (`</script>` close cannot interrupt a paragraph under Pandoc — `foo\n</script>\n` stays as `Para[foo, SoftBreak, RawInline</script>]` matching pandoc-native. Pandoc's `isInlineTag` SPECIAL-CASES `</script>` (close form) to always be inline, regardless of `<script>` open being a block start. Parser-side: added `is_closing: bool` field to `HtmlBlockType::BlockTag`; `cannot_interrupt` matches `is_closing && tag_name == "script"`.)
 333
 
 # citation (bracketed citation prefix may contain ordinary parens and `\@`-escaped at-signs without aborting citation detection; matches pandoc's NormalCitation with the prefix captured as ordinary inlines, e.g. `[see (Smith 1999) and @doe99]` and `[see \@ref(svm) and @bischl_applied_2024]`)
 334
+
+# html-block (`<script type="math/tex…">` open cannot interrupt a paragraph under Pandoc — `foo\n<script type="math/tex">x</script>\nbar\n` stays as a single `Para[foo, SoftBreak, RawInline<script…>, Str x, RawInline</script>, SoftBreak, bar]` matching pandoc-native. Pandoc's `isInlineTag` SPECIAL-CASES `<script>` open with a `type` attribute whose value has the `math/tex` prefix (case-insensitive, e.g. `math/tex`, `math/tex; mode=display`) to always be inline; every other `<script>` open is a `RawBlock` start (`<pre>`, `<textarea>`, `<script>` without math/tex DO interrupt). Parser-side: `cannot_interrupt` in `HtmlBlockParser::detect_prepared` consults `is_math_tex_script_open(ctx.content)`, which parses the open tag's attributes via `parse_html_tag_attributes` and matches `type` values that start with `math/tex` (case-insensitive prefix). At fresh-block positions (`<script type="math/tex">…</script>` alone, or after a blank line) the tag still lifts to `RawBlock` per pandoc-native; only the mid-paragraph case takes the inline path.)
+335

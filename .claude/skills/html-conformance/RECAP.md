@@ -119,34 +119,39 @@ back into a session entry only if it's purely historical.
   `script` to `PANDOC_INLINE_BLOCK_TAGS`. Likewise `<pre>`,
   `<style>`, `<textarea>` membership in `PANDOC_BLOCK_TAGS` is
   harmless — the verbatim arm fires first.
-- **`<style>`, PIs, and `</script>` cannot interrupt a paragraph
-  under Pandoc; `<pre>`/`<script>` open/`<textarea>` DO** (LANDED
-  2026-05-10). The non-interrupt set mirrors pandoc's `isInlineTag`
-  predicate (`pandoc/src/Text/Pandoc/Readers/HTML.hs`):
+- **`<style>`, PIs, `</script>`, and `<script type="math/tex…">`
+  cannot interrupt a paragraph under Pandoc; `<pre>`/`<script>` open
+  without math/tex/`<textarea>` DO** (LANDED 2026-05-10 / 2026-05-11).
+  The non-interrupt set mirrors pandoc's `isInlineTag` predicate
+  (`pandoc/src/Text/Pandoc/Readers/HTML.hs`):
   - `<style>` open AND close are SPECIAL-CASED to always be inline
     (commit fixing pandoc issue #10643).
-  - `</script>` close is similarly special-cased to always be
-    inline. `<script>` open is inline ONLY when
-    `type="math/tex…"`, which we do not yet detect — that case
-    still wrongly interrupts; left for a follow-up.
+  - `</script>` close is similarly special-cased to always be inline.
+  - `<script>` open is inline ONLY when the `type` attribute starts
+    with `math/tex` (case-insensitive prefix; e.g. `math/tex`,
+    `math/tex; mode=display`). Every other `<script>` open is a
+    `RawBlock`.
   - PIs (`<? … ?>`) match `T.take 1 name == "?"`.
   - Comments are always inline.
   - Pandoc's `eitherBlockOrInline` set (audio, button, iframe, …,
     plus void area/embed/source/track) returns True from
     `isInlineTag` because those tags are NOT in `blockTags`.
   Earlier RECAP entries claimed `<style>` was "the lone verbatim
-  tag NOT in `blockHtmlTags` (verbatimHtmlBlocks only)" — that was
-  wrong; pandoc's `blockHtmlTags` does include `style` (and
-  `textarea`). The behavior difference comes from `isInlineTag`'s
-  special cases, not tag-set membership. Fix: `cannot_interrupt`
-  in `HtmlBlockParser::detect_prepared` includes
+  tag NOT in `blockHtmlTags` (verbatimHtmlBlocks only)" — wrong;
+  pandoc's `blockHtmlTags` does include `style` and `textarea`. The
+  behavior difference comes from `isInlineTag`'s special cases, not
+  tag-set membership. Fix: `cannot_interrupt` in
+  `HtmlBlockParser::detect_prepared` includes
   `HtmlBlockType::ProcessingInstruction`, `BlockTag`s where
-  `tag_name == "style"`, and `BlockTag`s where
-  `is_closing && tag_name == "script"` under `Dialect::Pandoc`.
-  Required adding an `is_closing: bool` field to
-  `HtmlBlockType::BlockTag` (carries through every literal site).
-  CommonMark stays liberal — paired CM/Pandoc parser fixtures pin
-  any divergence.
+  `tag_name == "style"`, `BlockTag`s where
+  `is_closing && tag_name == "script"`, and `BlockTag`s where
+  `!is_closing && tag_name == "script" && is_math_tex_script_open(ctx.content)`
+  under `Dialect::Pandoc`. The math/tex helper inspects only
+  `ctx.content` (single-line opens); multi-line `<script\n type="math/tex">`
+  opens are an edge case not yet exercised by the corpus. Required
+  adding an `is_closing: bool` field to `HtmlBlockType::BlockTag`
+  (carries through every literal site). CommonMark stays liberal —
+  paired CM/Pandoc parser fixtures pin any divergence.
 
 ### Projector tag splitting
 
@@ -260,7 +265,7 @@ how pandoc itself sub-parses cell content and can stay.
 | 3 | Sectioning + verbatim corpus pin; `eitherBlockOrInline` lift | **Conformance landed** — non-void (2026-05-09); void (`<embed>`/`<area>`/`<source>`/`<track>`) (2026-05-10). Implementation leans on projector-side `inline_pending` tracking + byte walker; CST still opaque for split/matched-pair shapes. |
 | 4 | Comments, PIs, declarations, CDATA projection | **Conformance landed** (2026-05-08); type-4 CM lowercase still gappy. CST opaque (these constructs project as RawBlock / RawInline). |
 | 5 | `markdown_in_html_blocks` interaction edge cases | **Conformance landed** — depth-aware nested div, Plain/Para promotion, refs inheritance, **projector-level splitter** (`split_html_block_by_tags` byte walker + `parse_pandoc_blocks` recursive reparse), outer-matched-pair-abandons-on-void-interior. **The structural CST lift was deferred** — Phase 5's mechanism is the projector reparsing bytes, not the parser emitting structure. |
-| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` gets `PARAGRAPH` / `LIST` / etc. as direct children; `split_html_block_by_tags` / `flush_html_block_*` / `parse_pandoc_blocks` collapse into trivial CST walks; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **Fix #1 landed (2026-05-10)** — `PARAGRAPH→PLAIN` retag at YesCanInterrupt for HTML BlockTag under Pandoc; +5 (132 → 137 html). **`<style>` + PI sub-target landed (2026-05-10)** — `cannot_interrupt` under Pandoc; +3 (137 → 140). **Fix #2 landed (2026-05-10)** — `html_div_block` reads open-tag attrs via `HTML_BLOCK_TAG → HTML_ATTRS` CST walk; pure projector cleanup, no delta. **`</script>` close cannot_interrupt landed (2026-05-10)** — `is_closing` field added to `HtmlBlockType::BlockTag`; +1 (140 → 141). Fixes #3-#4 from AUDIT.md still pending: lift `<div>` inner blocks into CST children, full `HTML_BLOCK` body structural split. Plus `<script type="math/tex">` open follow-up. |
+| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` gets `PARAGRAPH` / `LIST` / etc. as direct children; `split_html_block_by_tags` / `flush_html_block_*` / `parse_pandoc_blocks` collapse into trivial CST walks; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **Fix #1 landed (2026-05-10)** — `PARAGRAPH→PLAIN` retag at YesCanInterrupt for HTML BlockTag under Pandoc; +5 (132 → 137 html). **`<style>` + PI sub-target landed (2026-05-10)** — `cannot_interrupt` under Pandoc; +3 (137 → 140). **Fix #2 landed (2026-05-10)** — `html_div_block` reads open-tag attrs via `HTML_BLOCK_TAG → HTML_ATTRS` CST walk; pure projector cleanup, no delta. **`</script>` close cannot_interrupt landed (2026-05-10)** — `is_closing` field added to `HtmlBlockType::BlockTag`; +1 (140 → 141). **`<script type="math/tex…">` open cannot_interrupt landed (2026-05-11)** — `is_math_tex_script_open` helper inspects `ctx.content` attrs; +1 (141 → 142). Fixes #3-#4 from AUDIT.md still pending: lift `<div>` inner blocks into CST children, full `HTML_BLOCK` body structural split. |
 
 Multi-line `<div>` open-tag structural HTML_ATTRS lift landed
 (2026-05-09). Multi-line void open-tag now lifts via
@@ -274,74 +279,86 @@ and CAN interrupt a running paragraph (no `cannot_interrupt` gate)
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-10 (verbatim tag-set audit; `</script>` close cannot_interrupt; corrected `<style>` rationalization)
+## Latest session — 2026-05-11 (`<script type="math/tex…">` open cannot_interrupt)
 
-Audited panache tag-set constants against pandoc's
-`Readers/HTML/TagCategories.hs` — they match exactly. Audit
-revealed the prior trap rationalization for `<style>` was wrong:
-`<style>` IS in pandoc's `blockHtmlTags` (alongside `textarea`).
-Real reason for non-interrupt behavior is pandoc's `isInlineTag`
-predicate (`Readers/HTML.hs`), which special-cases `<style>`
-open/close (issue #10643), `</script>` close, and `<script
-type="math/tex…">` open as always-inline.
+Closed the small follow-up flagged in the previous session. Pandoc's
+`isInlineTag` special-cases `<script>` opens when the `type` attribute
+starts with `math/tex` (case-insensitive prefix; covers `math/tex`,
+`math/tex; mode=display`, etc.). Panache previously split these into
+`Plain + RawBlock + Para` mid-paragraph; pandoc keeps the whole thing
+as a single `Para` with the open/close tags as `RawInline`.
 
-`isInlineTag` probe surfaced two new divergences:
-
-1. **`</script>` close mid-para** — pandoc keeps inline; panache
-   split into Plain + RawBlock. **Fixed**: added `is_closing: bool`
-   to `HtmlBlockType::BlockTag` (threaded through every literal
-   site); extended `cannot_interrupt` in
-   `HtmlBlockParser::detect_prepared` with `is_closing &&
-   tag_name == "script"` under Pandoc. html 140 → 141 (332 → 333
-   total).
-2. **`<script type="math/tex">` open mid-para** — pandoc keeps
-   inline; panache splits. Requires plumbing tag attrs through
-   BlockTag payload. **Deferred** (noted on case 333 allowlist
-   comment).
+**Implementation**: rather than plumb tag attrs through
+`HtmlBlockType::BlockTag` (would touch every literal site), added a
+narrow `is_math_tex_script_open(content)` helper to
+`block_dispatcher.rs` that parses the open tag with
+`parse_html_tag_attributes` and matches `type` values whose
+lowercased text starts with `math/tex`. Extended `cannot_interrupt`
+in `HtmlBlockParser::detect_prepared` with
+`!is_closing && tag_name == "script" && is_math_tex_script_open(ctx.content)`
+under Pandoc dialect. At fresh-block / after-blank positions the
+tag still lifts to `RawBlock` per pandoc-native; only the
+mid-paragraph case takes the inline path.
 
 Pinning fixtures: corpus case
-`0333-html-block-paragraph-then-script-close` + paired parser
-goldens `html_block_paragraph_then_script_close_{pandoc,commonmark}`
-(both produce same INLINE_HTML-inside-PARAGRAPH shape). Allowlist
-comments for the 0330 (`<style>`/PI) section rewritten to cite
-`isInlineTag` rules.
+`0335-html-block-paragraph-then-script-mathtex-open` (renumbered from
+0334 to avoid collision with the existing `0334-citation-prefix-paren-escape`
+case) + paired parser goldens
+`html_block_paragraph_then_script_mathtex_open_{pandoc,commonmark}`.
+The shapes diverge: Pandoc keeps `INLINE_HTML` inside a single
+`PARAGRAPH`; CommonMark splits `<script>` as a verbatim
+`HTML_BLOCK` since CM has no `isInlineTag` override.
+
+Pass count: html 141 → 142 (333 → 335 total — both new conformance
+ID 335 and the earlier-session new 333; the in-between 334 is the
+existing citation case).
+
+**Multi-line `<script\n type="math/tex">`** is not exercised; the
+helper inspects only `ctx.content` (single line). Edge case;
+revisit if a corpus case lands.
 
 ### Suggested next sub-targets
 
 1. **Fix #3 — lift `<div>` inner blocks into structural CST
-   children** (Phase 6 proper, medium). Unchanged top
-   recommendation. Collapses `parse_pandoc_blocks` recursive
-   reparse + `close_butted` rule + cross-boundary `RefsCtx` swap.
-   Risk: formatter idempotency — pin formatter goldens first.
-2. **`<script type="math/tex">` open mid-para** — small follow-up.
-   Plumb attrs through BlockTag (or inspect source from
-   dispatcher) so `cannot_interrupt` matches the `type="math/tex…"`
-   prefix. Add corpus + paired parser fixture; +1 conformance.
-3. **Fix #4 — full HTML_BLOCK body structural split** (large;
-   defer until #3). Eliminates `split_html_block_by_tags`, both
-   flush helpers, `interior_starts_with_void_block_tag`,
+   children** (Phase 6 proper, medium). Top recommendation. Collapses
+   `parse_pandoc_blocks` recursive reparse + `close_butted` rule +
+   cross-boundary `RefsCtx` swap. Approach: fixture-first paired
+   goldens for `<div>\nfoo\n</div>` (Para), `<div>foo</div>` (Plain),
+   `<div>\n# h\n</div>` (Heading inside Div); change
+   `parse_html_block`'s matched-`</div>` path to invoke the block
+   dispatcher recursively instead of capturing TEXT in
+   `HTML_BLOCK_CONTENT`; update the projector to walk children.
+   Formatter idempotency is the risk surface — pin
+   `tests/fixtures/cases/` goldens before touching the projector.
+   Substantial enough to fill a session; may need sub-division.
+2. **Fix #4 — full HTML_BLOCK body structural split** (large; defer
+   until #3 lands the pattern). Eliminates `split_html_block_by_tags`,
+   both flush helpers, `interior_starts_with_void_block_tag`,
    `find_matching_html_close*`, `inline_pending` flag.
+3. **Multi-line `<script\n type=...>`** corpus pin — only if a real
+   case appears.
 
 ### Files in committable diff
 
-- `crates/panache-parser/src/parser/blocks/html_blocks.rs`,
-  `crates/panache-parser/src/parser/block_dispatcher.rs` —
-  `is_closing` field + `cannot_interrupt` extension + corrected
-  comment.
-- `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/0333-…/`
-  + `tests/pandoc/allowlist.txt` — new corpus case + revised
-  section comments.
-- `crates/panache-parser/tests/fixtures/cases/html_block_paragraph_then_script_close_{pandoc,commonmark}/`
+- `crates/panache-parser/src/parser/block_dispatcher.rs` —
+  `is_math_tex_script_open` helper + `cannot_interrupt` extension
+  + revised comment; new `parse_html_tag_attributes` import.
+- `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/0335-…/`
+  + `tests/pandoc/allowlist.txt` — new corpus case + rewritten
+  prior-session allowlist comment.
+- `crates/panache-parser/tests/fixtures/cases/html_block_paragraph_then_script_mathtex_open_{pandoc,commonmark}/`
   + `tests/golden_parser_cases.rs` + accepted snapshots — paired
   parser fixtures.
-- `.claude/skills/html-conformance/RECAP.md` — `<style>`/PI
-  Persistent trap rewritten; this Latest session.
+- `.claude/skills/html-conformance/RECAP.md` —
+  `<style>`/PI/`</script>`/math-tex bullet expanded; this Latest
+  session; demoted earlier 2026-05-10 entry to the log.
 
 ### New traps
 
-None new — the Persistent traps `<style>`/PI/cannot_interrupt
-bullet has been rewritten in place to cite `isInlineTag` and now
-also covers `</script>`.
+None new — the Persistent traps bullet about `<style>`/PI/
+`</script>`/cannot_interrupt has been expanded in place to cover
+the math/tex case, including the note that the helper inspects
+only `ctx.content` (single-line opens).
 
 --------------------------------------------------------------------------------
 
@@ -350,41 +367,42 @@ also covers `</script>`.
 Newest first. One line per session: date — phase/sub-target — pass
 count delta — root cause / lever.
 
-- 2026-05-10 — Phase 6 Fix #2 (`html_div_block` structural CST
-  walk) — html 140 → 140 — replaced byte-rescan of `<div ATTRS>`
-  with `HTML_BLOCK_TAG → HTML_ATTRS` walk; shared
-  `extract_div_inner_and_butted` + `assemble_div_block` helpers
-  (pure projector cleanup, no behavioral delta).
-- 2026-05-10 — Phase 6 sub-target (`<style>` + PI cannot_interrupt
-  under Pandoc) — html 137 → 140 — extended
-  `HtmlBlockParser::detect_prepared`'s `cannot_interrupt` to include
-  PI + BlockTag(`style`) under Pandoc. (Original session attributed
-  this to `style` being "verbatim-only NOT in blockHtmlTags" — the
-  later 2026-05-10 audit corrected this to pandoc's `isInlineTag`
-  special-case for `<style>` open/close per issue #10643.)
-- 2026-05-10 — Phase 6 Fix #1 (PARAGRAPH→PLAIN retag at HTML
-  strict/verbatim adjacency) — html 132 → 137 — new
-  `Parser::close_paragraph_as_plain_if_open` wired at YesCanInterrupt
-  in `core.rs`; gated on Pandoc + html_block + BlockTag.
+- 2026-05-10 — Tag-set audit; `</script>` close cannot_interrupt; corrected
+  `<style>` rationalization — html 140 → 141 — confirmed panache tag-set
+  constants match pandoc's `TagCategories.hs`; root cause for non-interrupt
+  set is `isInlineTag` special cases (issue #10643), not tag-set membership.
+  Added `is_closing: bool` to `HtmlBlockType::BlockTag`; extended
+  `cannot_interrupt` with `is_closing && tag_name == "script"`. Flagged
+  `<script type="math/tex">` as follow-up (closed 2026-05-11).
+- 2026-05-10 — Phase 6 Fix #2 (`html_div_block` structural CST walk)
+  — html 140 → 140 — replaced byte-rescan of `<div ATTRS>` with
+  `HTML_BLOCK_TAG → HTML_ATTRS` walk; shared
+  `extract_div_inner_and_butted` + `assemble_div_block` helpers (pure
+  projector cleanup).
+- 2026-05-10 — Phase 6 sub-target: `<style>` + PI cannot_interrupt
+  under Pandoc — html 137 → 140 — extended `cannot_interrupt` to
+  include PI + BlockTag(`style`). (Original session blamed tag-set
+  membership; the later 2026-05-10 audit corrected to pandoc's
+  `isInlineTag` special-case per issue #10643.)
+- 2026-05-10 — Phase 6 Fix #1: PARAGRAPH→PLAIN retag at HTML
+  strict/verbatim adjacency — html 132 → 137 — new
+  `Parser::close_paragraph_as_plain_if_open` at YesCanInterrupt in
+  `core.rs`; gated on Pandoc + html_block + BlockTag.
 - 2026-05-10 — Projector audit; AUDIT.md landed — html 132 → 132 —
-  inventoried `pandoc_ast.rs` (5,696 lines), classified each
-  reparse / byte walker / context-dependent decision as defensible
-  vs CST gap; produced ranked parser-side fix list (#1
-  PARAGRAPH→PLAIN, #2 `html_div_block` structural walk, #3
+  inventoried `pandoc_ast.rs` (5,696 lines); ranked parser-side fix
+  list (#1 PARAGRAPH→PLAIN, #2 `html_div_block` structural walk, #3
   `<div>` inner-block lift, #4 full HTML_BLOCK split).
 - 2026-05-10 — Course correction; aborted projector Para→Plain
   demotion reverted — html 132 → 132 — projector compensation
-  defeats the diagnostic; added "What this skill is NOT" to
-  SKILL.md and Phase 6 row to track structural-lift work.
+  defeats the diagnostic; added "What this skill is NOT" to SKILL.md.
 - 2026-05-10 — Strict-block + verbatim closing-form lift, inline-block
   matched-pair-abandons-on-void-interior, multi-line void open-tag
   recognition, incomplete open-tag projector recursion fix, Phase 3
   void `eitherBlockOrInline` lift — html 105 → 132 — new
   `try_parse_html_block_start` close-tag branches; `closes_at_open_tag`
-  for closing forms; `find_multiline_open_end` generalized;
-  `pandoc_html_open_tag_closes` gate; `PANDOC_VOID_BLOCK_TAGS`;
-  `interior_starts_with_void_block_tag`; split `_text`/`_tail_text`
-  helpers.
+  for closing forms; `pandoc_html_open_tag_closes` gate;
+  `PANDOC_VOID_BLOCK_TAGS`; `interior_starts_with_void_block_tag`;
+  split `_text`/`_tail_text` helpers.
 - 2026-05-09 — Phase 3 lifts (eitherBlockOrInline non-void; HTML5
   sectioning corpus; `<DIV>` losslessness; Phase 5 div Plain/Para +
   multi-line attrs + refs inheritance) — html 62 → 105 — context-aware

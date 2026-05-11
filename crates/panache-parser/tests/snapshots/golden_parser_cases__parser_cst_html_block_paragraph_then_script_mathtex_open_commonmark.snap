@@ -1,0 +1,15 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..45
+  PARAGRAPH@0..4
+    TEXT@0..3 "foo"
+    NEWLINE@3..4 "\n"
+  HTML_BLOCK@4..41
+    HTML_BLOCK_TAG@4..41
+      TEXT@4..40 "<script type=\"math/te ..."
+      NEWLINE@40..41 "\n"
+  PARAGRAPH@41..45
+    TEXT@41..44 "bar"
+    NEWLINE@44..45 "\n"
