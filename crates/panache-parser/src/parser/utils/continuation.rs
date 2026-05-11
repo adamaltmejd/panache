@@ -180,9 +180,41 @@ impl<'a, 'cfg> ContinuationPolicy<'a, 'cfg> {
                                 // closes the list when no item can absorb it.
                                 let jumps_out_of_shallow_list =
                                     effective_indent >= 4 && *base_indent_cols < 4;
-                                !jumps_out_of_shallow_list
-                                    && effective_indent >= *base_indent_cols
-                                    && effective_indent <= base_indent_cols + 3
+                                if jumps_out_of_shallow_list {
+                                    false
+                                } else if effective_indent >= *base_indent_cols {
+                                    effective_indent <= base_indent_cols + 3
+                                } else {
+                                    // Bullets are directional, but only when an
+                                    // outer bullet list with matching marker can
+                                    // absorb the outdented marker. With no such
+                                    // outer list, pandoc keeps the current list
+                                    // open (the marker continues this list with
+                                    // a small leftward drift). Closing here would
+                                    // split one logical list into two and surface
+                                    // as an idempotency failure once the
+                                    // formatter normalizes indents.
+                                    let has_outer_match =
+                                        containers.stack[..i].iter().any(|outer| {
+                                            matches!(
+                                                outer,
+                                                crate::parser::utils::container_stack::Container::List {
+                                                    marker: outer_marker,
+                                                    base_indent_cols: outer_base,
+                                                    ..
+                                                } if matches!(
+                                                    outer_marker,
+                                                    lists::ListMarker::Bullet(_)
+                                                ) && lists::markers_match(
+                                                    outer_marker,
+                                                    &marker_match.marker,
+                                                    self.config.dialect,
+                                                ) && *outer_base <= effective_indent
+                                            )
+                                        });
+                                    !has_outer_match
+                                        && base_indent_cols.saturating_sub(effective_indent) <= 3
+                                }
                             }
                         };
                         lists::markers_match(marker, &marker_match.marker, self.config.dialect)

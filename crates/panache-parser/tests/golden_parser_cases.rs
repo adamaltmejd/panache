@@ -355,6 +355,7 @@ golden_test_cases!(
     list_item_blockquote_inner_list,
     list_item_same_line_blockquote_marker_commonmark,
     list_item_same_line_blockquote_marker_pandoc,
+    list_bullet_outdent_after_blank_no_outer_list,
     list_marker_indent_4_below_content_col,
     list_orphan_indent4_marker_after_blank_becomes_codeblock,
     list_mixed_bullets_commonmark,

@@ -356,6 +356,7 @@ golden_test_cases!(
     issue_248_tilde_fence_paragraph_idempotency,
     issue_248_blockquote_subscript_marker_idempotency,
     issue_258_gfm_autolink,
+    issue_277_list_bullet_outdent_after_blank_idempotency,
     writer_autolinks,
     writer_blockquote_not,
     writer_definition_lists_multiblock,
