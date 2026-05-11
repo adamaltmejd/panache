@@ -298,6 +298,7 @@ golden_test_cases!(
     reference_footnotes,
     reference_images,
     reference_links,
+    unresolved_reference_intraword_underscore_pandoc,
     rmarkdown_math,
     simple_table,
     standardize_bullets,

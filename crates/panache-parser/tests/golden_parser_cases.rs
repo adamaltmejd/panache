@@ -419,6 +419,7 @@ golden_test_cases!(
     unresolved_collapsed_reference_pandoc,
     unresolved_full_reference_pandoc,
     unresolved_image_reference_pandoc,
+    unresolved_reference_intraword_underscore_pandoc,
     unresolved_shortcut_reference_pandoc,
     bug_2_emphasis_crosses_brackets_pandoc,
     rmarkdown_math,

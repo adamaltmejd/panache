@@ -94,3 +94,30 @@ fn unresolved_image_reference_round_trips() {
     let output2 = format(&output, None, None);
     assert_eq!(output, output2, "format must be idempotent");
 }
+
+#[test]
+fn literal_brackets_with_failed_emphasis_round_trip_under_single_backslash_math() {
+    // Under `tex_math_single_backslash` (default for RMarkdown/Quarto)
+    // a `\[ ... \]` pair re-parses as `DISPLAY_MATH`, so the formatter
+    // must NOT escape literal `[` / `]` to `\[` / `\]` even when the
+    // parser correctly leaves the bracket bytes as literal TEXT (e.g.
+    // the bracket-shape was demoted because of unmatched `*`
+    // emphasis inside). Without this guard, format(format(x)) splits
+    // the paragraph into a display-math block, breaking idempotency.
+    use panache_formatter::Config;
+    use panache_formatter::config::{Extensions, Flavor};
+    let flavor = Flavor::RMarkdown;
+    let config = Config {
+        flavor,
+        parser_extensions: Extensions::for_flavor(flavor),
+        ..Default::default()
+    };
+    let input = "[foo *bar more].\n";
+    let output1 = format(input, Some(config.clone()), None);
+    let output2 = format(&output1, Some(config), None);
+    assert_eq!(output1, output2, "format must be idempotent");
+    assert!(
+        !output1.contains("\\["),
+        "literal `[` must not be escaped to `\\[` under tex_math_single_backslash, got: {output1:?}"
+    );
+}

@@ -17,12 +17,19 @@ use unicode_width::UnicodeWidthStr;
 /// * `skip_emphasis_delim` - Whether to skip escaping * and _ (when direct child of EMPHASIS/STRONG)
 /// * `prev_is_text` - Whether the previous token was TEXT (for intraword underscore detection)
 /// * `next_is_text` - Whether the next token is TEXT (for intraword underscore detection)
+/// * `escape_underscores` - Whether word-boundary underscores should be escaped
+/// * `escape_square_brackets` - Whether `[` / `]` should be escaped. Callers set this
+///   to false when the surrounding extension set makes a `\[` / `\]` pair ambiguous
+///   with display math (`tex_math_single_backslash`); under that extension a bare
+///   pair of literal brackets in a paragraph would reparse as a `DISPLAY_MATH`
+///   span after escaping, breaking idempotency.
 fn escape_special_chars(
     text: &str,
     skip_emphasis_delim: bool,
     prev_is_text: bool,
     next_is_text: bool,
     escape_underscores: bool,
+    escape_square_brackets: bool,
 ) -> String {
     let mut result = String::with_capacity(text.len() * 2);
     let is_single_underscore = text == "_";
@@ -74,8 +81,14 @@ fn escape_special_chars(
                 }
                 result.push(ch);
             }
+            '[' | ']' => {
+                if escape_square_brackets {
+                    result.push('\\');
+                }
+                result.push(ch);
+            }
             // Escape special syntax characters
-            '[' | ']' | '|' | '~' | '`' => {
+            '|' | '~' | '`' => {
                 result.push('\\');
                 result.push(ch);
             }
@@ -877,6 +890,7 @@ fn process_node_recursive(
                             prev_is_text,
                             next_is_text,
                             !in_link_text,
+                            !config.parser_extensions.tex_math_single_backslash,
                         );
                         sink.push_piece(&processed_word);
                         saw_word = true;

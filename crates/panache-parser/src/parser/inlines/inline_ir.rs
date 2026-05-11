@@ -2666,6 +2666,13 @@ pub fn build_full_plans(
 /// than the run length — i.e. at least one byte of the run failed to
 /// pair as emphasis. Used by the Pandoc unresolved-reference degrade
 /// pass in [`build_full_plans`].
+///
+/// Delim runs whose flanking rules forbid both opening *and* closing
+/// (e.g. intraword `_` inside `foo_bar`) are skipped: those bytes were
+/// never a pairing candidate, so an "unmatched" count for them isn't
+/// evidence of a failed emphasis attempt. Without this exclusion every
+/// URL or identifier with an underscore inside an unresolved bracket
+/// pair would spuriously degrade the bracket-shape to literal text.
 fn range_has_unmatched_delim_bytes(events: &[IrEvent], lo: usize, hi: usize) -> bool {
     let hi = hi.min(events.len());
     for ev in &events[lo..hi] {
@@ -2673,9 +2680,14 @@ fn range_has_unmatched_delim_bytes(events: &[IrEvent], lo: usize, hi: usize) -> 
             start,
             end,
             matches,
+            can_open,
+            can_close,
             ..
         } = ev
         {
+            if !can_open && !can_close {
+                continue;
+            }
             let total = end - start;
             let matched: usize = matches.iter().map(|m| m.len as usize).sum();
             if matched < total {
@@ -3053,6 +3065,29 @@ mod tests {
             matches!(plans.emphasis.lookup(0), Some(DelimChar::Open { .. })),
             "outer `*` at byte 0 must open Emph after degrade, got {:?}",
             plans.emphasis.lookup(0)
+        );
+    }
+
+    /// Intraword `_` (e.g. inside a URL like
+    /// `hyperparameter_optimization`) is not flanking — `can_open` and
+    /// `can_close` are both false — so it can never pair as emphasis.
+    /// The degrade pass must not treat such delim runs as "failed
+    /// emphasis attempts" and demote the surrounding bracket-shape to
+    /// literal text, otherwise every URL/identifier inside an
+    /// unresolved reference round-trips through `\[` / `\]` escapes
+    /// under `tex_math_single_backslash` and reparses as display math.
+    #[test]
+    fn full_plans_unresolved_bracket_keeps_wrapper_with_intraword_underscore() {
+        let opts = pandoc_opts();
+        let text = "[foo_bar more]";
+        let plans = build_full_plans(text, 0, text.len(), &opts);
+        assert!(
+            matches!(
+                plans.brackets.lookup(0),
+                Some(BracketDispo::UnresolvedReference { .. })
+            ),
+            "wrapper must be preserved across intraword `_`, got {:?}",
+            plans.brackets.lookup(0)
         );
     }
 

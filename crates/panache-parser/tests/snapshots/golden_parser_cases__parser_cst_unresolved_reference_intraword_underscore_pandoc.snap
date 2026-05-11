@@ -1,0 +1,19 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..115
+  PARAGRAPH@0..115
+    UNRESOLVED_REFERENCE@0..113
+      LINK_START@0..1
+        LINK_START@0..1 "["
+      LINK_TEXT@1..112
+        TEXT@1..18 "see also Section "
+        CROSSREF@18..28
+          CROSSREF_BOOKDOWN_OPEN@18..24 "\\@ref("
+          CROSSREF_KEY@24..27 "svm"
+          CROSSREF_BOOKDOWN_CLOSE@27..28 ")"
+        TEXT@28..112 " and https://mlr3book ..."
+      TEXT@112..113 "]"
+    TEXT@113..114 "."
+    NEWLINE@114..115 "\n"
