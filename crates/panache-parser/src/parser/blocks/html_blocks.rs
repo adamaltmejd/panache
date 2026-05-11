@@ -728,16 +728,30 @@ pub(crate) fn parse_html_block_with_wrapper(
         depth = opens as i64 - closes as i64;
     }
 
+    // Same-line `<div>foo</div>` shape: the open line balances the
+    // block under depth-aware tracking. We can lift this structurally
+    // only when the open-tag trailing has exactly one `</div>` close,
+    // zero `<div>` opens, and no non-whitespace content after the
+    // close. Other same-line shapes (nested, trailing text, malformed)
+    // fall through to the byte-reparse path.
+    let is_same_line_div = wrapper_kind == SyntaxKind::HTML_BLOCK_DIV
+        && multiline_open_end.is_none()
+        && depth_aware_tag.is_some()
+        && depth <= 0;
+    let same_line_div_lift_safe = is_same_line_div && bq_depth == 0 && {
+        let (line_without_newline, _) = strip_newline(first_inner);
+        probe_same_line_div_lift(line_without_newline)
+    };
+
     // Whether this block participates in the Phase 6 structural lift
     // (recursively parse body as Pandoc markdown and graft children).
-    // Covers `<div>` outside blockquote context. Disabled when the
-    // open line already balances the block (same-line `<div>foo</div>`):
-    // for those shapes the parser produces a single `HTML_BLOCK_TAG`
-    // with no separate close — the byte-reparse path in the projector
-    // still handles them.
+    // Covers `<div>` outside blockquote context. For same-line shapes
+    // the lift is gated on `same_line_div_lift_safe` — when unsafe we
+    // keep the legacy single-HTML_BLOCK_TAG shape and let the
+    // byte-reparse path handle projection.
     let lift_mode = wrapper_kind == SyntaxKind::HTML_BLOCK_DIV
         && bq_depth == 0
-        && !(multiline_open_end.is_none() && depth_aware_tag.is_some() && depth <= 0);
+        && (!is_same_line_div || same_line_div_lift_safe);
 
     // Trailing content from the open tag (after `>`). When the lift is
     // active and the open line is `<div ATTRS>foo\n`, this captures
@@ -821,6 +835,25 @@ pub(crate) fn parse_html_block_with_wrapper(
             "HTML block at line {} opens and closes on same line",
             start_pos + 1
         );
+        // Same-line `<div>foo</div>` structural lift: pre_content holds
+        // the bytes after the open `>` (including the close `</div>`
+        // and the trailing newline). Split into body + close tag, emit
+        // body via recursive parse (close is always butted → PLAIN),
+        // emit close tag as a sibling `HTML_BLOCK_TAG`.
+        if lift_mode && same_line_div_lift_safe && !pre_content.is_empty() {
+            let (pre_no_nl, post_nl) = strip_newline(&pre_content);
+            if let Some((leading, close_part)) = try_split_close_line(pre_no_nl, "div") {
+                emit_html_block_body_lifted(builder, "", &[], leading, config);
+                builder.start_node(SyntaxKind::HTML_BLOCK_TAG.into());
+                let mut close_line = String::with_capacity(close_part.len() + post_nl.len());
+                close_line.push_str(close_part);
+                close_line.push_str(post_nl);
+                emit_html_block_line(builder, &close_line, 0);
+                builder.finish_node();
+                builder.finish_node(); // HtmlBlock
+                return start_pos + 1;
+            }
+        }
         builder.finish_node(); // HtmlBlock
         return start_pos + 1;
     }
@@ -1081,6 +1114,59 @@ fn graft_subtree_as(builder: &mut GreenNodeBuilder<'static>, node: &SyntaxNode, 
         }
     }
     builder.finish_node();
+}
+
+/// Probe whether the same-line `<div>BODY</div>` shape on `line` can
+/// be lifted structurally. Returns `true` only when:
+/// - The line starts with `<div` (modulo leading whitespace).
+/// - The open tag's `>` exists with proper quote handling.
+/// - The bytes after the open `>` end with `</div>` (case-insensitive,
+///   allowing trailing whitespace).
+/// - The trailing has exactly one `</div>` close and zero `<div>`
+///   opens (rejects nested same-line shapes).
+///
+/// Trailing non-whitespace content after `</div>` (e.g.
+/// `<div>foo</div>extra`) rejects the lift — pandoc projects that
+/// shape as Div + trailing Para, which the byte walker handles via
+/// `split_html_block_by_tags`.
+fn probe_same_line_div_lift(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let indent_end = bytes
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(bytes.len());
+    let rest = &line[indent_end..];
+    let rest_bytes = rest.as_bytes();
+    if rest_bytes.len() < 4 || !rest_bytes[..4].eq_ignore_ascii_case(b"<div") {
+        return false;
+    }
+    let after_name = &rest[4..];
+    let after_name_bytes = after_name.as_bytes();
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut gt_idx: Option<usize> = None;
+    while i < after_name_bytes.len() {
+        match (quote, after_name_bytes[i]) {
+            (None, b'"') | (None, b'\'') => quote = Some(after_name_bytes[i]),
+            (Some(q), b2) if b2 == q => quote = None,
+            (None, b'>') => {
+                gt_idx = Some(i);
+                break;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let Some(gt_idx) = gt_idx else {
+        return false;
+    };
+    let trailing = &after_name[gt_idx + 1..];
+    let trimmed = trailing.trim_end_matches([' ', '\t']);
+    if !trimmed.to_ascii_lowercase().ends_with("</div>") {
+        return false;
+    }
+    let (opens, closes) = count_tag_balance(trailing, "div");
+    opens == 0 && closes == 1
 }
 
 /// Try to split the close line of an HTML_BLOCK_DIV body into a

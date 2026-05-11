@@ -1,0 +1,44 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..64
+  HTML_BLOCK_DIV@0..28
+    HTML_BLOCK_TAG@0..12
+      TEXT@0..4 "<div"
+      WHITESPACE@4..5 " "
+      HTML_ATTRS@5..11
+        TEXT@5..11 "id=\"x\""
+      TEXT@11..12 ">"
+    PLAIN@12..21
+      TEXT@12..16 "foo "
+      EMPHASIS@16..21
+        EMPHASIS_MARKER@16..17 "*"
+        TEXT@17..20 "bar"
+        EMPHASIS_MARKER@20..21 "*"
+    HTML_BLOCK_TAG@21..28
+      TEXT@21..27 "</div>"
+      NEWLINE@27..28 "\n"
+  BLANK_LINE@28..29
+    BLANK_LINE@28..29 "\n"
+  HTML_BLOCK_DIV@29..44
+    HTML_BLOCK_TAG@29..34
+      TEXT@29..33 "<div"
+      TEXT@33..34 ">"
+    PLAIN@34..37
+      TEXT@34..37 "baz"
+    HTML_BLOCK_TAG@37..44
+      TEXT@37..43 "</div>"
+      NEWLINE@43..44 "\n"
+  BLANK_LINE@44..45
+    BLANK_LINE@44..45 "\n"
+  HTML_BLOCK_DIV@45..64
+    HTML_BLOCK_TAG@45..57
+      TEXT@45..49 "<div"
+      WHITESPACE@49..50 " "
+      HTML_ATTRS@50..56
+        TEXT@50..56 "id=\"y\""
+      TEXT@56..57 ">"
+    HTML_BLOCK_TAG@57..64
+      TEXT@57..63 "</div>"
+      NEWLINE@63..64 "\n"

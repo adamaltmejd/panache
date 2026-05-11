@@ -4,13 +4,16 @@ expression: cst_output
 ---
 DOCUMENT@0..121
   HTML_BLOCK_DIV@0..51
-    HTML_BLOCK_TAG@0..51
+    HTML_BLOCK_TAG@0..19
       TEXT@0..4 "<div"
       WHITESPACE@4..5 " "
       HTML_ATTRS@5..18
         TEXT@5..18 "id=\"anchor-c\""
       TEXT@18..19 ">"
-      TEXT@19..50 "Content in a div with ..."
+    PLAIN@19..44
+      TEXT@19..44 "Content in a div with ..."
+    HTML_BLOCK_TAG@44..51
+      TEXT@44..50 "</div>"
       NEWLINE@50..51 "\n"
   BLANK_LINE@51..52
     BLANK_LINE@51..52 "\n"

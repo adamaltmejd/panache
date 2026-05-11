@@ -278,6 +278,8 @@ golden_test_cases!(
     html_block_div_multiline_open_pandoc,
     html_block_div_nested_commonmark,
     html_block_div_nested_pandoc,
+    html_block_div_same_line_commonmark,
+    html_block_div_same_line_pandoc,
     html_block_div_trailing_open_commonmark,
     html_block_div_trailing_open_pandoc,
     html_block_div_uppercase_pandoc,

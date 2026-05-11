@@ -282,33 +282,37 @@ content and can stay.
   silently drop the rest (classes lost). Iterate and join
   attribute texts with `" "` before parsing
   (`cst_div_open_tag_attr`).
-- **Parser-side trailing-on-open + butted-close lift landed
-  (2026-05-11).** `<div>foo\n</div>`, `<div>\nfoo\nbar</div>`, and
-  `<div>a\n   </div>` shapes now produce a clean open
-  `HTML_BLOCK_TAG` (ends at `>` + NEWLINE only) and a clean close
-  `HTML_BLOCK_TAG` (starts with `</`), with the lifted content
-  living between them as `PARAGRAPH` / `PLAIN` / `BLANK_LINE`
-  children. `try_split_close_line` extracts the leading bytes of
-  the close line; `emit_html_block_body_lifted` builds the
-  recursive-parse input from `pre_content` + `content_lines` +
-  `post_content`; `graft_subtree_as(..., PLAIN)` retags the LAST
-  top-level `PARAGRAPH` (skipping trailing BLANK_LINE siblings)
-  when `post_content` is non-empty, encoding pandoc's
-  `markdown_in_html_blocks` butted-close Para→Plain rule
+- **Parser-side trailing-on-open + butted-close + same-line lift
+  landed (2026-05-11).** `<div>foo\n</div>`, `<div>\nfoo\nbar</div>`,
+  `<div>a\n   </div>`, AND `<div>foo</div>` now produce a clean
+  open `HTML_BLOCK_TAG` (ends at the `>` token, no trailing TEXT)
+  and a clean close `HTML_BLOCK_TAG` (starts with `</`), with the
+  lifted content living between them as `PARAGRAPH` / `PLAIN` /
+  `BLANK_LINE` children. `try_split_close_line` extracts the
+  leading bytes of the close line; `emit_html_block_body_lifted`
+  builds the recursive-parse input from `pre_content` +
+  `content_lines` + `post_content`; `graft_subtree_as(..., PLAIN)`
+  retags the LAST top-level `PARAGRAPH` (skipping trailing
+  BLANK_LINE siblings) when `post_content` is non-empty, encoding
+  pandoc's `markdown_in_html_blocks` butted-close Para→Plain rule
   structurally. Empty `post_content` (`</div>` at column 0) leaves
-  the paragraph alone.
-- **`lift_mode` MUST exclude same-line `<div>foo</div>`.** The
-  open line balances the block under depth-aware tracking (depth
-  ≤ 0 after line 0), and there is NO separate close
-  `HTML_BLOCK_TAG` to attach lifted bytes to. Allowing the lift
-  here strips trailing content from `HTML_BLOCK_TAG` and never
-  re-attaches it — losslessness regression (-10 bytes on the
-  uppercase fixture). Fix: compute `depth_aware_tag` + `depth`
-  BEFORE the open emit, then gate
-  `lift_mode = HTML_BLOCK_DIV && bq_depth == 0 &&
-  !(multiline_open_end.is_none() && depth_aware_tag.is_some() &&
-  depth <= 0)`. Same-line shapes keep falling through to the
-  byte-reparse path in the projector.
+  the paragraph alone. For same-line, the close is always butted
+  → body always grafts as `PLAIN`.
+- **Same-line `<div>foo</div>` lift is gated on
+  `probe_same_line_div_lift`.** The probe runs BEFORE emitting the
+  open tag and checks: (1) line begins with `<div` modulo leading
+  whitespace, (2) the open `>` exists with proper quote handling,
+  (3) trailing-after-`>` ends with `</div>` (case-insensitive,
+  allowing trailing whitespace only), (4) `count_tag_balance(trailing,
+  "div")` returns `(opens=0, closes=1)`. Trailing non-whitespace
+  content after `</div>` (e.g. `<div>foo</div>extra`) rejects the
+  lift — pandoc projects that as Div + trailing Para; lifting would
+  produce a clean two-tag CST that the byte walker doesn't
+  re-split. Nested same-line (`<div><div></div></div>`) rejects too
+  (opens=1, closes=2 in trailing). Rejected shapes fall back to the
+  single-HTML_BLOCK_TAG opaque shape and the projector's byte
+  path. Past trap "lift_mode MUST exclude same-line" is now
+  superseded — same-line lifts when safe.
 - **`try_split_close_line` only handles simple closes** —
   exactly one `</tag>`, zero `<tag>` opens. Nested-close shapes
   (`<inner></inner></div>`) and any line with intra-line opens
@@ -343,7 +347,7 @@ content and can stay.
 | 3 | Sectioning + verbatim corpus pin; `eitherBlockOrInline` lift | **Conformance landed** — non-void (2026-05-09); void (`<embed>`/`<area>`/`<source>`/`<track>`) (2026-05-10). Implementation leans on projector-side `inline_pending` tracking + byte walker; CST still opaque for split/matched-pair shapes. |
 | 4 | Comments, PIs, declarations, CDATA projection | **Conformance landed** (2026-05-08); type-4 CM lowercase still gappy. CST opaque (these constructs project as RawBlock / RawInline). |
 | 5 | `markdown_in_html_blocks` interaction edge cases | **Conformance landed** — depth-aware nested div, Plain/Para promotion, refs inheritance, **projector-level splitter** (`split_html_block_by_tags` byte walker + `parse_pandoc_blocks` recursive reparse), outer-matched-pair-abandons-on-void-interior. **The structural CST lift was deferred** — Phase 5's mechanism is the projector reparsing bytes, not the parser emitting structure. |
-| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` gets `PARAGRAPH` / `LIST` / etc. as direct children; `split_html_block_by_tags` / `flush_html_block_*` / `parse_pandoc_blocks` collapse into trivial CST walks; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **Fix #1 landed (2026-05-10)** — `PARAGRAPH→PLAIN` retag at YesCanInterrupt for HTML BlockTag under Pandoc; +5 (132 → 137 html). **`<style>` + PI sub-target landed (2026-05-10)** — `cannot_interrupt` under Pandoc; +3 (137 → 140). **Fix #2 landed (2026-05-10)** — `html_div_block` reads open-tag attrs via `HTML_BLOCK_TAG → HTML_ATTRS` CST walk; pure projector cleanup, no delta. **`</script>` close cannot_interrupt landed (2026-05-10)** — `is_closing` field added to `HtmlBlockType::BlockTag`; +1 (140 → 141). **`<script type="math/tex…">` open cannot_interrupt landed (2026-05-11)** — `is_math_tex_script_open` helper inspects `ctx.content` attrs; +1 (141 → 142). **Fix #3 first cut landed (2026-05-11)** — clean multi-line `<div>` now lifts inner content into structural CST children (`PARAGRAPH`, `HEADING`, nested `HTML_BLOCK_DIV`, etc.) via recursive `parse_with_refdefs` + graft. **Fix #3 messy-shape lift landed (2026-05-11)** — trailing-content-on-open (`<div>foo\n</div>`), butted-close (`<div>\nfoo\nbar</div>`), and indented-close (`<div>a\n   </div>`) shapes now also lift structurally. Open and close `HTML_BLOCK_TAG`s carry only the tag bytes; trailing/leading bytes splice into the recursive-parse input; the last top-level PARAGRAPH retags to PLAIN at parse time when the close is butted. Pass count unchanged (142). Same-line `<div>foo</div>` and bq-wrapped `<div>` still byte-reparse. Fix #4 from AUDIT.md still pending. |
+| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` gets `PARAGRAPH` / `LIST` / etc. as direct children; `split_html_block_by_tags` / `flush_html_block_*` / `parse_pandoc_blocks` collapse into trivial CST walks; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **All `<div>` shapes outside blockquotes now lift structurally (2026-05-11)**: clean multi-line `<div>...</div>` (first cut); messy shapes — trailing-on-open `<div>foo\n</div>`, butted-close `<div>\nfoo\nbar</div>`, indented-close `<div>a\n   </div>` (messy-shape lift); same-line `<div>foo</div>` (this session, gated on `probe_same_line_div_lift` to reject nested or trailing-content shapes). Earlier sub-targets in this phase: PARAGRAPH→PLAIN retag at YesCanInterrupt; `<style>` / PI / `</script>` / `<script type="math/tex…">` cannot_interrupt. Pass count progression: 132 → 137 → 140 → 141 → 142 → 142. Remaining: bq-wrapped `<div>` (needs marker stripping before recursive parse) still byte-reparses. Fix #4 from AUDIT.md (full HTML_BLOCK body structural split) still pending. |
 
 Multi-line `<div>` open-tag structural HTML_ATTRS lift landed
 (2026-05-09). Multi-line void open-tag now lifts via
@@ -357,108 +361,110 @@ and CAN interrupt a running paragraph (no `cannot_interrupt` gate)
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-11 (Phase 6 Fix #3 messy-shape lift: trailing-on-open + butted-close)
+## Latest session — 2026-05-11 (Phase 6 Fix #3 same-line lift: `<div>foo</div>`)
 
-Extended the parser-side structural `<div>` lift to cover the
-three "messy" shapes that the first-cut left on the byte-reparse
-path: trailing-content-on-open (`<div id="x">foo\n</div>`),
-butted-close (`<div id="x">\nfoo\n\nbar</div>`), and indented-
-close (`<div id="x">a\n   </div>`). All now produce clean open
-and close `HTML_BLOCK_TAG`s with structural `PARAGRAPH` / `PLAIN`
-/ `BLANK_LINE` siblings between them; close-butted Para→Plain
-demotion is encoded structurally at parse time.
+Closed the last `<div>`-shape gap on the parser-side structural
+lift: `<div ATTRS>BODY</div>` on one line now produces a clean
+open `HTML_BLOCK_TAG`, a `PLAIN` body, and a clean close
+`HTML_BLOCK_TAG`, instead of cramming the whole line into one
+opaque `HTML_BLOCK_TAG`. Eliminates the last `<div>`-specific
+byte-reparse call (`extract_div_inner_and_butted` /
+`assemble_div_block` / `try_div_html_block` are now only reached
+by `<div>` inside blockquotes, plus the opaque `HTML_BLOCK` fallback
+path used by `emit_html_block`).
 
-**Implementation**:
-- `emit_div_open_tag_tokens` (`parser/blocks/html_blocks.rs`)
-  gains a `lift_trailing: bool` parameter and now returns the
-  trailing bytes after `>` as `&str`. When `lift_trailing=true`
-  the trailing TEXT is not emitted inside the open `HTML_BLOCK_TAG`;
-  the caller threads it into the recursive-parse input.
-- `parse_html_block_with_wrapper` computes `depth_aware_tag` +
-  `depth` BEFORE the open emit so `lift_mode` can exclude same-
-  line `<div>foo</div>` shapes (they balance the block on line 0;
-  there's no separate close tag to attach the lifted bytes to).
-- `try_split_close_line` finds the `</tag>` boundary on the close
-  line and returns `(leading, close_part)` for the simple shape
-  (one close, zero opens). The leading bytes append to the
-  recursive-parse input; the close `HTML_BLOCK_TAG` carries only
-  `</tag>...`.
-- `emit_html_block_body_lifted` builds the inner text as
-  `pre_content + content_lines + post_content`, calls
-  `parse_with_refdefs`, and grafts via `graft_document_children`
-  with `demote_last_para = !post_content.is_empty()`. The graft
-  retags the LAST top-level `PARAGRAPH` (skipping trailing
-  `BLANK_LINE` siblings) as `PLAIN` via `graft_subtree_as`,
-  encoding pandoc's `markdown_in_html_blocks` butted-close rule
-  structurally.
-- Projector: no changes. `html_div_block`'s structural walk plus
-  `html_block_{open,close}_tag_is_clean` predicates already
-  match the new CST shapes — open `HTML_BLOCK_TAG` ends at the
-  `>` token (no trailing TEXT), close starts at `</tag>`. The
-  byte-reparse path (`extract_div_inner_and_butted` +
-  `assemble_div_block` + `parse_pandoc_blocks`) still serves
-  same-line and bq-wrapped divs.
+**Implementation** (all in
+`crates/panache-parser/src/parser/blocks/html_blocks.rs`):
+- New `probe_same_line_div_lift(line)` helper runs BEFORE the open
+  tag is emitted. Returns `true` only when: line starts with `<div`
+  (modulo leading whitespace), open `>` exists, trailing-after-`>`
+  ends with `</div>` (case-insensitive, trailing whitespace allowed),
+  and `count_tag_balance` on the trailing gives `(opens=0, closes=1)`.
+  Rejects nested same-line, trailing non-whitespace content after
+  the close, and malformed shapes.
+- `parse_html_block_with_wrapper` adds `is_same_line_div` +
+  `same_line_div_lift_safe` and relaxes `lift_mode` to enable for
+  same-line only when the probe passes. Other rejected shapes fall
+  back to the original single-`HTML_BLOCK_TAG` opaque emission and
+  the projector's byte-reparse path.
+- The `same_line_closed` branch consumes the `pre_content` populated
+  by `emit_div_open_tag_tokens(..., lift_trailing=true)`: strips
+  newline, calls `try_split_close_line(pre_no_nl, "div")`, emits
+  body via `emit_html_block_body_lifted(builder, "", &[], leading,
+  config)` (close is always butted → demotion to `PLAIN`), and emits
+  a sibling close `HTML_BLOCK_TAG` containing the close tag bytes
+  reconstructed as `close_part + newline_str`.
 
-**Pass count**: html 142 → 142, workspace tests unchanged. The
-payoff is structural: corpus cases 0269-0272 (and any
-linter/salsa/LSP consumer of `<div>` body structure) now read
-inner blocks directly from the CST instead of relying on the
-projector's `parse_pandoc_blocks` reparse. Pandoc-native `Plain
-[Str "bar"]` for case 0271 now matches a real `PLAIN` CST node,
-not a projector decision.
+**Projector**: no changes. `div_has_structural_inner` +
+`html_block_open_tag_is_clean` + `html_block_close_tag_is_clean`
+already match the new shape (open ends at `>` with no trailing
+tokens; close starts with `</`). Empty `<div></div>` lifts to two
+HTML_BLOCK_TAGs with no body child; `div_has_structural_inner`
+returns false (no non-tag children), so the projector falls back
+to `extract_div_inner_and_butted` and produces `Block::Div(attr,
+vec![])` — same result, just one extra byte-reparse. Not worth
+relaxing the predicate yet.
 
-**Cleanup not done**: byte-reparse helpers
-(`extract_div_inner_and_butted`, `assemble_div_block`,
-`try_div_html_block`, `parse_pandoc_blocks`) are still on the
-path for same-line `<div>foo</div>` and bq-wrapped divs. Same-
-line needs parser-side splitting of one `HTML_BLOCK_TAG` into
-three siblings (no current corpus case forces this); bq-wrapped
-needs blockquote-marker stripping before recursive parse.
+**Pass count**: html 142 → 142, workspace 1186 → 1186 parser unit,
+all goldens green. Three existing parser snapshots updated
+(`html_block_div_with_id_pandoc`, `html_block_div_uppercase_pandoc`,
+`html_block_paragraph_demote_div_pandoc`) to reflect the new shape;
+byte counts still match input exactly.
+
+**Payoff**: salsa anchor walk, LSP, linter all now read same-line
+`<div id>` body structure from the CST instead of routing through
+`assemble_div_block`'s `parse_pandoc_blocks` reparse. Combined with
+the messy-shape lift from the previous session, ALL non-bq `<div>`
+shapes are structural at parse time.
 
 ### Suggested next sub-targets
 
-1. **Lift same-line `<div>foo</div>`** (medium). Currently the
-   entire line lives in a single `HTML_BLOCK_TAG`. Parser must
-   split into open `HTML_BLOCK_TAG` (`<div>`), content
-   (`PARAGRAPH` or `PLAIN`), close `HTML_BLOCK_TAG` (`</div>`).
-   The close is always butted, so the lifted block is always
-   `PLAIN`. Eliminates the last `<div>`-specific byte-reparse
-   call.
-2. **Fix #4 — full HTML_BLOCK body structural split** (large;
-   defer until #1 above settles). Eliminates
-   `split_html_block_by_tags`, both flush helpers,
-   `interior_starts_with_void_block_tag`,
-   `find_matching_html_close*`, `inline_pending` flag.
-3. **Lift inside blockquotes** — the structural lift gates on
-   `bq_depth == 0` for simplicity. Strip blockquote markers from
-   inner content lines before recursive parse to extend coverage.
-4. **Multi-line `<script\n type=...>`** corpus pin — only if a
-   real case appears.
+1. **Lift `<div>` inside blockquotes** — the structural lift gates on
+   `bq_depth == 0`. Inner content lines carry `> ` markers that the
+   recursive parse would feed back to the inner parser, producing a
+   nested blockquote. Strip BLOCK_QUOTE_MARKER + WHITESPACE prefixes
+   from each content line before assembling `inner_text`; preserve
+   them as siblings or absorb them in the open `HTML_BLOCK_TAG`. The
+   close-tag emission also needs marker handling. After this,
+   `try_div_html_block` is reachable only via the opaque `HTML_BLOCK`
+   fallback in `emit_html_block` (called from
+   `split_html_block_by_tags`).
+2. **Fix #4 — full HTML_BLOCK body structural split** (large).
+   Eliminates `split_html_block_by_tags`, both flush helpers,
+   `interior_starts_with_void_block_tag`, `find_matching_html_close*`,
+   `inline_pending` flag. Each lifts a chunk of byte-walker
+   compensation into a CST walk.
+3. **Multi-line `<script\n type=...>`** corpus pin — only if a real
+   case appears (the `is_math_tex_script_open` helper currently only
+   inspects single-line `ctx.content`).
+4. **Empty `<div></div>` projector trim**: relax
+   `div_has_structural_inner` to accept clean-tag-only shapes, so
+   the byte-reparse fallback isn't hit on empty divs. Cosmetic
+   (output is identical), worth doing only if other reasons demand
+   touching that predicate.
 
 ### Files in committable diff
 
 - `crates/panache-parser/src/parser/blocks/html_blocks.rs` —
-  `emit_div_open_tag_tokens` gains `lift_trailing: bool` +
-  returns trailing `&str`; `parse_html_block_with_wrapper`
-  hoists `depth_aware_tag`/`depth` to gate `lift_mode`, splits
-  open-tag trailing and close-tag leading into the recursive-
-  parse input; new `emit_html_block_body_lifted`,
-  `try_split_close_line`, `graft_subtree_as` helpers;
-  `graft_document_children` gains `demote_last_para` flag.
-- `crates/panache-parser/tests/fixtures/cases/html_block_div_{trailing_open,butted_close}_{pandoc,commonmark}/`
-  + `tests/golden_parser_cases.rs` — four new paired parser
-  goldens pinning the lifted shape under Pandoc vs the opaque
-  shape under CommonMark.
-- Four accepted snapshots under
-  `crates/panache-parser/tests/snapshots/` for the new fixtures.
+  `probe_same_line_div_lift` helper, `is_same_line_div` +
+  `same_line_div_lift_safe` in `parse_html_block_with_wrapper`,
+  lift branch in the `same_line_closed` block.
+- `crates/panache-parser/tests/fixtures/cases/html_block_div_same_line_{pandoc,commonmark}/`
+  + `tests/golden_parser_cases.rs` — paired parser fixture pinning
+  the lifted Pandoc shape vs the opaque CommonMark shape (three
+  cases: with-id + emphasis, no-attrs, empty).
+- Five accepted snapshots under
+  `crates/panache-parser/tests/snapshots/` — two new
+  (`html_block_div_same_line_{pandoc,commonmark}`), three updated
+  (`html_block_div_with_id_pandoc`, `html_block_div_uppercase_pandoc`,
+  `html_block_paragraph_demote_div_pandoc`).
 - `.claude/skills/html-conformance/RECAP.md` — this session.
 
 ### New traps
 
 Folded into Persistent traps under "Structural lift (Fix #3
-family)": messy-shape lift mechanics; `lift_mode` must exclude
-same-line `<div>foo</div>`; `try_split_close_line` only handles
-simple closes; cleanness predicates unchanged after the lift.
+family)": `probe_same_line_div_lift` mechanics; previous "lift_mode
+must exclude same-line" trap is now superseded.
 
 --------------------------------------------------------------------------------
 
@@ -467,32 +473,30 @@ simple closes; cleanness predicates unchanged after the lift.
 Newest first. One line per session: date — phase/sub-target — pass
 count delta — root cause / lever.
 
-- 2026-05-11 — Phase 6 Fix #3 first cut (clean multi-line `<div>`
-  inner-block lift) — html 142 → 142 — recursive `parse_with_refdefs`
-  + `graft_subtree` for clean `<div>...</div>`; `html_div_block`
-  routed structurally; cleanness predicates added; six existing
-  snapshots accepted.
-- 2026-05-11 — Phase 6 `<script type="math/tex…">` open
-  cannot_interrupt — html 141 → 142 — `is_math_tex_script_open`
-  helper inspects single-line open's `type` attr; pandoc's
-  `isInlineTag` math/tex special case.
-- 2026-05-10 — Phase 6 Fix #1 + #2 + `<style>` / PI / `</script>`
-  cannot_interrupt — html 132 → 141 — PARAGRAPH→PLAIN retag at
-  YesCanInterrupt; `html_div_block` reads open-tag attrs via CST;
-  `is_closing` field; `isInlineTag` special cases (pandoc issue
-  #10643) drive cannot_interrupt set, not tag-set membership.
+- 2026-05-11 — Phase 6 Fix #3 messy-shape + first-cut lifts (clean
+  multi-line, trailing-on-open, butted-close, indented-close `<div>`)
+  — html 142 → 142 (both no-delta) — recursive `parse_with_refdefs` +
+  `graft_subtree`; `try_split_close_line` + `emit_html_block_body_lifted`
+  build pre+content+post with `demote_last_para` for butted closes;
+  `html_div_block` routed structurally; cleanness predicates added.
+- 2026-05-10 → 2026-05-11 — Phase 6 cannot_interrupt expansions
+  (`<style>` / PI / `</script>` / `<script type="math/tex…">`),
+  Fix #1 + #2 — html 132 → 142 — PARAGRAPH→PLAIN retag at
+  YesCanInterrupt; `html_div_block` reads attrs via CST; `is_closing`
+  field on HtmlBlockType::BlockTag; `is_math_tex_script_open` helper;
+  pandoc's `isInlineTag` special cases (issue #10643) drive the
+  cannot_interrupt set, not tag-set membership.
 - 2026-05-10 — Strict-block/verbatim closing-form lift, multi-line
   void open-tag, incomplete-open-tag recursion fix, Phase 3 void
   `eitherBlockOrInline` — html 105 → 132 — close-tag branches,
   `closes_at_open_tag`, `pandoc_html_open_tag_closes` gate,
-  `PANDOC_VOID_BLOCK_TAGS`, split flush helpers. Projector audit
-  landed (AUDIT.md ranks fixes #1-#4; SKILL.md gains "What this
-  skill is NOT").
+  `PANDOC_VOID_BLOCK_TAGS`, split flush helpers; AUDIT.md ranks
+  fixes #1-#4.
 - 2026-05-09 — Phase 3 lifts (non-void eitherBlockOrInline; HTML5
   sectioning; `<DIV>` losslessness; Phase 5 Plain/Para, multi-line
   attrs, refs inheritance) — html 62 → 105 — context-aware
-  projector `inline_pending` + parser `cannot_interrupt`;
-  CM/Pandoc blockHtmlTags split; `build_refs_ctx_inherited`.
+  projector `inline_pending` + parser `cannot_interrupt`; CM/Pandoc
+  blockHtmlTags split; `build_refs_ctx_inherited`.
 - 2026-05-08 — Phases 1-5 seed (issue #263 closed) — html 0 → 62 —
   `HTML_BLOCK_DIV`/`INLINE_HTML_SPAN` retag, `HTML_ATTRS`
   tokenization, sectioning/verbatim corpus pin, depth-aware

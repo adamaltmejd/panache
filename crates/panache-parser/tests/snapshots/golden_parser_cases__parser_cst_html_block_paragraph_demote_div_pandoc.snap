@@ -9,8 +9,11 @@ DOCUMENT@0..23
     TEXT@4..7 "bar"
     NEWLINE@7..8 "\n"
   HTML_BLOCK_DIV@8..23
-    HTML_BLOCK_TAG@8..23
+    HTML_BLOCK_TAG@8..13
       TEXT@8..12 "<div"
       TEXT@12..13 ">"
-      TEXT@13..22 "baz</div>"
+    PLAIN@13..16
+      TEXT@13..16 "baz"
+    HTML_BLOCK_TAG@16..23
+      TEXT@16..22 "</div>"
       NEWLINE@22..23 "\n"
