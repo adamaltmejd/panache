@@ -20,6 +20,7 @@ fn test_clean_removes_current_workspace_bucket() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["format", "--check", test_file.to_str().unwrap()])
@@ -28,6 +29,7 @@ fn test_clean_removes_current_workspace_bucket() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["clean"])
@@ -37,6 +39,7 @@ fn test_clean_removes_current_workspace_bucket() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["clean"])
@@ -61,6 +64,7 @@ fn test_clean_all_removes_all_buckets() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace_one)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["format", "--check", "one.qmd"])
@@ -69,6 +73,7 @@ fn test_clean_all_removes_all_buckets() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace_two)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["format", "--check", "two.qmd"])
@@ -77,6 +82,7 @@ fn test_clean_all_removes_all_buckets() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace_one)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["clean", "--all"])
@@ -89,6 +95,7 @@ fn test_clean_all_removes_all_buckets() {
 
     cargo_bin_cmd!("panache")
         .current_dir(&workspace_one)
+        .env("PANACHE_CACHE_HOME", &cache_home)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .args(["clean", "--all"])

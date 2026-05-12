@@ -138,7 +138,26 @@ pub fn resolve_cache_dir_for_cli(
 }
 
 pub fn global_cache_base_dir() -> Option<PathBuf> {
-    dirs::cache_dir().map(|dir| dir.join("panache"))
+    global_cache_base_dir_from(std::env::var_os("PANACHE_CACHE_HOME"), dirs::cache_dir)
+}
+
+// `XDG_CACHE_HOME` only redirects `dirs::cache_dir()` on Unix; on Windows it is
+// ignored and every process resolves to `%LOCALAPPDATA%\panache`. Tests that
+// exercise the global-cache code path need a panache-specific override so they
+// don't collide on the shared Windows location.
+fn global_cache_base_dir_from<F>(
+    override_value: Option<std::ffi::OsString>,
+    system_cache_dir: F,
+) -> Option<PathBuf>
+where
+    F: FnOnce() -> Option<PathBuf>,
+{
+    if let Some(value) = override_value
+        && !value.is_empty()
+    {
+        return Some(PathBuf::from(value).join("panache"));
+    }
+    system_cache_dir().map(|dir| dir.join("panache"))
 }
 
 impl CliCache {
@@ -466,6 +485,33 @@ mod tests {
                 .expect("resolve cache dir");
 
         assert_eq!(resolved, config_dir.join(".panache-cache"));
+    }
+
+    #[test]
+    fn global_cache_base_respects_panache_cache_home_override() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let override_home = tmp.path().join("custom-home");
+
+        let resolved =
+            global_cache_base_dir_from(Some(override_home.clone().into_os_string()), || {
+                Some(PathBuf::from("/should/not/be/used"))
+            });
+
+        assert_eq!(resolved, Some(override_home.join("panache")));
+    }
+
+    #[test]
+    fn global_cache_base_falls_back_to_system_when_override_empty() {
+        let system_base = PathBuf::from("/system/cache");
+
+        let resolved_when_unset = global_cache_base_dir_from(None, || Some(system_base.clone()));
+        assert_eq!(resolved_when_unset, Some(system_base.join("panache")));
+
+        let resolved_when_empty =
+            global_cache_base_dir_from(Some(std::ffi::OsString::new()), || {
+                Some(system_base.clone())
+            });
+        assert_eq!(resolved_when_empty, Some(system_base.join("panache")));
     }
 
     #[test]
