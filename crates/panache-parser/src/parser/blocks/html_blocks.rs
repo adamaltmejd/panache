@@ -1932,7 +1932,7 @@ fn inline_block_void_interior_abandons(
 /// `>` after the tag name. Admits trailing content after `>` (the
 /// open-trailing shape `<form>foo`) — the caller is expected to capture
 /// that trailing into the structural lift's `pre_content`.
-fn probe_open_tag_line_has_close_gt(line: &str, tag_name: &str) -> bool {
+pub(crate) fn probe_open_tag_line_has_close_gt(line: &str, tag_name: &str) -> bool {
     let bytes = line.as_bytes();
     let indent_end = bytes
         .iter()

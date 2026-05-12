@@ -1,0 +1,6 @@
+[ BlockQuote
+    [ RawBlock (Format "html") "<section id=\"x\">"
+    , Plain [ Str "body" ]
+    , RawBlock (Format "html") "</section>"
+    ]
+]

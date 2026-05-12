@@ -281,6 +281,8 @@ golden_test_cases!(
     html_block_div_blockquote_depth_2_pandoc,
     html_block_div_blockquote_messy_commonmark,
     html_block_div_blockquote_messy_pandoc,
+    html_block_div_blockquote_multiline_open_commonmark,
+    html_block_div_blockquote_multiline_open_pandoc,
     html_block_div_blockquote_nested_blocks_commonmark,
     html_block_div_blockquote_nested_blocks_pandoc,
     html_block_div_blockquote_same_line_commonmark,
