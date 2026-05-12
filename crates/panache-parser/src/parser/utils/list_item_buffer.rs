@@ -3,13 +3,14 @@
 //! This module provides infrastructure for buffering list item content during parsing,
 //! allowing us to determine tight vs loose lists and parse inline elements correctly.
 
-use crate::options::ParserOptions;
+use crate::options::{Dialect, ParserOptions};
 use crate::parser::blocks::headings::{emit_atx_heading, try_parse_atx_heading};
 use crate::parser::blocks::horizontal_rules::{emit_horizontal_rule, try_parse_horizontal_rule};
+use crate::parser::blocks::html_blocks::try_parse_html_block_start;
 use crate::parser::utils::inline_emission;
 use crate::parser::utils::text_buffer::ParagraphBuffer;
-use crate::syntax::SyntaxKind;
-use rowan::GreenNodeBuilder;
+use crate::syntax::{SyntaxKind, SyntaxNode};
+use rowan::{GreenNodeBuilder, TextSize};
 
 /// A segment in the list item buffer - either text content or a blank line.
 #[derive(Debug, Clone)]
@@ -184,6 +185,30 @@ impl ListItemBuffer {
                     return;
                 }
             }
+
+            // Pandoc HTML-block-first-line structural lift: when the buffered
+            // text begins with a matched HTML block (same-line `<div>...</div>`,
+            // single-line comment, `<pre>foo</pre>`, etc.) and the entire
+            // buffer is consumed by that block, reparse and graft the inner
+            // block as a direct LIST_ITEM child. Without this lift, the
+            // dispatcher's inline-HTML path takes over and emits
+            // `Plain[RawInline <tag>, body, RawInline </tag>]` instead of
+            // `Div [...]` or `RawBlock <tag>`.
+            //
+            // Multi-line cases where the close tag lives in a sibling
+            // HTML_BLOCK (because the dispatcher recognizes Pandoc strict-
+            // block close forms as block starts and breaks the buffer) are
+            // not handled here — the gate rejects HTML_BLOCK_DIV with only
+            // one HTML_BLOCK_TAG child. That sub-target stays open.
+            if config.dialect == Dialect::Pandoc
+                && self
+                    .segments
+                    .iter()
+                    .all(|s| matches!(s, ListItemContent::Text(_)))
+                && try_emit_html_block_lift(builder, &text, config)
+            {
+                return;
+            }
         }
 
         let block_kind = if use_paragraph {
@@ -208,6 +233,76 @@ impl ListItemBuffer {
     pub(crate) fn clear(&mut self) {
         self.segments.clear();
     }
+}
+
+/// Attempt the Pandoc HTML-block-first-line structural lift on the
+/// buffered list-item text. Returns `true` if `text` was emitted as
+/// one or more HTML block CST nodes (no surrounding PLAIN/PARAGRAPH
+/// wrapper). Returns `false` if the lift gate rejected the case;
+/// the caller falls through to its default Plain/Paragraph emission.
+///
+/// The gate is strict: the inner reparse must produce exactly one
+/// top-level HTML_BLOCK or HTML_BLOCK_DIV that consumes every byte
+/// of `text`. For HTML_BLOCK_DIV, a matched open+close is required
+/// (>= 2 `HTML_BLOCK_TAG` children). This avoids lifting unclosed
+/// shapes (where the close tag would live in a separate sibling
+/// HTML_BLOCK), which would produce a structurally incomplete CST.
+fn try_emit_html_block_lift(
+    builder: &mut GreenNodeBuilder<'static>,
+    text: &str,
+    config: &ParserOptions,
+) -> bool {
+    let first_line = text.split_inclusive('\n').next().unwrap_or(text);
+    let first_line_no_nl = first_line
+        .strip_suffix("\r\n")
+        .or_else(|| first_line.strip_suffix('\n'))
+        .unwrap_or(first_line);
+    if try_parse_html_block_start(first_line_no_nl, false).is_none() {
+        return false;
+    }
+
+    let refdefs = config.refdef_labels.clone().unwrap_or_default();
+    let inner_root = crate::parser::parse_with_refdefs(text, Some(config.clone()), refdefs);
+
+    let children: Vec<SyntaxNode> = inner_root.children().collect();
+    if children.len() != 1 {
+        return false;
+    }
+    let child = &children[0];
+    if !matches!(
+        child.kind(),
+        SyntaxKind::HTML_BLOCK | SyntaxKind::HTML_BLOCK_DIV
+    ) {
+        return false;
+    }
+    if child.text_range().end() != TextSize::of(text) {
+        return false;
+    }
+    if child.kind() == SyntaxKind::HTML_BLOCK_DIV {
+        let html_block_tag_count = child
+            .children()
+            .filter(|c| c.kind() == SyntaxKind::HTML_BLOCK_TAG)
+            .count();
+        if html_block_tag_count < 2 {
+            return false;
+        }
+    }
+
+    graft_node(builder, child);
+    true
+}
+
+fn graft_node(builder: &mut GreenNodeBuilder<'static>, node: &SyntaxNode) {
+    builder.start_node(node.kind().into());
+    for child in node.children_with_tokens() {
+        match child {
+            rowan::NodeOrToken::Node(n) => graft_node(builder, &n),
+            rowan::NodeOrToken::Token(t) => {
+                builder.token(t.kind().into(), t.text());
+            }
+        }
+    }
+    builder.finish_node();
 }
 
 #[cfg(test)]

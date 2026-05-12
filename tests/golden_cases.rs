@@ -216,6 +216,7 @@ golden_test_cases!(
     atx_interrupts_paragraph_commonmark,
     list_interrupts_paragraph_commonmark,
     list_item_blockquote_inner_list_siblings,
+    list_item_html_div_same_line,
     list_mixed_bullets_commonmark,
     headings,
     setext_headings,

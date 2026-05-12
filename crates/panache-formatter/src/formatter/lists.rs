@@ -1081,6 +1081,53 @@ impl Formatter {
                         self.output.push('\n');
                     }
                 }
+                SyntaxKind::HTML_BLOCK | SyntaxKind::HTML_BLOCK_DIV => {
+                    // A lifted HTML block (same-line `<div>...</div>`, single-
+                    // line comment, `<pre>foo</pre>`, etc.) can be the LIST_ITEM's
+                    // sole content when the parser's emit-time structural lift
+                    // (`ListItemBuffer::emit_as_block`) replaces the default
+                    // PLAIN/PARAGRAPH wrap. The marker-emit pass above produces
+                    // nothing in that case (no content_node, no lines); emit
+                    // the marker here and inline the HTML block text on the
+                    // same line. Pandoc preserves the list structure when
+                    // formatting these — without this we drop the marker.
+                    let no_content_emitted = lines.is_empty()
+                        && preserve_lines.is_none()
+                        && sentence_lines.is_none()
+                        && content_node.is_none()
+                        && !has_only_empty_nested_list;
+                    let prev_kind = child.prev_sibling().map(|s| s.kind());
+                    let is_first_real_child = !matches!(
+                        prev_kind,
+                        Some(SyntaxKind::PLAIN)
+                            | Some(SyntaxKind::PARAGRAPH)
+                            | Some(SyntaxKind::HEADING)
+                            | Some(SyntaxKind::CODE_BLOCK)
+                            | Some(SyntaxKind::BLOCK_QUOTE)
+                            | Some(SyntaxKind::LIST)
+                            | Some(SyntaxKind::HORIZONTAL_RULE)
+                            | Some(SyntaxKind::HTML_BLOCK)
+                            | Some(SyntaxKind::HTML_BLOCK_DIV)
+                    );
+                    if no_content_emitted && is_first_real_child {
+                        self.output.push_str(&" ".repeat(total_indent));
+                        self.output
+                            .push_str(&" ".repeat(list_indent.marker_padding));
+                        self.output.push_str(&marker);
+                        self.output.push_str(&" ".repeat(list_indent.spaces_after));
+                        if let Some(ref cb) = checkbox {
+                            self.output.push_str(cb);
+                            self.output.push(' ');
+                        }
+                        let block_text = child.text().to_string();
+                        let trimmed = block_text.trim_end_matches('\n');
+                        self.output.push_str(trimmed);
+                        self.output.push('\n');
+                    } else {
+                        let content_indent = list_indent.hanging_indent(total_indent);
+                        self.format_node_sync(&child, content_indent);
+                    }
+                }
                 _ => {
                     // Other block elements - format with proper indentation
                     let content_indent = list_indent.hanging_indent(total_indent);
