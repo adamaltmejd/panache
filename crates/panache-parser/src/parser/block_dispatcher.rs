@@ -32,8 +32,8 @@ use super::blocks::headings::{
 use super::blocks::horizontal_rules::{emit_horizontal_rule, try_parse_horizontal_rule};
 use super::blocks::html_blocks::{
     HtmlBlockType, is_pandoc_inline_block_tag_name, is_pandoc_void_block_tag_name,
-    pandoc_html_open_tag_closes, pandoc_html_open_tag_closes_cleanly,
-    parse_html_block_with_wrapper, probe_open_tag_line_has_close_gt, try_parse_html_block_start,
+    pandoc_html_open_tag_closes, parse_html_block_with_wrapper, probe_open_tag_line_has_close_gt,
+    try_parse_html_block_start,
 };
 use super::blocks::indented_code::{is_indented_code_line, parse_indented_code_block};
 use super::blocks::latex_envs::LatexEnvInfo;
@@ -1891,26 +1891,22 @@ impl BlockParser for HtmlBlockParser {
         // kind changes. CommonMark dialect keeps the opaque HTML_BLOCK
         // shape.
         //
-        // Retag is gated on `pandoc_html_open_tag_closes_cleanly`: the
-        // structural body lift only fires for opens whose closing `>` is
-        // followed by nothing (i.e. no trailing on the last open line),
-        // because `html_div_block`'s `div_has_structural_inner` check
-        // requires the open `HTML_BLOCK_TAG` to end with `TEXT(">")`
-        // followed only by NEWLINEs. Multi-line opens with trailing fall
-        // through to opaque `HTML_BLOCK` (parser-side `bq_clean_lift`
-        // also rejects, byte walker emits per-tag RawBlocks; diverges
-        // from pandoc-native's `Div` but no panic).
+        // Retag is gated on `pandoc_html_open_tag_closes`: the structural
+        // body lift requires the open tag's `>` to actually appear before
+        // EOF. Multi-line opens with trailing on the close-`>` line now
+        // also retag — `emit_multiline_open_tag_with_attrs` captures the
+        // trailing bytes into `pre_content` (with `lift_trailing=true`)
+        // so the open `HTML_BLOCK_TAG` ends cleanly with `TEXT(">")` and
+        // `html_block_open_tag_is_clean` accepts. Incomplete opens
+        // (`<div\n` no `>` anywhere) keep the opaque `HTML_BLOCK` shape
+        // so the projector treats them as paragraph text per pandoc-native.
         let wrapper_kind = match &block_type {
             HtmlBlockType::BlockTag { tag_name, .. }
                 if tag_name == "div"
                     && ctx.config.dialect == crate::options::Dialect::Pandoc
                     && ctx.config.extensions.native_divs
                     && (probe_open_tag_line_has_close_gt(ctx.content, "div")
-                        || pandoc_html_open_tag_closes_cleanly(
-                            lines,
-                            line_pos,
-                            ctx.blockquote_depth,
-                        )) =>
+                        || pandoc_html_open_tag_closes(lines, line_pos, ctx.blockquote_depth)) =>
             {
                 crate::syntax::SyntaxKind::HTML_BLOCK_DIV
             }

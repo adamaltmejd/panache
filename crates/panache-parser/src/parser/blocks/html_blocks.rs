@@ -938,53 +938,56 @@ pub(crate) fn parse_html_block_with_wrapper(
 
     // Messy-shape lift inside a blockquote — covers open-trailing
     // (`> <div>foo\n> </div>`), butted-close (`> <div>\n> foo</div>`),
-    // and open-trailing + butted-close (`> <div>foo\n> bar</div>`).
+    // and open-trailing + butted-close (`> <div>foo\n> bar</div>`),
+    // including the multi-line-open variants (`> <div\n>   id="x">foo\n>
+    // body\n> </div>`) where the trailing is captured into `pre_content`
+    // by `emit_multiline_open_tag_with_attrs` with `lift_trailing=true`.
     // The open line does NOT balance the block (depth > 0 after the
     // open line, distinguishing this from `same_line_bq_lift_tag` which
     // requires depth <= 0). The close line — possibly with leading body
     // text — closes the block when depth returns to 0. Body lines (incl.
     // open trailing and close leading) graft via prefix re-injection.
-    let bq_messy_lift_tag: Option<&str> =
-        if bq_depth > 0 && multiline_open_end.is_none() && depth_aware_tag.is_some() && depth > 0 {
-            if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
-                Some("div")
-            } else if wrapper_kind == SyntaxKind::HTML_BLOCK {
-                match &block_type {
-                    HtmlBlockType::BlockTag {
-                        tag_name,
-                        is_verbatim: false,
-                        closed_by_blank_line: false,
-                        depth_aware: true,
-                        closes_at_open_tag: false,
-                        is_closing: false,
-                    } if is_pandoc_lift_eligible_block_tag(tag_name) => {
-                        // Inline-block matched-pair tags (`<video>`, `<iframe>`,
-                        // …) abandon the lift when the body starts at a
-                        // fresh-block position with a void block tag. Same gate
-                        // as the non-bq matched-pair lift (`strict_block_lift`).
-                        if is_pandoc_inline_block_tag_name(tag_name)
-                            && inline_block_void_interior_abandons(
-                                first_inner,
-                                lines,
-                                start_pos,
-                                multiline_open_end,
-                                bq_depth,
-                                tag_name,
-                            )
-                        {
-                            None
-                        } else {
-                            Some(tag_name.as_str())
-                        }
+    let bq_messy_lift_tag: Option<&str> = if bq_depth > 0 && depth_aware_tag.is_some() && depth > 0
+    {
+        if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+            Some("div")
+        } else if wrapper_kind == SyntaxKind::HTML_BLOCK {
+            match &block_type {
+                HtmlBlockType::BlockTag {
+                    tag_name,
+                    is_verbatim: false,
+                    closed_by_blank_line: false,
+                    depth_aware: true,
+                    closes_at_open_tag: false,
+                    is_closing: false,
+                } if is_pandoc_lift_eligible_block_tag(tag_name) => {
+                    // Inline-block matched-pair tags (`<video>`, `<iframe>`,
+                    // …) abandon the lift when the body starts at a
+                    // fresh-block position with a void block tag. Same gate
+                    // as the non-bq matched-pair lift (`strict_block_lift`).
+                    if is_pandoc_inline_block_tag_name(tag_name)
+                        && inline_block_void_interior_abandons(
+                            first_inner,
+                            lines,
+                            start_pos,
+                            multiline_open_end,
+                            bq_depth,
+                            tag_name,
+                        )
+                    {
+                        None
+                    } else {
+                        Some(tag_name.as_str())
                     }
-                    _ => None,
                 }
-            } else {
-                None
+                _ => None,
             }
         } else {
             None
-        };
+        }
+    } else {
+        None
+    };
 
     // Whether this block participates in the Phase 6 structural lift
     // (recursively parse body as Pandoc markdown and graft children).
@@ -1018,6 +1021,8 @@ pub(crate) fn parse_html_block_with_wrapper(
                 end_line_idx,
                 "div",
                 bq_depth,
+                lift_mode,
+                &mut pre_content,
             );
         } else if let Some(name) = strict_block_tag_name
             && strict_block_lift
@@ -1029,6 +1034,8 @@ pub(crate) fn parse_html_block_with_wrapper(
                 end_line_idx,
                 name,
                 bq_depth,
+                lift_mode,
+                &mut pre_content,
             );
         } else if let Some(name) = bq_strict_attr_emit_tag_name(wrapper_kind, &block_type, bq_depth)
         {
@@ -1037,6 +1044,14 @@ pub(crate) fn parse_html_block_with_wrapper(
             // `strict_block_tag_name` gate is `bq_depth == 0`; this branch
             // covers the bq side so the open tag emits HTML_ATTRS regions
             // for `AttributeNode::cast` and the projector's canonicalizer.
+            //
+            // `lift_trailing` mirrors the single-line `emit_open_tag_tokens`
+            // call below: only push trailing bytes into `pre_content` when
+            // the structural lift will consume them (bq messy lift). The
+            // bq clean-lift requires `pre_content.is_empty()`, so for clean
+            // multi-line opens the trailing is empty anyway and this is
+            // a no-op.
+            let lift_trailing = bq_messy_lift_tag == Some(name);
             emit_multiline_open_tag_with_attrs(
                 builder,
                 lines,
@@ -1044,6 +1059,8 @@ pub(crate) fn parse_html_block_with_wrapper(
                 end_line_idx,
                 name,
                 bq_depth,
+                lift_trailing,
+                &mut pre_content,
             );
         } else {
             emit_multiline_open_tag_simple(builder, lines, start_pos, end_line_idx, bq_depth);
@@ -2328,65 +2345,6 @@ pub(crate) fn pandoc_html_open_tag_closes(
     false
 }
 
-/// Like [`pandoc_html_open_tag_closes`] but additionally requires that
-/// the line containing the closing `>` has no non-whitespace bytes
-/// after it (i.e. the open tag is clean — no trailing on the last open
-/// line, like `<div>foo`). Used by the `HTML_BLOCK_DIV` dispatcher
-/// gate: the structural body lift (`bq_clean_lift` / non-bq lift) only
-/// fires for clean opens, so retagging an open-trailing div produces a
-/// malformed `HTML_BLOCK_DIV` whose open `HTML_BLOCK_TAG` ends in
-/// `TEXT(trailing)` — `div_has_structural_inner` would return false
-/// and `html_div_block` would `debug_assert!`.
-pub(crate) fn pandoc_html_open_tag_closes_cleanly(
-    lines: &[&str],
-    start_pos: usize,
-    bq_depth: usize,
-) -> bool {
-    if start_pos >= lines.len() {
-        return false;
-    }
-    let mut quote: Option<u8> = None;
-    for (offset, line) in lines.iter().enumerate().skip(start_pos) {
-        let inner = if bq_depth > 0 {
-            strip_n_blockquote_markers(line, bq_depth)
-        } else {
-            line
-        };
-        let bytes = inner.as_bytes();
-        let mut i = 0usize;
-        if offset == start_pos {
-            while i < bytes.len() && bytes[i] == b' ' {
-                i += 1;
-            }
-            if bytes.get(i) != Some(&b'<') {
-                return false;
-            }
-            i += 1;
-        }
-        while i < bytes.len() {
-            match (quote, bytes[i]) {
-                (None, b'"') | (None, b'\'') => quote = Some(bytes[i]),
-                (Some(q), x) if x == q => quote = None,
-                (None, b'>') => {
-                    // Verify the rest of this line is whitespace (or
-                    // newline). `bytes` is the bq-stripped inner; the
-                    // newline is still in `bytes` if `line` ended with
-                    // one, so trim trailing whitespace and check we're
-                    // at end-of-line.
-                    let tail = &bytes[i + 1..];
-                    let all_ws = tail
-                        .iter()
-                        .all(|&b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
-                    return all_ws;
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-    }
-    false
-}
-
 /// Emit a multi-line open tag spanning `lines[start_pos..=end_line_idx]` as
 /// structural CST tokens, exposing the attribute region as `HTML_ATTRS` for
 /// `AttributeNode::cast` to find. Bytes are byte-identical to the source —
@@ -2402,6 +2360,7 @@ pub(crate) fn pandoc_html_open_tag_closes_cleanly(
 ///
 /// Bytes inside HTML_ATTRS may include trailing whitespace before the next
 /// newline; `parse_html_attribute_list` tolerates whitespace.
+#[allow(clippy::too_many_arguments)]
 fn emit_multiline_open_tag_with_attrs(
     builder: &mut GreenNodeBuilder<'static>,
     lines: &[&str],
@@ -2409,6 +2368,8 @@ fn emit_multiline_open_tag_with_attrs(
     end_line_idx: usize,
     tag_name: &str,
     bq_depth: usize,
+    lift_trailing: bool,
+    pre_content: &mut String,
 ) {
     let prefix_len = 1 + tag_name.len();
     for (line_idx, raw) in lines
@@ -2527,6 +2488,17 @@ fn emit_multiline_open_tag_with_attrs(
             }
             builder.token(SyntaxKind::TEXT.into(), ">");
             let after_gt = &line_no_nl[gt + 1..];
+            if lift_trailing && !after_gt.is_empty() {
+                // Lift trailing bytes (and the trailing newline) into
+                // `pre_content` so the open `HTML_BLOCK_TAG` ends cleanly
+                // with `TEXT(">")`. The recursive parse at the close-marker
+                // site treats `pre_content` as the leading bytes of the
+                // structural body — same shape produced by `emit_open_tag_tokens`
+                // for single-line opens.
+                pre_content.push_str(after_gt);
+                pre_content.push_str(newline_str);
+                continue;
+            }
             if !after_gt.is_empty() {
                 builder.token(SyntaxKind::TEXT.into(), after_gt);
             }

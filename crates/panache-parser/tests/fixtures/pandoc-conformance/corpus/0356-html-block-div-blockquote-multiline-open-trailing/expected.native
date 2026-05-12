@@ -1,0 +1,6 @@
+[ BlockQuote
+    [ Div
+        ( "x" , [] , [] )
+        [ Para [ Str "trailing" , SoftBreak , Str "body" ] ]
+    ]
+]
