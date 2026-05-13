@@ -1,0 +1,10 @@
+[ Para
+    [ Emph
+        [ Str "foo"
+        , Space
+        , Span ( "" , [] , [] ) [ Str "bar" ]
+        , Space
+        , Str "baz"
+        ]
+    ]
+]

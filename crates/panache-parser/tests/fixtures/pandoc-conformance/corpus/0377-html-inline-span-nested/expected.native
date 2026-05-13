@@ -1,0 +1,15 @@
+[ Para
+    [ Str "before"
+    , Space
+    , Span
+        ( "" , [] , [] )
+        [ Str "outer"
+        , Space
+        , Span ( "" , [] , [] ) [ Str "nested" ]
+        , Space
+        , Str "outer"
+        ]
+    , Space
+    , Str "after"
+    ]
+]

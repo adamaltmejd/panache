@@ -1,0 +1,11 @@
+[ Para
+    [ Str "text"
+    , Space
+    , Link
+        ( "" , [] , [] )
+        [ Span ( "x" , [] , [] ) [ Str "linked" ] ]
+        ( "http://example.com" , "" )
+    , Space
+    , Str "text"
+    ]
+]

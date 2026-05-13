@@ -463,3 +463,13 @@
 372
 373
 374
+
+# html-inline (corpus pins for `<span>` shapes not covered by 0203-0210: emphasis-wrapping-span `*foo <span>bar</span> baz*` locks the `pandoc-ir-migrate` IR-trap — emphasis must not pair into span content; `<span>` inside link `[<span id="x">linked</span>](url)` confirms balanced span detection inside link text; nested `<span>` inside `<span>` confirms recursive inline-HTML scanning. All three already match pandoc-native; pure corpus expansion, no parser changes.)
+375
+376
+377
+
+# html-block (corpus pins for list-item HTML-block shapes building on 0370-0374: multi-line `<div>` open `- <div\n  id="x">\n  body\n  </div>` projects structurally as `Div [Para [body]]` — the existing list-item close-form dispatcher gate + content_col indent normalization handle multi-line opens transparently because `try_parse_html_block_start` recognizes the opener on the first line and `find_multiline_open_end` walks subsequent lines for the closing `>`; tab-indented list-item shapes `-\t<div>\n\t...\n\t</div>` and `-\t<pre>\n\t...\n\t</pre>` confirm `strip_list_item_indent` correctly handles tab characters in the leading indent — tabs advance content_col by 4 and the prefix-strip leaves the tab in place when removing it would overshoot content_col.)
+378
+379
+380
