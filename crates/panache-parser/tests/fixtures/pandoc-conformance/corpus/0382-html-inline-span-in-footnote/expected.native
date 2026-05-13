@@ -1,0 +1,6 @@
+[ Para
+    [ Str "Text"
+    , Note
+        [ Para [ Span ( "" , [ "x" ] , [] ) [ Str "note" ] ] ]
+    ]
+]

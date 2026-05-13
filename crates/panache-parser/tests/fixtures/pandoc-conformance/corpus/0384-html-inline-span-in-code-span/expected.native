@@ -1,0 +1,8 @@
+[ Para
+    [ Str "See"
+    , Space
+    , Code ( "" , [] , [] ) "<span class=\"x\">code</span>"
+    , Space
+    , Str "here."
+    ]
+]

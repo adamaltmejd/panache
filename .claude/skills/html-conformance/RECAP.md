@@ -366,75 +366,67 @@ on unlifted HTML_BLOCK_DIV.
 | 3 | Sectioning + verbatim corpus pin; `eitherBlockOrInline` lift | **Conformance landed** — non-void (2026-05-09); void (`<embed>`/`<area>`/`<source>`/`<track>`) (2026-05-10). Implementation leans on projector-side `inline_pending` tracking + byte walker; CST still opaque for split/matched-pair shapes. |
 | 4 | Comments, PIs, declarations, CDATA projection | **Conformance landed** (2026-05-08); type-4 CM lowercase still gappy. CST opaque (these constructs project as RawBlock / RawInline). |
 | 5 | `markdown_in_html_blocks` interaction edge cases | **Conformance landed** — depth-aware nested div, Plain/Para promotion, refs inheritance, **projector-level splitter** (`split_html_block_by_tags` byte walker + `parse_pandoc_blocks` recursive reparse), outer-matched-pair-abandons-on-void-interior. **The structural CST lift was deferred** — Phase 5's mechanism is the projector reparsing bytes, not the parser emitting structure. |
-| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` / `HTML_BLOCK` get `PARAGRAPH` / `LIST` / etc. as direct children; projector byte walkers become vestigial; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **All non-bq + bq shapes lifted for `<div>` and non-div Pandoc strict-block tags as of 2026-05-12.** Shapes covered: clean multi-line, open-trailing, butted-close, indented-close, same-line, empty / blank-only, multi-line open (clean and trailing). Inline-block matched-pair abandons when body begins with a void block tag (Plain via OnlyIfLast). Bq via three discriminator gates (`bq_clean_lift`, `same_line_bq_lift_tag`, `bq_messy_lift_tag`) — see "Three bq lift gates" trap. Dispatcher's `HTML_BLOCK_DIV` retag gate uses `pandoc_html_open_tag_closes` AND requires `is_closing: false`. Vestigial `<div>` byte walkers pruned 2026-05-11. **As of 2026-05-12** same-line / fully-contained HTML blocks lift inside list items (`ListItemBuffer::emit_as_block` reparse + graft path); formatter's `format_list_item` gets a `HTML_BLOCK / HTML_BLOCK_DIV` arm to emit the marker for these. **As of 2026-05-13** multi-line HTML blocks lift inside list items for non-div strict-block + inline-block + verbatim matched-pair tags via a close-form dispatcher gate (`BlockContext::list_item_unclosed_html_block_tag` + `ListItemBuffer::unclosed_pandoc_matched_pair_tag`); **same day**, list-item indent normalization (`strip_list_item_indent` + `LinePrefixState`) closes the `<div>` Plain→Para gap and the verbatim-tag (`<pre>`, `<style>`, `<script>`, `<textarea>`) RawBlock-indent gap. Projector's `walk_skip_bq_markers` strips leading line-start `WHITESPACE` to make the parser-side re-injection invisible to opaque-HTML projection. **Pass count history: 105 → 187** (current). Open shape gaps tracked in latest session's "Suggested next sub-targets". |
+| 6 (new) | Lift inner HTML block content into structural CST children — `HTML_BLOCK_DIV` / `HTML_BLOCK` get `PARAGRAPH` / `LIST` / etc. as direct children; projector byte walkers become vestigial; `PARAGRAPH→PLAIN` retag at adjacent-HTML-block boundary. | **All non-bq + bq shapes lifted for `<div>` and non-div Pandoc strict-block tags as of 2026-05-12.** Shapes covered: clean multi-line, open-trailing, butted-close, indented-close, same-line, empty / blank-only, multi-line open (clean and trailing). Inline-block matched-pair abandons when body begins with a void block tag (Plain via OnlyIfLast). Bq via three discriminator gates (`bq_clean_lift`, `same_line_bq_lift_tag`, `bq_messy_lift_tag`) — see "Three bq lift gates" trap. Dispatcher's `HTML_BLOCK_DIV` retag gate uses `pandoc_html_open_tag_closes` AND requires `is_closing: false`. Vestigial `<div>` byte walkers pruned 2026-05-11. **As of 2026-05-12** same-line / fully-contained HTML blocks lift inside list items (`ListItemBuffer::emit_as_block` reparse + graft path); formatter's `format_list_item` gets a `HTML_BLOCK / HTML_BLOCK_DIV` arm to emit the marker for these. **As of 2026-05-13** multi-line HTML blocks lift inside list items for non-div strict-block + inline-block + verbatim matched-pair tags via a close-form dispatcher gate (`BlockContext::list_item_unclosed_html_block_tag` + `ListItemBuffer::unclosed_pandoc_matched_pair_tag`); **same day**, list-item indent normalization (`strip_list_item_indent` + `LinePrefixState`) closes the `<div>` Plain→Para gap and the verbatim-tag (`<pre>`, `<style>`, `<script>`, `<textarea>`) RawBlock-indent gap. Projector's `walk_skip_bq_markers` strips leading line-start `WHITESPACE` to make the parser-side re-injection invisible to opaque-HTML projection. **Pass count history: 105 → 192** (current). Open shape gaps tracked in latest session's "Suggested next sub-targets". |
 
 --------------------------------------------------------------------------------
 
-## Latest session — 2026-05-13 (corpus pin wave: span variants + list-item shapes)
+## Latest session — 2026-05-13 (corpus pin wave: 3-line div + span in non-paragraph inline contexts)
 
-Pure corpus + fixture expansion — no parser changes. Took
-sub-targets #2 / #3 / #4 from the previous session (each
-already matched pandoc-native at probe time); deferred
-sub-target #1 (comment + trailing-text split) as genuinely
-substantial.
+Pure corpus expansion — no parser changes. Took #3 / #4 from
+previous session; probed #1 / #5 and confirmed both are
+genuinely parser-side gaps, deferred.
 
-Conformance: html 181 → 187, total 374 → 380 (+6).
-
-Surprise: previous session's prediction that multi-line
-`<div>` open inside a list-item would fall back to opaque
-HTML_BLOCK was wrong. The list-item buffer reparse threads
-full buffer text through `Parser::parse_with_refdefs` which
-re-walks all lines, picking up the multi-line open via the
-standard `find_multiline_open_end` path. Pinned directly,
-no parser fix needed.
+Conformance: html 187 → 192, total 380 → 385 (+5).
 
 ### What landed
 
-- Corpus 0375 – 0380: 3 inline-span variants (in emphasis,
-  in link, nested) + 3 list-item shapes (multi-line div
-  open, tab-indent div, tab-indent pre).
-- 6 paired parser goldens
-  (`list_item_html_{div_multiline_open,div_tab_indent,pre_tab_indent}_{pandoc,commonmark}`).
-  Pandoc snapshots show structural lift (HTML_BLOCK_DIV +
-  HTML_ATTRS + PARAGRAPH with WHITESPACE prefix re-injection);
-  CommonMark snapshots show opaque PLAIN + INLINE_HTML.
-- 1 formatter golden (`list_item_html_div_multiline_open`).
-  Tab-indented cases NOT pinned in formatter — non-idempotent
-  there; see new persistent trap.
-- Allowlist 375 – 380 under two new section comments.
+- Corpus 0381 – 0385: 3-line multi-line `<div>` open in
+  list-item (extends 0378); `<span>` in footnote definition
+  (`Note [Para [Span ...]]`); `<span>` in table cell (`Cell
+  [Plain [Span ...]]`; salsa picks up `id` automatically);
+  `<span>` text inside inline code span (regression — `Code`
+  preserved verbatim); `<span>` text inside inline math
+  (regression — `Math` preserved verbatim).
+- Allowlist 381 – 385 under two new section comments.
+- No parser/formatter fixtures — no new CST structure.
 
 ### Files in committable diff
 
-- `crates/panache-parser/tests/fixtures/{pandoc-conformance/corpus/0375-…0380-…,cases/list_item_html_*_{pandoc,commonmark}}/`
-  + snapshots; `golden_parser_cases.rs`.
-- `tests/fixtures/cases/list_item_html_div_multiline_open/`
-  + `tests/golden_cases.rs`.
+- `crates/panache-parser/tests/fixtures/pandoc-conformance/corpus/0381…0385/`
 - `crates/panache-parser/tests/pandoc/{allowlist.txt,report.txt}`
   + `docs/development/pandoc-report.json`.
 
+### Deferred (probed, confirmed gaps)
+
+- **Comment + trailing-text split** (sub-target #1):
+  `<!-- hello --> trailing` → single `RawBlock` vs pandoc's
+  `RawBlock + Para`. Same gap for multi-line `<!--\n...\n-->
+  trailing`. Parser-side fix: close type-2 at `-->`, leave
+  trailing for normal block parsing.
+- **Bq-in-listitem stacked container** (sub-target #5):
+  `- > <div>...</div>` and multi-line variant produce wrong
+  CST (Plain with RawInline). The list-item HTML lift gate
+  doesn't combine with bq-prefix re-injection.
+
 ### Suggested next sub-targets
 
-1. **Comment + trailing-text split.** Carry-over. Highest-
-   leverage gap; needs parser-side truncation at the closer
-   or projector-side split-and-merge — either is a focused
-   session. Same gap for type-3 PIs, type-4 declarations,
-   type-5 CDATA.
-2. **Formatter non-idempotency for tab-indented list-item
-   HTML.** Discovered this session (see persistent trap).
-   Formatter bug, not html-conformance scope; unblocks
-   goldens for 0379/0380. Fix likely in `formatter/lists.rs`.
-3. **`<span>` in other inline contexts** (code spans,
-   footnote refs, math, table cells). Pure corpus expansion.
-4. **Multi-line `<div>` open ≥ 3 lines** in list-item.
-   Probably already works; probe + pin.
-5. **Multi-line `<div>` open in blockquote inside list-item.**
-   Stacked-container shape; unprobed.
+1. **Comment + trailing-text split** (carry-over). Parser-
+   side truncation in `parse_html_block` type-2 close logic.
+2. **Bq-in-listitem stacked container**. Extend close-form
+   dispatcher gate to thread bq state, or graft lift over a
+   `BqPrefixState`-wrapped reparse.
+3. **Formatter non-idempotency for tab-indented list-item
+   HTML** (carry-over, out of scope).
+4. **`<span>` in autolink / image alt / heading text** —
+   remaining inline contexts; probe first, then pin.
+5. **`<div>\n</div>\nfoo`** (no blank line before trailing
+   paragraph). Unprobed.
 
 ### New traps
 
-Folded into Persistent traps:
-- "Formatter non-idempotency for tab-indented list items"
-  under "Out of scope / known divergences".
+None — both deferred probes are covered by existing
+persistent traps (projector-as-second-stage-parser smell;
+list-item HTML lift gate strictness).
 
 --------------------------------------------------------------------------------
 
@@ -443,11 +435,10 @@ Folded into Persistent traps:
 Newest first. One line per session: date — phase/sub-target — pass
 count delta — root cause / lever.
 
+- 2026-05-13 — Phase 6 — corpus pin wave (0375 – 0380): 3 inline-span variants (in-emphasis, in-link, nested) + 3 list-item shapes (multi-line div open, tab-indent div, tab-indent pre); 6 paired parser goldens (lift CST snapshots) + 1 formatter golden — html 181 → 187 — pure corpus expansion, no parser changes; tab-indented list-item HTML found non-idempotent (formatter bug, out of scope).
 - 2026-05-13 — Phase 6 — list-item indent normalization (`strip_list_item_indent` + `LinePrefixState` re-injection; projector `walk_skip_bq_markers` line-start-WS strip) closes `<div>` Plain→Para gap and verbatim-tag (`<pre>`, `<style>`, `<script>`, `<textarea>`) RawBlock-indent gap — html 176 → 181 — `ListItemBuffer::emit_as_block` threads `content_col` from `Container::ListItem`; per-line `WHITESPACE` re-injection during graft mirrors `BqPrefixState`.
 - 2026-05-13 — Phase 6 — multi-line list-item HTML lift via close-form dispatcher gate (`- <section>...`, `- <video>...`, `- <iframe>...`, `- <span>...`) — html 171 → 176 — `BlockContext::list_item_unclosed_html_block_tag` + `ListItemBuffer::unclosed_pandoc_matched_pair_tag`; `count_tag_balance` / `is_pandoc_lift_eligible_block_tag` / new `is_pandoc_matched_pair_tag` promoted to `pub(crate)`; close-form `</tag>` dispatch suppressed when the enclosing LIST_ITEM has an unclosed matched-pair open. Indent gap for `<div>` body and verbatim content deferred to next session.
 - 2026-05-12 — Phase 6 wave (same-line list-item lift, butted-close WS routing, projector leading-indent strip, `</div>` standalone retag fix, multi-line-open trailing lift, bq multi-line open lift) — html 159 → 171 — `ListItemBuffer::try_emit_html_block_lift`, formatter LIST_MARKER arm, `open_tag_raw_block_text` leading-WS strip, dispatcher `is_closing: false` retag gate, `emit_multiline_open_tag_with_attrs` `lift_trailing` + `pre_content`, `find_multiline_open_end` bq_depth, `bq_lift_tag`/`bq_messy_lift_tag` drop `multiline_open_end.is_none()`.
 - 2026-05-11 — Phase 6 bq lift arc (Fix #5 clean + HTML_ATTRS-in-bq, Fix #7 same-line, Fix #8 messy) + `<div>` byte-walker prune in `pandoc_ast.rs` (~170 net lines) — html stable 159 — three discriminator gates (`bq_clean_lift`, `same_line_bq_lift_tag`, `bq_messy_lift_tag`), `BqPrefixState` re-injection, `inline_block_void_interior_abandons`, `bq_strict_attr_emit_tag_name`, `open_tag_raw_block_text` bq-prefix strip; `html_div_block` `debug_assert!`s on unlifted HTML_BLOCK_DIV.
 - 2026-05-11 — Phase 6 / Fix #4 non-div strict-block shape sweep + multi-line open-tag lift — html 142 → 159 — `is_pandoc_lift_eligible_block_tag`, `html_block_has_structural_lift`, `LastParaDemote::{OnlyIfLast,SkipTrailingBlanks,Never}`, `parse_with_refdefs` graft, `emit_multiline_open_tag_with_attrs`, `open_tag_raw_block_text` canonicalizer.
-- 2026-05-10 → 2026-05-11 — Phase 6 cannot_interrupt + Fix #1/#2 — html 132 → 142 — PARAGRAPH→PLAIN retag at YesCanInterrupt; `is_closing` field; `is_math_tex_script_open`; pandoc `isInlineTag` (issue #10643).
-- 2026-05-10 — Strict-block/verbatim closing-form lift, multi-line void open-tag, incomplete-open recursion fix, Phase 3 void `eitherBlockOrInline` — html 105 → 132 — `closes_at_open_tag`, `pandoc_html_open_tag_closes` gate, `PANDOC_VOID_BLOCK_TAGS`.
-- 2026-05-08 → 2026-05-09 — Phases 1-5 seed + projector-side lift — html 0 → 105 — `HTML_BLOCK_DIV`/`INLINE_HTML_SPAN` retag, `HTML_ATTRS`, projector `inline_pending`, CM/Pandoc blockHtmlTags split.
+- 2026-05-08 → 2026-05-11 — Phases 1-5 seed + Phase 3 void `eitherBlockOrInline` + cannot_interrupt + Fix #1/#2 — html 0 → 142 — `HTML_BLOCK_DIV`/`INLINE_HTML_SPAN` retag, `HTML_ATTRS`, projector `inline_pending`, CM/Pandoc blockHtmlTags split, `closes_at_open_tag`, `pandoc_html_open_tag_closes`, `PANDOC_VOID_BLOCK_TAGS`, PARAGRAPH→PLAIN retag at YesCanInterrupt, `is_closing` field, `is_math_tex_script_open`, pandoc `isInlineTag` (issue #10643).

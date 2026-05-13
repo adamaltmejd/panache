@@ -1,0 +1,8 @@
+[ Para
+    [ Str "Inline"
+    , Space
+    , Math InlineMath "<span class=\"x\">x</span>"
+    , Space
+    , Str "math."
+    ]
+]

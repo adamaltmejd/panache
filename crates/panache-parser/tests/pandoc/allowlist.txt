@@ -473,3 +473,12 @@
 378
 379
 380
+
+# html-block (3-line `<div>` open inside a list item — `- <div\n    id="x"\n    class="y">\n  body\n  </div>` extends 0378's 2-line variant to verify the multi-line open recognition transparently handles ≥3 attribute lines through `find_multiline_open_end`'s quote-aware scan; the list-item content_col indent normalization re-injects the same per-line WHITESPACE prefix regardless of open-tag span. No parser changes; pure corpus pin.)
+381
+
+# html-inline (corpus pins for `<span>` inside non-paragraph inline contexts: span in footnote definition `[^foo]: <span class="x">note</span>` lifts to `Note [Para [Span ...]]`; span in table cell `| <span id="x">b</span> |` lifts to `Cell [Plain [Span ...]]` (and the salsa anchor index sees the `id="x"`); span text inside an inline code span `` `<span class="x">code</span>` `` is preserved verbatim as `Code` content (regression — Code parsing must not trigger span lift); span text inside inline math `$<span class="x">x</span>$` is preserved verbatim as `Math` content (regression — math parsing must not trigger span lift). All four already match pandoc-native; pure corpus expansion, no parser changes.)
+382
+383
+384
+385
