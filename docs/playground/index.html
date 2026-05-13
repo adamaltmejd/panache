@@ -126,13 +126,6 @@
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-lg-2">
-                                <label class="form-label fw-semibold mb-1" for="blank-lines">Blank lines</label>
-                                <select id="blank-lines" class="form-select">
-                                    <option value="collapse" selected>Collapse</option>
-                                    <option value="preserve">Preserve</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-sm-6 col-lg-2">
                                 <label class="form-label fw-semibold mb-1" for="line-ending">Line ending</label>
                                 <select id="line-ending" class="form-select">
                                     <option value="auto" selected>Auto</option>
@@ -215,7 +208,6 @@
           flavor: $("flavor").value,
           lw: readInt("lw", 80),
           wrap: $("wrap").value,
-          blankLines: $("blank-lines").value,
           lineEnding: $("line-ending").value,
           mathDelimiterStyle: $("math-delimiter-style").value,
           mathIndent: readInt("math-indent", 0),
@@ -242,7 +234,6 @@
           flavor: options.flavor,
           lw: String(options.lw),
           wrap: options.wrap,
-          blankLines: options.blankLines,
           lineEnding: options.lineEnding,
           mathDelimiterStyle: options.mathDelimiterStyle,
           mathIndent: String(options.mathIndent),
@@ -258,7 +249,6 @@
           flavor: "flavor",
           lw: "lw",
           wrap: "wrap",
-          blankLines: "blank-lines",
           lineEnding: "line-ending",
           mathDelimiterStyle: "math-delimiter-style",
           mathIndent: "math-indent",
@@ -292,7 +282,7 @@
             options.lw,
             options.flavor,
             options.wrap,
-            options.blankLines,
+            undefined,
             options.lineEnding,
             options.mathDelimiterStyle,
             options.tabStops,
@@ -322,7 +312,6 @@
           "flavor",
           "lw",
           "wrap",
-          "blank-lines",
           "line-ending",
           "math-delimiter-style",
           "math-indent",

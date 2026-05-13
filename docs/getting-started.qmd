@@ -286,7 +286,6 @@ line-width = 80
 
 [format]
 wrap = "reflow"
-blank-lines = "collapse"
 ```
 
 To see all the available configuration options, check the [Configuration

@@ -820,18 +820,3 @@ fn test_format_wrap_preserve_flag_keeps_existing_breaks() {
         "--wrap preserve should keep both breaks, got:\n{stdout}"
     );
 }
-
-#[test]
-fn test_format_blank_lines_flag_accepted() {
-    // Smoke test: clap accepts both values and the run succeeds. The formatter
-    // currently treats `BlankLines::Preserve` as a no-op (it always collapses);
-    // when that gets fixed, tighten this to assert the actual behavior change.
-    for mode in ["preserve", "collapse"] {
-        cargo_bin_cmd!("panache")
-            .args(["format", "--blank-lines", mode])
-            .write_stdin("First paragraph.\n\nSecond paragraph.\n")
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("First paragraph."));
-    }
-}

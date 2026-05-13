@@ -100,14 +100,6 @@ Format a Quarto, Pandoc, or R Markdown document according to Panache's formattin
   - `preserve`:
     Keep existing line breaks
 
-* `--blank-lines <MODE>` — Override how blank lines are handled. Takes precedence over `[format] blank-lines` in panache.toml. Options: `collapse` (collapse multiple blank lines into one, the default), `preserve` (keep all existing blank lines).
-
-  Possible values:
-  - `collapse`:
-    Collapse multiple blank lines into one
-  - `preserve`:
-    Keep all existing blank lines
-
 
 
 

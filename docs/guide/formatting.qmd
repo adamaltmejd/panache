@@ -774,9 +774,7 @@ Output (`line-width = 60`):
 
 ## Blank Lines
 
-### Collapsing
-
-By default, multiple blank lines are collapsed to one:
+Multiple blank lines are collapsed to one:
 
 Input
 
@@ -794,13 +792,6 @@ Output
 
     Paragraph 2
     ```
-
-If you want to preserve all existing blank lines, set:
-
-```toml
-[format]
-blank-lines = "preserve"
-```
 
 ## Frontmatter
 

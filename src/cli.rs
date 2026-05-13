@@ -268,17 +268,6 @@ pub enum Commands {
             `preserve` (keep existing line breaks)."
         )]
         wrap: Option<CliWrap>,
-
-        /// Override the blank-line handling mode
-        #[arg(long, value_enum, value_name = "MODE")]
-        #[arg(help = "Override `[format] blank-lines` from panache.toml for this invocation")]
-        #[arg(
-            long_help = "Override how blank lines are handled. Takes precedence over \
-            `[format] blank-lines` in panache.toml. Options: \
-            `collapse` (collapse multiple blank lines into one, the default), \
-            `preserve` (keep all existing blank lines)."
-        )]
-        blank_lines: Option<CliBlankLines>,
     },
     /// Parse and display the CST tree for debugging
     #[command(
@@ -512,14 +501,6 @@ pub enum CliWrap {
     /// Wrap after each sentence
     Sentence,
     /// Keep existing line breaks
-    Preserve,
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum CliBlankLines {
-    /// Collapse multiple blank lines into one
-    Collapse,
-    /// Keep all existing blank lines
     Preserve,
 }
 

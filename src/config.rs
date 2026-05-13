@@ -197,10 +197,51 @@ fn check_deprecated_code_block_style_options(s: &str, path: &Path) {
     }
 }
 
+fn check_deprecated_blank_lines(s: &str, path: &Path) {
+    let Ok(toml_value) = toml::from_str::<toml::Value>(s) else {
+        return;
+    };
+    let Some(root) = toml_value.as_table() else {
+        return;
+    };
+
+    fn has_blank_lines(table: &toml::map::Map<String, toml::Value>) -> bool {
+        table.contains_key("blank-lines") || table.contains_key("blank_lines")
+    }
+
+    let top_level = has_blank_lines(root);
+    let format_nested = root
+        .get("format")
+        .and_then(|v| v.as_table())
+        .is_some_and(has_blank_lines);
+    let style_nested = root
+        .get("style")
+        .and_then(|v| v.as_table())
+        .is_some_and(has_blank_lines);
+
+    if top_level || format_nested || style_nested {
+        eprintln!(
+            "Warning: Deprecated `blank-lines` setting found in {}:",
+            path.display()
+        );
+        if format_nested {
+            eprintln!("  - [format] blank-lines");
+        }
+        if top_level {
+            eprintln!("  - blank-lines (top-level)");
+        }
+        if style_nested {
+            eprintln!("  - [style] blank-lines");
+        }
+        eprintln!("  This option is now a no-op and will be removed in a future release.");
+    }
+}
+
 fn parse_config_str(s: &str, path: &Path) -> io::Result<Config> {
     check_deprecated_extension_names(s, path);
     check_deprecated_formatter_names(s, path);
     check_deprecated_code_block_style_options(s, path);
+    check_deprecated_blank_lines(s, path);
 
     let config: Config = toml::from_str(s).map_err(|e| {
         io::Error::new(
@@ -720,6 +761,23 @@ mod tests {
         );
         // Sanity check: defaults are used, not line-width=7 from the stray file.
         assert_ne!(cfg.line_width, 7);
+    }
+
+    #[test]
+    fn deprecated_blank_lines_still_parses() {
+        // Soft-removed: setting it must not error so existing user TOMLs keep
+        // working. The warning is emitted via stderr (not asserted here).
+        let toml = "[format]\nblank-lines = \"preserve\"\n";
+        let cfg = parse_config_str(toml, Path::new("panache.toml"))
+            .expect("config with deprecated blank-lines must still parse");
+        assert_eq!(cfg.line_width, 80, "unrelated defaults preserved");
+    }
+
+    #[test]
+    fn deprecated_top_level_blank_lines_still_parses() {
+        let toml = "blank-lines = \"collapse\"\n";
+        parse_config_str(toml, Path::new("panache.toml"))
+            .expect("top-level blank-lines key must still parse");
     }
 
     #[test]
