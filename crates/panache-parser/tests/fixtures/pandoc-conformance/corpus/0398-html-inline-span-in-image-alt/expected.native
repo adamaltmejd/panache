@@ -1,0 +1,12 @@
+[ Figure
+    ( "" , [] , [] )
+    (Caption
+       Nothing [ Plain [ Span ( "" , [] , [] ) [ Str "alt" ] ] ])
+    [ Plain
+        [ Image
+            ( "" , [] , [] )
+            [ Span ( "" , [] , [] ) [ Str "alt" ] ]
+            ( "url" , "" )
+        ]
+    ]
+]

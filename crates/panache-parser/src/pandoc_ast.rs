@@ -1327,16 +1327,35 @@ fn emit_html_block(node: &SyntaxNode, out: &mut Vec<Block>) {
         .position(|&b| b != b' ' && b != b'\t')
         .unwrap_or(content.len());
     let trimmed = &content[leading_ws..];
+    // Pandoc strips leading 1-3 spaces of indent from the first line
+    // of an HTML block's RawBlock text — `  <pre>foo</pre>\n` emits
+    // `RawBlock "<pre>foo</pre>"`. Subsequent lines keep their
+    // indent. The HTML-block scanner only recognizes 0-3 leading
+    // spaces of indent, so leading_ws is bounded; tabs aren't part
+    // of an HTML-block opener and shouldn't be stripped.
+    let strip_first_line_indent = leading_ws > 0
+        && leading_ws <= 3
+        && content.as_bytes()[..leading_ws].iter().all(|&b| b == b' ');
     if trimmed.starts_with("<!--")
         || trimmed.starts_with("<?")
         || trimmed.starts_with("<![CDATA[")
         || trimmed.starts_with("<!")
         || is_raw_text_element_open(trimmed)
     {
-        out.push(Block::RawBlock("html".to_string(), content));
+        let raw = if strip_first_line_indent {
+            content[leading_ws..].to_string()
+        } else {
+            content
+        };
+        out.push(Block::RawBlock("html".to_string(), raw));
         return;
     }
-    split_html_block_by_tags(&content, out);
+    let walker_input = if strip_first_line_indent {
+        &content[leading_ws..]
+    } else {
+        content.as_str()
+    };
+    split_html_block_by_tags(walker_input, out);
 }
 
 /// True when an `HTML_BLOCK` carries the Fix #4 structural lift shape:

@@ -1,0 +1,6 @@
+[ BulletList
+    [ [ Para [ Str "text" ]
+      , RawBlock (Format "html") "<pre>foo</pre>"
+      ]
+    ]
+]

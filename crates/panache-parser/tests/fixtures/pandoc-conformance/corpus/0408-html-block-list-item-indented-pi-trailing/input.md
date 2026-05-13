@@ -1,0 +1,3 @@
+- text
+
+  <?php foo ?> trailing

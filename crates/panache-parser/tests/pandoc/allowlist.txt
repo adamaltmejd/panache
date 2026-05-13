@@ -498,3 +498,21 @@
 # html-block (Trailing-whitespace trim for RawBlock projection: `<!-- hi -->   \n` and `<pre>foo</pre>   \n` project as `RawBlock "<!-- hi -->"` and `RawBlock "<pre>foo</pre>"` (matching pandoc-native). Projector-side `emit_html_block` now trims trailing ASCII whitespace (newlines + spaces + tabs) from the collected text instead of only newlines. Interior whitespace is preserved.)
 395
 396
+
+# html-inline (corpus pins for `<span>` inside remaining inline contexts: span in autolink (`<<span>https://…</span>>` projects `Str "<", Span, Str ">"`); span in image alt (`![<span>alt</span>](url)` lifts into `Figure/Image` content); span in ATX heading (`# Title with <span>inline</span>` → `Header [Str…, Span]`); span in link text (`[<span>link</span>](url)` → `Link [Span]`); span around emphasis (`<span>*emph*</span>` → `Span [Emph]` with emphasis NOT pairing into span); span in setext heading. All six already match pandoc-native; pure corpus expansion, no parser changes.)
+397
+398
+399
+400
+401
+402
+
+# html-block (Leading 1-3 space indent strip from RawBlock first line: `  <pre>foo</pre>\n` (top level), `- text\n\n  <!-- hi -->` (list-item content_col), `- text\n\n  <pre>foo</pre>` (list-item), and multi-line `  <pre>\n  foo\n  </pre>` (top level — first line indent stripped, subsequent lines keep indent) now project as `RawBlock "<pre>foo</pre>"`/`RawBlock "<!-- hi -->"`/`RawBlock "<pre>\n  foo\n  </pre>"`. Projector-side `emit_html_block` strips the leading 1-3 spaces of the first line before emitting `RawBlock` text. Pandoc only recognizes HTML blocks at indent 0-3, so the strip is bounded. Top-level indented comments (`  <!-- hi -->\n` → pandoc emits `Para [RawInline]`, panache still emits `RawBlock`) remain a separate shape divergence — content matches now but the wrapper is wrong; not in corpus.)
+403
+404
+405
+406
+
+# html-block (List-item indented Comment/PI with trailing text: `- text\n\n  <!-- hi --> trailing` and `- text\n\n  <?php foo ?> trailing` project as `BulletList [[Para, RawBlock, Para [trailing]]]`. Combined effect of the bq-extended `try_parse_comment_pi_with_trailing_split` (handles trailing-text split structurally) and the new leading-indent strip in `emit_html_block` (strips the 2-space list-item indent from RawBlock first line). Pure corpus pin — no new code beyond what already landed.)
+407
+408

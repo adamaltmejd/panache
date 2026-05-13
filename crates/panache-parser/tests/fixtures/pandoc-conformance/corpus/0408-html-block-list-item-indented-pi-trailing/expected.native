@@ -1,0 +1,7 @@
+[ BulletList
+    [ [ Para [ Str "text" ]
+      , RawBlock (Format "html") "<?php foo ?>"
+      , Para [ Str "trailing" ]
+      ]
+    ]
+]

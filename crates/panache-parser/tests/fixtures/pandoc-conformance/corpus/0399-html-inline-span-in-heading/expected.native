@@ -1,0 +1,10 @@
+[ Header
+    1
+    ( "title-with-inline" , [] , [] )
+    [ Str "Title"
+    , Space
+    , Str "with"
+    , Space
+    , Span ( "" , [ "x" ] , [] ) [ Str "inline" ]
+    ]
+]
