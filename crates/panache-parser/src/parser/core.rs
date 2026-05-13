@@ -1468,6 +1468,20 @@ impl<'a> Parser<'a> {
         blockquotes::current_blockquote_depth(&self.containers)
     }
 
+    /// Look up the immediate enclosing `Container::ListItem`'s buffer for an
+    /// unclosed Pandoc matched-pair HTML open tag. See
+    /// [`crate::parser::utils::list_item_buffer::ListItemBuffer::unclosed_pandoc_matched_pair_tag`]
+    /// for the gate; used to populate
+    /// `BlockContext::list_item_unclosed_html_block_tag` so the dispatcher
+    /// can suppress the close-form match that would otherwise interrupt
+    /// `- <div>\n  body\n  </div>` and friends.
+    fn list_item_unclosed_html_block_tag(&self) -> Option<String> {
+        let Container::ListItem { buffer, .. } = self.containers.stack.last()? else {
+            return None;
+        };
+        buffer.unclosed_pandoc_matched_pair_tag(self.config)
+    }
+
     /// Emit or buffer a blockquote marker depending on parser state.
     ///
     /// If a paragraph is open and we're using integrated parsing, buffer the marker.
@@ -1570,6 +1584,7 @@ impl<'a> Parser<'a> {
                         ..
                     })
                 ),
+                list_item_unclosed_html_block_tag: self.list_item_unclosed_html_block_tag(),
                 paragraph_open: self.is_paragraph_open(),
                 next_line: if self.pos + 1 < self.lines.len() {
                     Some(self.lines[self.pos + 1])
@@ -2551,6 +2566,7 @@ impl<'a> Parser<'a> {
                                 ..
                             })
                         ),
+                        list_item_unclosed_html_block_tag: self.list_item_unclosed_html_block_tag(),
                         paragraph_open: self.is_paragraph_open(),
                         next_line: if self.pos + 1 < self.lines.len() {
                             Some(self.lines[self.pos + 1])
@@ -2727,6 +2743,7 @@ impl<'a> Parser<'a> {
                     ..
                 })
             ),
+            list_item_unclosed_html_block_tag: self.list_item_unclosed_html_block_tag(),
             paragraph_open: self.is_paragraph_open(),
             next_line,
         };

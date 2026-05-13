@@ -1,0 +1,7 @@
+[ BulletList
+    [ [ RawBlock (Format "html") "<section>"
+      , Plain [ Str "hello" ]
+      , RawBlock (Format "html") "</section>"
+      ]
+    ]
+]

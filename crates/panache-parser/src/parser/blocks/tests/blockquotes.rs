@@ -396,6 +396,7 @@ fn dispatcher_blockquote_detection() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -430,6 +431,7 @@ fn dispatcher_blockquote_requires_blank_before() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -470,6 +472,7 @@ fn dispatcher_blockquote_payload_basic() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -507,6 +510,7 @@ fn dispatcher_blockquote_payload_nested_requires_blank() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -543,6 +547,7 @@ fn dispatcher_blockquote_ignored_inside_blockquote() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -574,6 +579,7 @@ fn dispatcher_blockquote_payload_nested_with_blank() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };
@@ -610,6 +616,7 @@ fn dispatcher_blockquote_payload_nested_after_blank_line() {
         list_indent_info: None,
         in_list: false,
         in_marker_only_list_item: false,
+        list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
     };

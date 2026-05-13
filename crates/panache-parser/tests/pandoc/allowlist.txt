@@ -449,3 +449,10 @@
 362
 363
 364
+
+# html-block / html-inline (multi-line HTML block as list-item content for non-div strict-block tags, inline-block matched-pair tags, and inline spans — `- <section>\n  hello\n  </section>`, `- <article>...`, `- <video src="x">...`, `- <iframe>...`, `- <span id="x">body</span>` now project structurally instead of as `Plain[RawInline open, body, RawInline close]`. Implementation: a new field `BlockContext::list_item_unclosed_html_block_tag` carries the tag name of an unclosed Pandoc matched-pair open in the enclosing `Container::ListItem`'s buffer. `HtmlBlockParser::detect_prepared` returns `None` for a close-form whose tag matches that field, so `</section>` / `</video>` / etc. fall through to buffer continuation instead of dispatching as a separate block. The buffer at LIST_ITEM close-time then contains the full matched-pair text; `ListItemBuffer::try_emit_html_block_lift` reparses and grafts the lifted HTML_BLOCK / HTML_BLOCK_DIV as a direct LIST_ITEM child. `count_tag_balance` and `is_pandoc_lift_eligible_block_tag` promoted to `pub(crate)`, with new helper `is_pandoc_matched_pair_tag` covering strict-block, inline-block, and verbatim tags (excluding void). Gates only fire under Pandoc dialect. Known divergences kept opaque: multi-line `<div>` body produces `Div [Plain [body]]` instead of pandoc's `Div [Para [body]]` (indent-normalization gap — pandoc strips list-item content_col leading from continuation lines before reparse), and `<pre>` content includes the list-item leading indent (`<pre>\n  foo\n  </pre>` vs pandoc's `<pre>\nfoo\n</pre>`). Both are tracked in the recap.)
+365
+366
+367
+368
+369

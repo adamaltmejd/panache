@@ -121,6 +121,17 @@ pub(crate) struct BlockContext<'a> {
     /// the indented line.
     pub in_marker_only_list_item: bool,
 
+    /// If the immediate enclosing `Container::ListItem`'s buffer starts
+    /// with a Pandoc matched-pair HTML open tag (e.g. `<div>`,
+    /// `<section>`, `<pre>`) whose opens outnumber its closes, this is
+    /// the (lowercase) tag name. Used by `HtmlBlockParser::detect_prepared`
+    /// to suppress the close-form dispatch (`</div>` etc.) that would
+    /// otherwise interrupt the buffer mid-construct — letting the buffer
+    /// accumulate the full matched-pair text so the emit-time structural
+    /// lift in `ListItemBuffer::emit_as_block` produces a single lifted
+    /// HTML block as the list item's content.
+    pub list_item_unclosed_html_block_tag: Option<String>,
+
     /// Whether a `Container::Paragraph` is currently open and buffering
     /// content. When `true`, the *previous* source line was buffered as
     /// paragraph text — even if its shape would have been a heading or HR
@@ -1792,6 +1803,29 @@ impl BlockParser for HtmlBlockParser {
 
         let is_commonmark = ctx.config.dialect == crate::options::Dialect::CommonMark;
         let block_type = try_parse_html_block_start(ctx.content, is_commonmark)?;
+
+        // Pandoc-only: suppress close-form dispatch when the enclosing
+        // LIST_ITEM buffer has an unclosed matched-pair open of the same
+        // tag name. Without this, the dispatcher recognizes `</div>` /
+        // `</section>` / `</pre>` mid-list-item as a separate block start,
+        // which flushes the LIST_ITEM buffer mid-stream and produces
+        // `Plain[RawInline <tag>, body, RawInline </tag>]` for the
+        // open-side plus a sibling RawBlock for the close. By returning
+        // None here, the line falls through to buffer continuation; at
+        // emit time `ListItemBuffer::emit_as_block` sees the full matched-
+        // pair text and grafts a single lifted HTML block. Same-line and
+        // top-level cases are unaffected (no LIST_ITEM container, or the
+        // buffer has zero unclosed opens).
+        if let HtmlBlockType::BlockTag {
+            tag_name,
+            is_closing: true,
+            ..
+        } = &block_type
+            && ctx.list_item_unclosed_html_block_tag.as_deref()
+                == Some(tag_name.to_ascii_lowercase().as_str())
+        {
+            return None;
+        }
 
         // Pandoc-only: validate that the open tag is syntactically complete
         // (an unquoted `>` exists somewhere from the `<` onward, possibly

@@ -410,6 +410,8 @@ golden_test_cases!(
     list_item_fenced_code_first_line_commonmark,
     list_item_html_div_same_line_commonmark,
     list_item_html_div_same_line_pandoc,
+    list_item_html_section_multiline_commonmark,
+    list_item_html_section_multiline_pandoc,
     list_item_indented_code,
     list_item_indented_code_marker_line_partial_overflow,
     list_item_indented_code_tabs_commonmark,

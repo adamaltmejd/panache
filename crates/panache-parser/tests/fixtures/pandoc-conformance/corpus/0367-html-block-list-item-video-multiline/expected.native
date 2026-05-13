@@ -1,0 +1,7 @@
+[ BulletList
+    [ [ RawBlock (Format "html") "<video src=\"x\">"
+      , Plain [ Str "hello" ]
+      , RawBlock (Format "html") "</video>"
+      ]
+    ]
+]

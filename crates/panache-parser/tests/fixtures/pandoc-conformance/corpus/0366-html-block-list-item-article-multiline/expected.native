@@ -1,0 +1,7 @@
+[ BulletList
+    [ [ RawBlock (Format "html") "<article>"
+      , Plain [ Str "hello" ]
+      , RawBlock (Format "html") "</article>"
+      ]
+    ]
+]

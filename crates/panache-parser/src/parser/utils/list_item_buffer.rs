@@ -6,7 +6,9 @@
 use crate::options::{Dialect, ParserOptions};
 use crate::parser::blocks::headings::{emit_atx_heading, try_parse_atx_heading};
 use crate::parser::blocks::horizontal_rules::{emit_horizontal_rule, try_parse_horizontal_rule};
-use crate::parser::blocks::html_blocks::try_parse_html_block_start;
+use crate::parser::blocks::html_blocks::{
+    HtmlBlockType, count_tag_balance, is_pandoc_matched_pair_tag, try_parse_html_block_start,
+};
 use crate::parser::utils::inline_emission;
 use crate::parser::utils::text_buffer::ParagraphBuffer;
 use crate::syntax::{SyntaxKind, SyntaxNode};
@@ -81,6 +83,53 @@ impl ListItemBuffer {
             ListItemContent::Text(t) => Some(t.as_str()),
             ListItemContent::BlockquoteMarker { .. } => None,
         }
+    }
+
+    /// If the buffered text begins with a Pandoc matched-pair HTML open
+    /// tag (e.g. `<div ...>`, `<section>`, `<pre>`, `<video>`) whose
+    /// opens outnumber its closes in the buffered text, return the tag
+    /// name. Used by the block dispatcher to suppress the close-form
+    /// dispatch that would otherwise interrupt the LIST_ITEM buffer at
+    /// `</div>` / `</pre>` / etc. — letting the buffer accumulate the
+    /// full matched-pair text so the emit-time structural lift sees both
+    /// open and close.
+    ///
+    /// Only fires under Pandoc dialect. Under CommonMark, list items
+    /// keep their existing behavior (inline HTML inside Plain).
+    pub(crate) fn unclosed_pandoc_matched_pair_tag(
+        &self,
+        config: &ParserOptions,
+    ) -> Option<String> {
+        if config.dialect != Dialect::Pandoc {
+            return None;
+        }
+        let first = self.first_text()?;
+        let first_line_with_nl = first.split_inclusive('\n').next()?;
+        let first_line_no_nl = first_line_with_nl
+            .strip_suffix("\r\n")
+            .or_else(|| first_line_with_nl.strip_suffix('\n'))
+            .unwrap_or(first_line_with_nl);
+        let HtmlBlockType::BlockTag {
+            tag_name,
+            is_closing: false,
+            ..
+        } = try_parse_html_block_start(first_line_no_nl, false)?
+        else {
+            return None;
+        };
+        if !is_pandoc_matched_pair_tag(&tag_name) {
+            return None;
+        }
+        let mut opens = 0usize;
+        let mut closes = 0usize;
+        for segment in &self.segments {
+            if let ListItemContent::Text(t) = segment {
+                let (o, c) = count_tag_balance(t, &tag_name);
+                opens += o;
+                closes += c;
+            }
+        }
+        if opens > closes { Some(tag_name) } else { None }
     }
 
     /// Determine if this list item has blank lines between content.

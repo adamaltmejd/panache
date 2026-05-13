@@ -247,7 +247,7 @@ pub fn is_pandoc_void_block_tag_name(name: &str) -> bool {
 /// `<div>` is intentionally excluded — it has its own lift path
 /// (`HTML_BLOCK_DIV` wrapper retag) with different demotion rules
 /// (Plain/Para keyed on `close_butted`, not on trailing blank line).
-fn is_pandoc_lift_eligible_block_tag(name: &str) -> bool {
+pub(crate) fn is_pandoc_lift_eligible_block_tag(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     if VERBATIM_TAGS.contains(&lower.as_str()) {
         return false;
@@ -260,6 +260,26 @@ fn is_pandoc_lift_eligible_block_tag(name: &str) -> bool {
     }
     PANDOC_BLOCK_TAGS.contains(&lower.as_str())
         || PANDOC_INLINE_BLOCK_TAGS.contains(&lower.as_str())
+}
+
+/// Whether `name` (case-insensitive) is a Pandoc matched-pair block tag
+/// — anything that has an opening and a matching closing form whose
+/// `</tag>` would be recognized by the dispatcher as a separate block
+/// start. Covers strict-block tags (incl. `<div>`), inline-block tags,
+/// and verbatim tags (`<pre>`, `<style>`, `<script>`, `<textarea>`).
+/// Void tags are excluded — they have no close form.
+///
+/// Used by `ListItemBuffer::unclosed_pandoc_matched_pair_tag` to detect
+/// an open inside the buffer whose close would otherwise interrupt the
+/// list item mid-construct.
+pub(crate) fn is_pandoc_matched_pair_tag(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if PANDOC_VOID_BLOCK_TAGS.contains(&lower.as_str()) {
+        return false;
+    }
+    PANDOC_BLOCK_TAGS.contains(&lower.as_str())
+        || PANDOC_INLINE_BLOCK_TAGS.contains(&lower.as_str())
+        || VERBATIM_TAGS.contains(&lower.as_str())
 }
 
 /// Open-tag-attribute tokenization gate for non-div strict-block tags
@@ -627,8 +647,11 @@ fn is_closing_marker(line: &str, block_type: &HtmlBlockType) -> bool {
 /// `<...>` brackets and respects `"`/`'` quoting.
 ///
 /// Used by [`parse_html_block_with_wrapper`] to balance nested same-name
-/// tags under Pandoc dialect (mirrors pandoc's `htmlInBalanced`).
-fn count_tag_balance(line: &str, tag_name: &str) -> (usize, usize) {
+/// tags under Pandoc dialect (mirrors pandoc's `htmlInBalanced`), and by
+/// `ListItemBuffer::unclosed_pandoc_matched_pair_tag` to suppress the
+/// close-form dispatch that would otherwise break the list-item buffer
+/// mid-`<div>...</div>`.
+pub(crate) fn count_tag_balance(line: &str, tag_name: &str) -> (usize, usize) {
     let bytes = line.as_bytes();
     let lower_line = line.to_ascii_lowercase();
     let lower_bytes = lower_line.as_bytes();
