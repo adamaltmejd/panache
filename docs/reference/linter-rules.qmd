@@ -371,6 +371,57 @@ files.
 Emitted when an inline bibliography entry collides with another inline entry or
 with a key from a loaded bibliography file.
 
+### `crossref-as-link-target` {#crossref-as-link-target}
+
+Detects link destinations that begin with `@`, which is almost always a typo for
+`#` (anchor) or a misplaced cross-reference / citation key.
+
+Severity
+:   Warning
+
+Auto-fix
+:   Yes
+
+Requirements
+:   Requires `extensions.citations = true` in configuration (default for the
+    Pandoc, Quarto, and R Markdown flavors).
+
+Diagnostic codes
+:   [`crossref-as-link-target`](#crossref-as-link-target)
+
+Description
+:   In Pandoc/Quarto, `@key` is reserved for citations and cross-references and
+    must stand alone, not appear inside a link's `(...)` destination. Writing
+    `[Figure 2](@fig-2)` produces a link with the literal URL `@fig-2`; the
+    author almost always meant `[Figure 2](#fig-2)`.
+
+**Example violation:**
+
+```markdown
+See [Figure 2](@fig-2) for details.
+```
+
+**Diagnostic:**
+
+```
+warning[crossref-as-link-target]: Link target starts with '@'; cross-references and citation keys must stand alone, not appear as a link destination
+ --> document.qmd:1:16
+  |
+1 | See [Figure 2](@fig-2) for details.
+  |                ^
+```
+
+**Auto-fix output:**
+
+```markdown
+See [Figure 2](#fig-2) for details.
+```
+
+**When it runs:** On every inline link (`[text](dest)`) and inline image
+(`![alt](dest)`) whose destination's leading non-whitespace character is `@`.
+Bare cross-references (`@fig-2`) and citation forms (`[@smith2020]`) outside of
+link destinations are not flagged.
+
 ### `chunk-label-spaces` {#chunk-label-spaces}
 
 Detects executable chunk labels containing whitespace (for example

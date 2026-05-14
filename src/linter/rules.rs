@@ -5,6 +5,7 @@ use crate::syntax::SyntaxNode;
 pub mod adjacent_footnote_refs;
 pub mod chunk_label_spaces;
 pub mod citation_keys;
+pub mod crossref_as_link_target;
 pub mod duplicate_references;
 pub mod emoji_aliases;
 pub mod figure_crossref_captions;

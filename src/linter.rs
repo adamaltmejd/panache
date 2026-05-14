@@ -126,6 +126,11 @@ fn default_registry(config: &Config) -> RuleRegistry {
     if ext.citations && config.lint.is_rule_enabled("citation-keys") {
         registry.register(Box::new(rules::citation_keys::CitationKeysRule));
     }
+    if ext.citations && config.lint.is_rule_enabled("crossref-as-link-target") {
+        registry.register(Box::new(
+            rules::crossref_as_link_target::CrossrefAsLinkTargetRule,
+        ));
+    }
     if ext.fenced_code_attributes && config.lint.is_rule_enabled("chunk-label-spaces") {
         registry.register(Box::new(rules::chunk_label_spaces::ChunkLabelSpacesRule));
     }

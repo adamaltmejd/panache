@@ -610,6 +610,44 @@ fn test_adjacent_footnote_refs() {
 }
 
 #[test]
+fn test_crossref_as_link_target() {
+    let diagnostics = lint_file("crossref_as_link_target.md");
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "crossref-as-link-target")
+        .collect();
+
+    // Four offenders: inline link, citation-key link, image link, wrapped link.
+    assert_eq!(issues.len(), 4, "expected 4 diagnostics, got {:?}", issues);
+
+    for diag in &issues {
+        let fix = diag.fix.as_ref().expect("rule provides an auto-fix");
+        assert_eq!(fix.edits.len(), 1);
+        assert_eq!(fix.edits[0].replacement, "#");
+        let r = fix.edits[0].range;
+        let span: usize = (r.end() - r.start()).into();
+        assert_eq!(span, 1, "fix span must target exactly the '@' byte");
+    }
+}
+
+#[test]
+fn test_crossref_as_link_target_can_be_disabled() {
+    let diagnostics = lint_file_with_config(
+        "crossref_as_link_target.md",
+        r#"
+[lint.rules]
+crossref-as-link-target = false
+"#,
+    );
+
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "crossref-as-link-target")
+        .collect();
+    assert!(issues.is_empty());
+}
+
+#[test]
 fn test_stray_fenced_div_markers() {
     let diagnostics = lint_file("stray_fenced_div_markers.md");
     let issues: Vec<_> = diagnostics
