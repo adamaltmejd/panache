@@ -1352,6 +1352,77 @@ pub(crate) fn parse_html_block_with_wrapper(
         builder.finish_node(); // HtmlBlock
         return end_line_idx + 1;
     }
+    // Multi-line open with all matched closes on the open's last line:
+    // `pre_content` holds the bytes after the last open `>` (lifted there
+    // by `emit_multiline_open_tag_with_attrs` when `lift_trailing=true`).
+    // When `depth <= 0` after the multi-line open and the trailing bytes
+    // contain the depth-zero matched close, do the same-line lift on
+    // `pre_content` directly. Mirrors the single-line `same_line_closed`
+    // lift below — same body / close-marker / trailing-graft shape, just
+    // consuming `end_line_idx + 1` lines instead of `start_pos + 1`.
+    if let Some(end_line_idx) = multiline_open_end
+        && !blank_terminated
+        && depth_aware_tag.is_some()
+        && depth <= 0
+        && lift_mode
+        && bq_depth == 0
+        && !pre_content.is_empty()
+    {
+        let tag_name_opt: Option<&str> = if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+            Some("div")
+        } else if strict_block_lift {
+            strict_block_tag_name
+        } else {
+            None
+        };
+        if let Some(tag_name) = tag_name_opt {
+            let (pre_no_nl, post_nl) = strip_newline(&pre_content);
+            if let Some((leading, close_part)) =
+                try_split_close_line_depth_aware(pre_no_nl, tag_name)
+            {
+                let close_marker_end =
+                    split_close_marker_end(close_part, tag_name).unwrap_or(close_part.len());
+                let close_marker = &close_part[..close_marker_end];
+                let same_line_trailing = &close_part[close_marker_end..];
+                let policy = if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+                    LastParaDemote::SkipTrailingBlanks
+                } else {
+                    LastParaDemote::OnlyIfLast
+                };
+                emit_html_block_body_lifted(builder, "", &[], leading, policy, config);
+                builder.start_node(SyntaxKind::HTML_BLOCK_TAG.into());
+                if same_line_trailing.is_empty() {
+                    let mut close_line = String::with_capacity(close_marker.len() + post_nl.len());
+                    close_line.push_str(close_marker);
+                    close_line.push_str(post_nl);
+                    emit_html_block_line(builder, &close_line, 0);
+                    builder.finish_node();
+                    builder.finish_node(); // HtmlBlock
+                } else {
+                    builder.token(SyntaxKind::TEXT.into(), close_marker);
+                    builder.finish_node(); // HTML_BLOCK_TAG
+                    builder.finish_node(); // HtmlBlock
+
+                    let mut trailing_text =
+                        String::with_capacity(same_line_trailing.len() + post_nl.len());
+                    trailing_text.push_str(same_line_trailing);
+                    trailing_text.push_str(post_nl);
+                    let mut inner_options = config.clone();
+                    let refdefs = config.refdef_labels.clone().unwrap_or_default();
+                    inner_options.refdef_labels = Some(refdefs.clone());
+                    let inner_root = crate::parser::parse_with_refdefs(
+                        &trailing_text,
+                        Some(inner_options),
+                        refdefs,
+                    );
+                    let mut bq = None;
+                    graft_document_children(builder, &inner_root, LastParaDemote::Never, &mut bq);
+                }
+                return end_line_idx + 1;
+            }
+        }
+    }
+
     let same_line_closed = !blank_terminated
         && multiline_open_end.is_none()
         && (void_block

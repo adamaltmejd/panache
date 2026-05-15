@@ -246,6 +246,8 @@ golden_test_cases!(
     html_block_div_blockquote_multiline_open_trailing_idempotent,
     html_block_div_idempotent,
     html_block_div_multiline_open_trailing_idempotent,
+    html_block_div_multiline_same_line_close,
+    html_block_div_multiline_trailing_close_text,
     html_block_div_nested_idempotent,
     html_block_div_nested_same_line,
     html_block_div_same_line_trailing,

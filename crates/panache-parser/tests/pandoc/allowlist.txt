@@ -553,3 +553,10 @@
 435
 436
 437
+
+# html-block (Multi-line open with matched close on the open's last line — `<div\n  id="x">foo</div>`, `<div\n  id="x">foo</div></div>` (matched + unmatched trailing close), `<div\n  id="x"><div>x</div></div>` (nested), `<div\n  id="x">foo</div>bar` (trailing text), `<form\n  id="x">foo</form>` (strict-block variant). The depth-aware open-line balance (`depth <= 0` after summing `count_tag_balance` across all open-tag lines) now triggers the structural lift on `pre_content` (the bytes after the last open `>`, captured via `emit_multiline_open_tag_with_attrs(lift_trailing=true)`). The lift body mirrors the single-line `same_line_closed` path: `try_split_close_line_depth_aware` splits `pre_content` into leading body + close part, `split_close_marker_end` peels off the close marker bytes, the body is recursively parsed via `parse_with_refdefs`, and any same-line trailing text grafts as siblings of the wrapper via `graft_document_children`. Non-bq only — bq + multi-line + same-line close requires the bq-prefix re-injection machinery and is tracked as a follow-up.)
+438
+439
+440
+441
+442
