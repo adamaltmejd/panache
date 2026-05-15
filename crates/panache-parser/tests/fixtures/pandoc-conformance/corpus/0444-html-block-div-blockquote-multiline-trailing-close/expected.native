@@ -1,0 +1,5 @@
+[ BlockQuote
+    [ Div ( "x" , [] , [] ) [ Plain [ Str "foo" ] ]
+    , RawBlock (Format "html") "</div>"
+    ]
+]

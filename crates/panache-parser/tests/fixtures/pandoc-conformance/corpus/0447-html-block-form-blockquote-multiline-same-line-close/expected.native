@@ -1,0 +1,6 @@
+[ BlockQuote
+    [ RawBlock (Format "html") "<form id=\"x\">"
+    , Plain [ Str "foo" ]
+    , RawBlock (Format "html") "</form>"
+    ]
+]

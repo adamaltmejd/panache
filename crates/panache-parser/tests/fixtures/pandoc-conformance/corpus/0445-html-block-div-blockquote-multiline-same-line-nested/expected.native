@@ -1,0 +1,6 @@
+[ BlockQuote
+    [ Div
+        ( "x" , [] , [] )
+        [ Div ( "" , [] , [] ) [ Plain [ Str "x" ] ] ]
+    ]
+]

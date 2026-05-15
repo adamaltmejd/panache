@@ -560,3 +560,10 @@
 440
 441
 442
+
+# html-block (Bq variant of the multi-line open + matched close-on-open's-last-line lift — `> <div\n>   id="x">foo</div>`, `> <div\n>   id="x">foo</div></div>` (trailing close → sibling RawBlock), `> <div\n>   id="x"><div>x</div></div>` (nested), `> <div\n>   id="x">foo</div>bar` (trailing text → sibling Para), `> <form\n>   id="x">foo</form>` (strict-block). New gate `bq_multiline_close_lift_tag` fires when `bq_depth > 0 && multiline_open_end.is_some() && depth <= 0` and joins `lift_mode`, threading `lift_trailing=true` through `emit_multiline_open_tag_with_attrs` (via the `bq_strict_attr_emit_tag_name` and HTML_BLOCK_DIV branches, both of which already accept `lift_mode` directly). The close-line lift gate widens from `bq_depth == 0` to `bq_depth == 0 || bq_multiline_close_lift_tag.is_some()`. Body and close inherit the bq prefix from the open's last line — already re-emitted by `emit_multiline_open_tag_with_attrs` for lines past `start_pos` — so no new BqPrefixState plumbing is needed; `emit_html_block_body_lifted` (with `bq: &mut None`) suffices. All five shapes previously panicked at `debug_assert!("HTML_BLOCK_DIV without structural inner shape")`.)
+443
+444
+445
+446
+447

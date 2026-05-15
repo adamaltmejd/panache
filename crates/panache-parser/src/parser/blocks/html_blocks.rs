@@ -1194,6 +1194,58 @@ pub(crate) fn parse_html_block_with_wrapper(
         None
     };
 
+    // Multi-line open + matched close-on-the-open's-last-line shape inside
+    // a blockquote (`> <div\n>   id="x">foo</div>` and depth-aware variants:
+    // nested same-tag, trailing close, trailing text, strict-block `<form>`).
+    // Mirrors the non-bq `pre_content`-close branch (line ~1363) but inside
+    // a blockquote. Distinguishing features from `bq_messy_lift_tag`: the
+    // close is on the open's last line (`depth <= 0` after the open lines)
+    // AND `multiline_open_end.is_some()`. The trailing bytes after the
+    // last `>` get lifted into `pre_content` via
+    // `emit_multiline_open_tag_with_attrs(... lift_trailing=true)`, then the
+    // new branch below splits `pre_content` at the matched close marker
+    // and grafts body + close + any trailing siblings.
+    let bq_multiline_close_lift_tag: Option<&str> = if bq_depth > 0
+        && multiline_open_end.is_some()
+        && depth_aware_tag.is_some()
+        && depth <= 0
+    {
+        if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
+            Some("div")
+        } else if wrapper_kind == SyntaxKind::HTML_BLOCK {
+            match &block_type {
+                HtmlBlockType::BlockTag {
+                    tag_name,
+                    is_verbatim: false,
+                    closed_by_blank_line: false,
+                    depth_aware: true,
+                    closes_at_open_tag: false,
+                    is_closing: false,
+                } if is_pandoc_lift_eligible_block_tag(tag_name) => {
+                    if is_pandoc_inline_block_tag_name(tag_name)
+                        && inline_block_void_interior_abandons(
+                            first_inner,
+                            lines,
+                            start_pos,
+                            multiline_open_end,
+                            bq_depth,
+                            tag_name,
+                        )
+                    {
+                        None
+                    } else {
+                        Some(tag_name.as_str())
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Whether this block participates in the Phase 6 structural lift
     // (recursively parse body as Pandoc markdown and graft children).
     // Covers `<div>` outside blockquote context. For same-line shapes
@@ -1205,7 +1257,8 @@ pub(crate) fn parse_html_block_with_wrapper(
         && (!is_same_line_div || same_line_div_lift_safe))
         || strict_block_lift
         || same_line_bq_lift_tag.is_some()
-        || bq_messy_lift_tag.is_some();
+        || bq_messy_lift_tag.is_some()
+        || bq_multiline_close_lift_tag.is_some();
 
     // Trailing content from the open tag (after `>`). When the lift is
     // active and the open line is `<div ATTRS>foo\n`, this captures
@@ -1256,7 +1309,8 @@ pub(crate) fn parse_html_block_with_wrapper(
             // bq clean-lift requires `pre_content.is_empty()`, so for clean
             // multi-line opens the trailing is empty anyway and this is
             // a no-op.
-            let lift_trailing = bq_messy_lift_tag == Some(name);
+            let lift_trailing =
+                bq_messy_lift_tag == Some(name) || bq_multiline_close_lift_tag == Some(name);
             emit_multiline_open_tag_with_attrs(
                 builder,
                 lines,
@@ -1360,18 +1414,27 @@ pub(crate) fn parse_html_block_with_wrapper(
     // `pre_content` directly. Mirrors the single-line `same_line_closed`
     // lift below — same body / close-marker / trailing-graft shape, just
     // consuming `end_line_idx + 1` lines instead of `start_pos + 1`.
+    //
+    // The body bytes of `pre_content` come from the open's last line,
+    // which `emit_multiline_open_tag_with_attrs` already prefixed with the
+    // re-emitted bq prefix tokens (for `bq_depth > 0`). The body and close
+    // tag thus inherit the bq context without per-line prefix injection,
+    // so `emit_html_block_body_lifted` (with `bq: &mut None`) suffices for
+    // both the non-bq and bq variants of this shape.
     if let Some(end_line_idx) = multiline_open_end
         && !blank_terminated
         && depth_aware_tag.is_some()
         && depth <= 0
         && lift_mode
-        && bq_depth == 0
+        && (bq_depth == 0 || bq_multiline_close_lift_tag.is_some())
         && !pre_content.is_empty()
     {
         let tag_name_opt: Option<&str> = if wrapper_kind == SyntaxKind::HTML_BLOCK_DIV {
             Some("div")
         } else if strict_block_lift {
             strict_block_tag_name
+        } else if let Some(name) = bq_multiline_close_lift_tag {
+            Some(name)
         } else {
             None
         };
