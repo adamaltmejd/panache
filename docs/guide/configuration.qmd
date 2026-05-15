@@ -871,6 +871,31 @@ stdin = false
 The `{}` placeholder controls where the file path is inserted. If omitted, it's
 appended at the end.
 
+### Untagged Code Blocks
+
+To register a formatter that runs on fenced code blocks with **no language tag**
+(e.g. for aligning ASCII tables or box-drawing characters), use the empty-string
+key `""`:
+
+```toml
+[formatters.""]
+cmd = "boxalign"
+```
+
+This matches only truly untagged blocks:
+
+````markdown
+```
++---+---+
+| a | b |
++---+---+
+```
+````
+
+A block tagged with an explicit language --- including ```` ```plain ```` --- is
+**not** matched by `[formatters.""]`. If you also want to format
+```` ```plain ```` blocks, register a separate `[formatters.plain]` entry.
+
 ### Behavior
 
 Language matching

@@ -79,6 +79,54 @@ hello world
 }
 
 #[test]
+fn untagged_code_block_with_empty_string_formatter_key() {
+    // `[formatters.""]` matches only truly untagged blocks, never ```plain.
+    let mut formatters = HashMap::new();
+    formatters.insert(
+        String::new(),
+        vec![panache::config::FormatterConfig {
+            cmd: "tr".to_string(),
+            args: vec!["[:lower:]".to_string(), "[:upper:]".to_string()],
+            enabled: true,
+            stdin: true,
+        }],
+    );
+
+    let config = Config {
+        flavor: Flavor::Quarto,
+        extensions: Extensions::for_flavor(Flavor::Quarto),
+        formatters,
+        ..Default::default()
+    };
+
+    let input = r#"
+```
+bare block
+```
+
+```plain
+plain tagged block
+```
+"#
+    .trim_start();
+
+    let output = format(input, Some(config), None);
+
+    assert!(
+        output.contains("BARE BLOCK"),
+        "untagged block should be upcased by `\"\"` formatter; got:\n{output}"
+    );
+    assert!(
+        output.contains("plain tagged block"),
+        "```plain block must not be touched by `\"\"` formatter; got:\n{output}"
+    );
+    assert!(
+        !output.contains("PLAIN TAGGED BLOCK"),
+        "```plain block must not be upcased by `\"\"` formatter; got:\n{output}"
+    );
+}
+
+#[test]
 fn code_block_without_formatter_unchanged() {
     // Create config with empty formatters (no built-in defaults)
     let config = Config {

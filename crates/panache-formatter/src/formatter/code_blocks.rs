@@ -725,7 +725,7 @@ pub fn collect_code_blocks(
             _ => String::new(),
         });
 
-        if language.is_empty() {
+        if language.is_empty() && !config.formatters.contains_key("") {
             continue;
         }
 
