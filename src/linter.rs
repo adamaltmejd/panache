@@ -102,6 +102,18 @@ fn default_registry(config: &Config) -> RuleRegistry {
     if config.lint.is_rule_enabled("heading-hierarchy") {
         registry.register(Box::new(rules::heading_hierarchy::HeadingHierarchyRule));
     }
+    if ext.header_attributes && config.lint.is_rule_enabled("heading-eaten-attrs") {
+        registry.register(Box::new(rules::heading_eaten_attrs::HeadingEatenAttrsRule));
+    }
+    if ext.header_attributes
+        && config
+            .lint
+            .is_rule_explicitly_enabled("heading-strip-comments-residue")
+    {
+        registry.register(Box::new(
+            rules::heading_strip_comments_residue::HeadingStripCommentsResidueRule,
+        ));
+    }
     if ext.footnotes && config.lint.is_rule_enabled("adjacent-footnote-refs") {
         registry.register(Box::new(
             rules::adjacent_footnote_refs::AdjacentFootnoteRefsRule,

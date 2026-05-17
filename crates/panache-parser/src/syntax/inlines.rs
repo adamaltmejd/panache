@@ -119,9 +119,64 @@ impl CodeSpan {
     }
 }
 
+pub struct InlineHtml(SyntaxNode);
+
+impl AstNode for InlineHtml {
+    type Language = PanacheLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool {
+        kind == SyntaxKind::INLINE_HTML
+    }
+
+    fn cast(syntax: SyntaxNode) -> Option<Self> {
+        if Self::can_cast(syntax.kind()) {
+            Some(Self(syntax))
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.0
+    }
+}
+
+impl InlineHtml {
+    pub fn verbatim(&self) -> String {
+        self.0
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .filter(|token| token.kind() == SyntaxKind::INLINE_HTML_CONTENT)
+            .map(|token| token.text().to_string())
+            .collect()
+    }
+
+    pub fn is_comment(&self) -> bool {
+        self.0
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|token| token.kind() == SyntaxKind::INLINE_HTML_CONTENT)
+            .is_some_and(|token| token.text().starts_with("<!--"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_html_discriminates_comments_from_tags() {
+        // Use <br/> rather than <span>: pandoc-dialect lifts <span>...</span>
+        // to its own INLINE_HTML_SPAN kind, so it wouldn't surface here.
+        let input = "Hi <!-- x --> <br/>\n";
+        let tree = crate::parse(input, None);
+        let spans: Vec<_> = tree.descendants().filter_map(InlineHtml::cast).collect();
+        assert_eq!(spans.len(), 2, "expected 2 InlineHtml nodes");
+        assert!(spans[0].is_comment(), "first span should be comment");
+        assert_eq!(spans[0].verbatim(), "<!-- x -->");
+        assert!(!spans[1].is_comment(), "second span should not be comment");
+        assert_eq!(spans[1].verbatim(), "<br/>");
+    }
 
     #[test]
     fn inline_math_extracts_markers_and_content() {

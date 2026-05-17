@@ -648,6 +648,76 @@ crossref-as-link-target = false
 }
 
 #[test]
+fn test_heading_eaten_attrs() {
+    let diagnostics = lint_file("heading_eaten_attrs.md");
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "heading-eaten-attrs")
+        .collect();
+
+    // Line 1: one comment after the (eaten) attr block.
+    // Line 9: two comments around the (eaten) attr block.
+    assert_eq!(issues.len(), 3, "expected 3 diagnostics, got {:#?}", issues);
+    let lines: Vec<usize> = issues.iter().map(|d| d.location.line).collect();
+    assert_eq!(lines, vec![1, 9, 9]);
+    assert!(issues.iter().all(|d| d.message.contains("literal")));
+    assert!(issues.iter().all(|d| d.fix.is_none()));
+}
+
+#[test]
+fn test_heading_eaten_attrs_can_be_disabled() {
+    let diagnostics = lint_file_with_config(
+        "heading_eaten_attrs.md",
+        r#"
+[lint.rules]
+heading-eaten-attrs = false
+"#,
+    );
+
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "heading-eaten-attrs")
+        .collect();
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn test_heading_strip_comments_residue_off_by_default() {
+    let diagnostics = lint_file("heading_strip_comments_residue.md");
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "heading-strip-comments-residue")
+        .collect();
+    assert!(
+        issues.is_empty(),
+        "expected no diagnostics by default, got {:#?}",
+        issues
+    );
+}
+
+#[test]
+fn test_heading_strip_comments_residue_when_enabled() {
+    let diagnostics = lint_file_with_config(
+        "heading_strip_comments_residue.md",
+        r#"
+[lint.rules]
+heading-strip-comments-residue = true
+"#,
+    );
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "heading-strip-comments-residue")
+        .collect();
+
+    // Only line 1 should fire: line 7's attrs are eaten (sibling rule), so
+    // there are no real attrs adjacent to the comment.
+    assert_eq!(issues.len(), 1, "expected 1 diagnostic, got {:#?}", issues);
+    assert_eq!(issues[0].location.line, 1);
+    assert!(issues[0].message.contains("--strip-comments"));
+    assert!(issues[0].fix.is_none());
+}
+
+#[test]
 fn test_stray_fenced_div_markers() {
     let diagnostics = lint_file("stray_fenced_div_markers.md");
     let issues: Vec<_> = diagnostics

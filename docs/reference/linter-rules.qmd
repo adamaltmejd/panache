@@ -100,6 +100,90 @@ warning[heading-hierarchy]: Heading level skipped from h1 to h3; expected h2
 
 **Auto-fix:** Changes `### Subsection` to `## Subsection`.
 
+### `heading-eaten-attrs` {#heading-eaten-attrs}
+
+Detects HTML comments that cause pandoc to silently drop a heading's `{...}`
+attribute block.
+
+Severity
+:   Warning
+
+Auto-fix
+:   No
+
+Diagnostic codes
+:   [`heading-eaten-attrs`](#heading-eaten-attrs)
+
+Requirements
+:   `extensions.header-attributes = true` (the default for Pandoc, Quarto, and R
+    Markdown flavors).
+
+Description
+:   Pandoc requires the `{...}` attribute block on a heading to be followed only
+    by whitespace. When any non-whitespace content (including an HTML comment)
+    follows the brace block, pandoc treats the braces as **literal text**,
+    silently dropping the attributes and producing an auto-generated id like
+    `"title-.unnumbered"`. Cross-references that targeted the intended id then
+    break with no diagnostic from pandoc itself.
+
+**Example violation:**
+
+```markdown
+# Bibliography {.unnumbered} <!-- TODO -->
+```
+
+**Diagnostic:**
+
+```
+warning[heading-eaten-attrs]: Comment on a heading line with `{...}` attributes;
+pandoc treats the brace block as literal text when anything follows it on the line.
+ --> document.qmd:1:30
+  |
+1 | # Bibliography {.unnumbered} <!-- TODO -->
+  |                              ^^^^^^^^^^^^^
+help: Move the comment to its own line before or after the heading.
+```
+
+**Resolution:** Move the comment to its own line. No auto-fix is provided
+because the right placement (above or below the heading, or deleting the comment
+entirely) is an author-intent decision.
+
+### `heading-strip-comments-residue` {#heading-strip-comments-residue}
+
+Detects HTML comments adjacent to a heading's `{...}` attribute block that would
+leave stray whitespace under `pandoc --strip-comments`.
+
+Severity
+:   Warning
+
+Default
+:   Off --- opt in via `[lint.rules] heading-strip-comments-residue = true`.
+
+Auto-fix
+:   No
+
+Diagnostic codes
+:   [`heading-strip-comments-residue`](#heading-strip-comments-residue)
+
+Requirements
+:   `extensions.header-attributes = true`.
+
+Description
+:   When attributes still parse (the comment sits *before* the brace block),
+    invoking pandoc with `--strip-comments` removes the comment text but leaves
+    the surrounding whitespace. The resulting heading source has trailing or
+    interior whitespace adjacent to the attribute block, which can subtly affect
+    downstream tooling. This rule is opt-in because most authors do not use
+    `--strip-comments`; enable it when your publishing pipeline does.
+
+**Example violation:**
+
+```markdown
+# Bibliography <!-- TODO --> {.unnumbered}
+```
+
+**Resolution:** Move the comment to its own line before or after the heading.
+
 ### `duplicate-reference-labels` {#duplicate-reference-labels}
 
 Detects duplicate reference link and footnote definitions.

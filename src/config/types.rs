@@ -302,6 +302,14 @@ impl LintConfig {
         let normalized = Self::normalize_rule_name(rule_name);
         self.rules.get(&normalized).copied().unwrap_or(true)
     }
+
+    /// Like `is_rule_enabled`, but the default is `false` when the rule is
+    /// absent from the user's config. Use for opt-in rules whose default
+    /// behavior would generate noise for most users.
+    pub fn is_rule_explicitly_enabled(&self, rule_name: &str) -> bool {
+        let normalized = Self::normalize_rule_name(rule_name);
+        self.rules.get(&normalized).copied().unwrap_or(false)
+    }
 }
 
 impl<'de> Deserialize<'de> for LintConfig {
