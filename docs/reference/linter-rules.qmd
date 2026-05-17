@@ -684,6 +684,65 @@ See the prior reports[^a][^b] for context.
 See the prior reports[^a] [^b] for context.
 ```
 
+### `footnote-ref-in-footnote-def` {#footnote-ref-in-footnote-def}
+
+Detects footnote references (`[^id]`) that appear inside a reference-style
+footnote definition body, where pandoc silently parses them as literal text
+instead of resolving the reference.
+
+Severity
+:   Warning
+
+Auto-fix
+:   No (the user must decide whether to inline the prose, restructure to lift
+    the reference out of the definition body, or drop it)
+
+Requirements
+:   Requires `extensions.footnotes = true` in configuration (default for Pandoc,
+    Quarto, R Markdown, and GFM flavors).
+
+Diagnostic codes
+:   [`footnote-ref-in-footnote-def`](#footnote-ref-in-footnote-def)
+
+Description
+
+:   Pandoc footnotes do not nest. Inside a `[^x]: ...` definition body, any
+    `[^id]` reference is silently parsed as a literal `Str` --- the would-be
+    link disappears from the output with no warning. The same applies to
+    references nested arbitrarily deep inside that body (inside emphasis,
+    strong, strikeout, links, blockquotes, lists, or inline footnotes).
+
+    This rule surfaces the silent drop at lint time so the user notices before the
+    document is rendered. After the parser fix that aligns panache with pandoc on
+    this case, the inner references no longer appear as `FOOTNOTE_REFERENCE` nodes;
+    the rule scans the definition body's `TEXT` tokens directly for `[^id]` byte
+    patterns, which naturally skips code spans, math, raw HTML, and other
+    CST-distinct constructs.
+
+    References at the top level (outside any definition body) and inside a top-level
+    inline footnote `^[...]` are not flagged --- pandoc resolves those normally.
+
+**Example violation:**
+
+```markdown
+Outer[^a].
+
+[^a]: Body has [^b] ref and **bold [^c] inside** wrapper.
+
+[^b]: B body.
+[^c]: C body.
+```
+
+**Diagnostic:**
+
+```
+warning[footnote-ref-in-footnote-def]: Footnote reference '[^b]' inside a footnote definition body
+                                       is silently dropped by pandoc (rendered as literal text)
+ --> document.qmd:3:16
+  = help: footnotes do not nest in pandoc; inline the prose, restructure to
+          keep the reference outside the definition body, or remove it
+```
+
 ### `stray-fenced-div-markers` {#stray-fenced-div-markers}
 
 Detects stray closing fenced div markers (`:::` or longer runs of colons) that

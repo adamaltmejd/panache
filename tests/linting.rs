@@ -610,6 +610,51 @@ fn test_adjacent_footnote_refs() {
 }
 
 #[test]
+fn test_footnote_ref_in_footnote_def() {
+    let diagnostics = lint_file("footnote_ref_in_footnote_def.md");
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "footnote-ref-in-footnote-def")
+        .collect();
+
+    // Expected hits inside def bodies:
+    //   1. `[^b]` in [^a]:'s body
+    //   2. `[^c]` inside **bold** in [^b]:'s body
+    //   3. `[^d]` inside ~~strike~~ in [^b]:'s body
+    //   4. `[^e]` inside [link]() in [^b]:'s body
+    //   5. `[^g]` inside the nested blockquote in [^d]:'s body
+    //   6. `[^h]` inside the nested list in [^d]:'s body
+    // Non-hits: `[^f]` in a code span, `[@key]` citations, outer refs.
+    assert_eq!(issues.len(), 6, "expected 6 diagnostics, got {:?}", issues);
+
+    for diag in &issues {
+        assert!(diag.fix.is_none(), "rule must not auto-fix");
+        assert!(
+            diag.notes.iter().any(|n| n.message.contains("nest")),
+            "expected help note explaining footnotes don't nest"
+        );
+        assert!(diag.message.contains("pandoc"));
+    }
+}
+
+#[test]
+fn test_footnote_ref_in_footnote_def_can_be_disabled() {
+    let diagnostics = lint_file_with_config(
+        "footnote_ref_in_footnote_def.md",
+        r#"
+[lint.rules]
+footnote-ref-in-footnote-def = false
+"#,
+    );
+
+    let issues: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "footnote-ref-in-footnote-def")
+        .collect();
+    assert!(issues.is_empty());
+}
+
+#[test]
 fn test_crossref_as_link_target() {
     let diagnostics = lint_file("crossref_as_link_target.md");
     let issues: Vec<_> = diagnostics

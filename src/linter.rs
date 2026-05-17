@@ -119,6 +119,11 @@ fn default_registry(config: &Config) -> RuleRegistry {
             rules::adjacent_footnote_refs::AdjacentFootnoteRefsRule,
         ));
     }
+    if ext.footnotes && config.lint.is_rule_enabled("footnote-ref-in-footnote-def") {
+        registry.register(Box::new(
+            rules::footnote_ref_in_footnote_def::FootnoteRefInFootnoteDefRule,
+        ));
+    }
     if config.lint.is_rule_enabled("duplicate-reference-labels") {
         registry.register(Box::new(
             rules::duplicate_references::DuplicateReferencesRule,
