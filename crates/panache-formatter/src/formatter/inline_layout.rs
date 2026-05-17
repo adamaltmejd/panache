@@ -637,6 +637,39 @@ fn append_link_closing(node: &SyntaxNode, out: &mut String, config: &Config) {
     }
 }
 
+fn append_span_closing(node: &SyntaxNode, out: &mut String) {
+    let mut past_content = false;
+    for child in node.children_with_tokens() {
+        match child {
+            NodeOrToken::Node(span_child) => match span_child.kind() {
+                SyntaxKind::SPAN_CONTENT => past_content = true,
+                SyntaxKind::SPAN_ATTRIBUTES if past_content => {
+                    out.push('{');
+                    let mut attr_parts = Vec::new();
+                    for elem in span_child.children_with_tokens() {
+                        if let NodeOrToken::Token(t) = elem
+                            && t.kind() == SyntaxKind::TEXT
+                        {
+                            let text = t.text();
+                            if text != "{" && text != "}" {
+                                attr_parts.push(text.to_string());
+                            }
+                        }
+                    }
+                    out.push_str(&attr_parts.join(" "));
+                    out.push('}');
+                }
+                _ => {}
+            },
+            NodeOrToken::Token(t) => {
+                if past_content && t.kind() == SyntaxKind::SPAN_BRACKET_CLOSE {
+                    out.push_str(t.text());
+                }
+            }
+        }
+    }
+}
+
 fn append_image_closing(node: &SyntaxNode, out: &mut String, config: &Config) {
     let mut past_image_alt = false;
     for child in node.children_with_tokens() {
@@ -1063,6 +1096,31 @@ fn process_node_recursive(
                     skip_marker_whitespace = false;
                     let text = format_inline_fn(&n);
                     sink.push_piece_with_boundary(&text, SentenceBoundaryClass::NonBoundary);
+                }
+                SyntaxKind::BRACKETED_SPAN => {
+                    skip_marker_whitespace = false;
+                    sink.push_piece("[");
+                    sink.set_skip_next_leading_whitespace(true);
+                    for child in n.children_with_tokens() {
+                        if let NodeOrToken::Node(span_child) = child
+                            && span_child.kind() == SyntaxKind::SPAN_CONTENT
+                        {
+                            process_node_recursive(
+                                config,
+                                &span_child,
+                                sink,
+                                format_inline_fn,
+                                in_link_text,
+                                atomic_links,
+                                in_inline_footnote,
+                            );
+                        }
+                    }
+                    sink.set_skip_next_leading_whitespace(false);
+                    sink.set_pending_space(false);
+                    let mut closing = String::new();
+                    append_span_closing(&n, &mut closing);
+                    sink.push_piece(&closing);
                 }
                 SyntaxKind::DISPLAY_MATH => {
                     skip_marker_whitespace = false;
