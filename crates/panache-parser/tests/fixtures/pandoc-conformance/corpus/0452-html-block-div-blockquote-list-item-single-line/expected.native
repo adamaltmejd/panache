@@ -1,0 +1,6 @@
+[ BulletList
+    [ [ BlockQuote
+          [ Div ( "" , [] , [] ) [ Plain [ Str "foo" ] ] ]
+      ]
+    ]
+]

@@ -1,0 +1,6 @@
+[ BlockQuote
+    [ RawBlock (Format "html") "<iframe src=\"x\">"
+    , Plain [ Str "body" ]
+    , RawBlock (Format "html") "</iframe>"
+    ]
+]

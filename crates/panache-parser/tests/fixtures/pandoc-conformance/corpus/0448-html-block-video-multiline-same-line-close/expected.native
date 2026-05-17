@@ -1,0 +1,4 @@
+[ RawBlock (Format "html") "<video src=\"x\">"
+, Plain [ Str "body" ]
+, RawBlock (Format "html") "</video>"
+]

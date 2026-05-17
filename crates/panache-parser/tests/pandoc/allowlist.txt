@@ -567,3 +567,9 @@
 445
 446
 447
+
+# html-block (Inline-block matched-pair multi-line-open + same-line close — `<video\n  src="x">body</video>`, `<iframe\n  src="x">body</iframe>` and bq variants `> <video\n>   src="x">body</video>` / `> <iframe\n>   src="x">body</iframe>`. Negative-space pin: these shapes already project correctly via the existing parser-side structural lift path (open `HTML_BLOCK_TAG` + PLAIN body + close `HTML_BLOCK_TAG`) without HTML_BLOCK_DIV retag — inline-block matched-pair stays as opaque `HTML_BLOCK` and the projector emits `RawBlock + Plain + RawBlock`. Pins parity with the existing `<div>` / `<form>` multi-line + same-line close coverage at 0438, 0442, 0443, 0447.)
+448
+449
+450
+451

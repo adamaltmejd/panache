@@ -1,0 +1,6 @@
+[ BulletList
+    [ [ BlockQuote
+          [ Div ( "" , [] , [] ) [ Para [ Str "hello" ] ] ]
+      ]
+    ]
+]
