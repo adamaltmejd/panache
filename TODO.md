@@ -469,14 +469,16 @@ intentionally excluded.
       formatter) which all walk the CST, not the projector. Phase 6 of the HTML
       lift is the ongoing migration; the goal is for `pandoc_ast.rs` to be a
       pure CST → native projection with no byte reparse.
-- [ ] Centralize position advancement. `self.pos += 1` (or `+= lines_consumed`)
-      is replicated at many sites in `parser/core.rs`; there is no single
-      authority that knows "how many lines did this dispatch consume." This
-      caused the `self.pos -= 1` compensation hack inside
-      `Parser::dispatch_bq_after_list_item` (the bq-in-listitem fix landed
-      2026-05-18 in c1c0db50). A clean refactor would have block effects return
-      a `LinesConsumed(usize)` value that the outer loop commits, eliminating
-      both the manual `+= 1` sites and the compensation hack.
+- [x] Centralize position advancement. `parse_line`, `parse_inner_content`, and
+      the dispatch helpers (`dispatch_bq_after_list_item`,
+      `maybe_open_fenced_code_in_new_list_item`, the three `handle_*_effect`
+      handlers, and `try_fold_list_item_buffer_into_setext`) now return a
+      `LineDispatch` (or `usize` extras for effect handlers). The outer
+      `parse_document_stack` is the sole site that mutates `self.pos`. The
+      `self.pos -= 1` compensation hack inside `dispatch_bq_after_list_item` and
+      two analogous `self.pos = new_pos - 1` hacks
+      (`maybe_open_fenced_code_in_new_list_item`,
+      `handle_definition_list_effect::Definition`) are gone.
 
 ### Performance
 

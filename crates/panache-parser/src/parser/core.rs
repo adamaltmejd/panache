@@ -45,6 +45,30 @@ const GITHUB_ALERT_MARKERS: [&str; 5] = [
     "[!NOTE]",
 ];
 
+/// Outcome of dispatching a line through `parse_line` / `parse_inner_content`
+/// and friends. The outer loop in `parse_document_stack` is the only authority
+/// that commits `self.pos`; dispatch helpers describe what they consumed
+/// rather than side-effecting the position themselves.
+#[must_use]
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum LineDispatch {
+    /// A parser claimed the line and consumed `n` lines (`n >= 1`).
+    Consumed(usize),
+    /// No parser claimed the line; the outer loop should advance by 1.
+    Rejected,
+}
+
+impl LineDispatch {
+    /// Construct a `Consumed(n)` with a debug assertion that `n >= 1`. Use
+    /// `Rejected` for zero-consumption rejections so the caller can advance by
+    /// a default of 1 line rather than spinning.
+    #[inline]
+    pub(crate) fn consumed(n: usize) -> Self {
+        debug_assert!(n >= 1, "LineDispatch::Consumed requires n >= 1");
+        LineDispatch::Consumed(n)
+    }
+}
+
 pub struct Parser<'a> {
     lines: Vec<&'a str>,
     pos: usize,
@@ -384,20 +408,23 @@ impl<'a> Parser<'a> {
     /// ATX headings, fenced code, …) on the first line of a bq-in-listitem
     /// are recognized properly.
     ///
-    /// `parse_inner_content` advances `self.pos` by N (1 for same-line
-    /// content, more for multi-line blocks). The outer dispatcher flow
-    /// always follows the list dispatch with `self.pos += 1` (`lines_consumed`
-    /// for the list-marker line), so we pre-decrement by 1 here to make the
-    /// net advancement equal N rather than N + 1. Callers can then ignore
-    /// the return.
-    fn dispatch_bq_after_list_item(&mut self, result: super::blocks::lists::ListItemFinish) {
+    /// Returns the number of *extra* lines consumed beyond the list-marker
+    /// line itself. The caller already accounts for the marker line in its
+    /// `LineDispatch::Consumed(1 + extras)`; if `result` is `Done`, this
+    /// returns 0.
+    fn dispatch_bq_after_list_item(
+        &mut self,
+        result: super::blocks::lists::ListItemFinish,
+    ) -> usize {
         let super::blocks::lists::ListItemFinish::BqDispatch { content } = result else {
-            return;
+            return 0;
         };
         let pos_before = self.pos;
-        self.parse_inner_content(&content, Some(&content));
-        if self.pos > pos_before {
-            self.pos -= 1;
+        let dispatch = self.parse_inner_content(&content, Some(&content));
+        self.pos = pos_before;
+        match dispatch {
+            LineDispatch::Consumed(n) => n.saturating_sub(1),
+            LineDispatch::Rejected => 0,
         }
     }
 
@@ -407,38 +434,38 @@ impl<'a> Parser<'a> {
     /// Pandoc-markdown also reaches this path: a bare fence still requires a
     /// matching closer to register as a code block, matching
     /// `FencedCodeBlockParser::detect_prepared` (`bare_fence_in_list_with_closer`).
-    fn maybe_open_fenced_code_in_new_list_item(&mut self) {
+    /// Returns `Some(extras)` when a fence-open is recognized on the buffered
+    /// first-line content and the fenced code block was emitted (`extras` is
+    /// the number of source lines consumed beyond the list-marker line).
+    /// `None` means the helper did not fire and the caller proceeds normally.
+    fn maybe_open_fenced_code_in_new_list_item(&mut self) -> Option<usize> {
         let Some(Container::ListItem {
             content_col,
             buffer,
             ..
         }) = self.containers.stack.last()
         else {
-            return;
+            return None;
         };
         let content_col = *content_col;
-        let Some(text) = buffer.first_text() else {
-            return;
-        };
+        let text = buffer.first_text()?;
         if buffer.segment_count() != 1 {
-            return;
+            return None;
         }
         let text_owned = text.to_string();
-        let Some(fence) = code_blocks::try_parse_fence_open(&text_owned) else {
-            return;
-        };
+        let fence = code_blocks::try_parse_fence_open(&text_owned)?;
         let common_mark_dialect = self.config.dialect == crate::options::Dialect::CommonMark;
         let has_info = !fence.info_string.trim().is_empty();
         let bq_depth = self.current_blockquote_depth();
         let has_matching_closer = self.has_matching_fence_closer(&fence, bq_depth, content_col);
         if !(has_info || has_matching_closer || common_mark_dialect) {
-            return;
+            return None;
         }
         // Gate fences by extension flags, mirroring the dispatcher.
         if (fence.fence_char == '`' && !self.config.extensions.backtick_code_blocks)
             || (fence.fence_char == '~' && !self.config.extensions.fenced_code_blocks)
         {
-            return;
+            return None;
         }
         if let Some(Container::ListItem { buffer, .. }) = self.containers.stack.last_mut() {
             buffer.clear();
@@ -452,10 +479,7 @@ impl<'a> Parser<'a> {
             content_col,
             Some(&text_owned),
         );
-        // The dispatcher caller will advance pos by lines_consumed (= 1 from
-        // the list parser) after we return. Compensate so the final pos lands
-        // on `new_pos`.
-        self.pos = new_pos.saturating_sub(1);
+        Some(new_pos.saturating_sub(self.pos).saturating_sub(1))
     }
 
     /// CommonMark §5.2 rule #2: when a list marker is followed by ≥ 5 columns
@@ -639,21 +663,19 @@ impl<'a> Parser<'a> {
     /// Multi-line setext (multiple buffered text segments) is *not* handled
     /// here because Pandoc-markdown disagrees with CommonMark on whether
     /// `- Foo\n  Bar\n  ---\n` forms a setext heading.
-    fn try_fold_list_item_buffer_into_setext(&mut self, content: &str) -> bool {
+    fn try_fold_list_item_buffer_into_setext(&mut self, content: &str) -> Option<LineDispatch> {
         let Some(Container::ListItem {
             buffer,
             content_col,
             ..
         }) = self.containers.stack.last()
         else {
-            return false;
+            return None;
         };
         if buffer.segment_count() != 1 {
-            return false;
+            return None;
         }
-        let Some(text_line) = buffer.first_text() else {
-            return false;
-        };
+        let text_line = buffer.first_text()?;
 
         // CommonMark §5.2: the underline must be indented to at least the
         // list item's content column. A bare `---` at column 0 escapes the
@@ -662,20 +684,18 @@ impl<'a> Parser<'a> {
         let content_col = *content_col;
         let (underline_indent_cols, _) = leading_indent(content);
         if underline_indent_cols < content_col {
-            return false;
+            return None;
         }
 
         let lines = [text_line, content];
-        let Some((level, _)) = try_parse_setext_heading(&lines, 0) else {
-            return false;
-        };
+        let (level, _) = try_parse_setext_heading(&lines, 0)?;
 
         let (text_no_newline, _) = strip_newline(text_line);
         if text_no_newline.trim().is_empty() {
-            return false;
+            return None;
         }
         if try_parse_horizontal_rule(text_no_newline).is_some() {
-            return false;
+            return None;
         }
 
         let text_owned = text_line.to_string();
@@ -683,8 +703,7 @@ impl<'a> Parser<'a> {
             buffer.clear();
         }
         emit_setext_heading(&mut self.builder, &text_owned, content, level, self.config);
-        self.pos += 1;
-        true
+        Some(LineDispatch::consumed(1))
     }
 
     /// Close paragraph if one is currently open.
@@ -772,11 +791,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns the number of extra lines consumed beyond the block parser's
+    /// reported `lines_consumed` (currently always 1 for footnote definitions).
+    /// Non-zero only on the definition-list-term blank-line lookahead path.
     fn handle_footnote_open_effect(
         &mut self,
         block_match: &super::block_dispatcher::PreparedBlockMatch,
         content: &str,
-    ) {
+    ) -> usize {
         let content_start = block_match
             .payload
             .as_ref()
@@ -789,7 +811,7 @@ impl<'a> Parser<'a> {
             .push(Container::FootnoteDefinition { content_col });
 
         if content_start == 0 {
-            return;
+            return 0;
         }
         let first_line_content = &content[content_start..];
         if first_line_content.trim().is_empty() {
@@ -797,7 +819,7 @@ impl<'a> Parser<'a> {
             if !newline_str.is_empty() {
                 self.builder.token(SyntaxKind::NEWLINE.into(), newline_str);
             }
-            return;
+            return 0;
         }
 
         if self.config.extensions.definition_lists
@@ -823,8 +845,7 @@ impl<'a> Parser<'a> {
                     self.builder.finish_node();
                 }
             }
-            self.pos += blank_count;
-            return;
+            return blank_count;
         }
 
         paragraphs::start_paragraph_if_needed(&mut self.containers, &mut self.builder);
@@ -834,6 +855,7 @@ impl<'a> Parser<'a> {
             first_line_content,
             self.config,
         );
+        0
     }
 
     /// CommonMark spec example #312: handle a detected list marker that's
@@ -910,12 +932,17 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns the number of extra lines consumed beyond the block parser's
+    /// reported `lines_consumed` (= 1 for list-open). Non-zero when the
+    /// list-marker line opens a fenced code block (multi-line fence) or
+    /// dispatches into a same-line blockquote whose content spans multiple
+    /// source lines.
     fn handle_list_open_effect(
         &mut self,
         block_match: &super::block_dispatcher::PreparedBlockMatch,
         content: &str,
         indent_to_emit: Option<&str>,
-    ) {
+    ) -> usize {
         use super::block_dispatcher::ListPrepared;
 
         let prepared = block_match
@@ -923,7 +950,7 @@ impl<'a> Parser<'a> {
             .as_ref()
             .and_then(|p| p.downcast_ref::<ListPrepared>());
         let Some(prepared) = prepared else {
-            return;
+            return 0;
         };
 
         if prepared.indent_cols >= 4 && !lists::in_list(&self.containers) {
@@ -934,7 +961,7 @@ impl<'a> Parser<'a> {
                 content,
                 self.config,
             );
-            return;
+            return 0;
         }
 
         if self.is_paragraph_open() {
@@ -945,7 +972,7 @@ impl<'a> Parser<'a> {
                     content,
                     self.config,
                 );
-                return;
+                return 0;
             }
             self.close_containers_to(self.containers.depth() - 1);
         }
@@ -1041,10 +1068,11 @@ impl<'a> Parser<'a> {
                             self.config,
                         )
                     };
-                    self.maybe_open_fenced_code_in_new_list_item();
+                    if let Some(extras) = self.maybe_open_fenced_code_in_new_list_item() {
+                        return extras;
+                    }
                     self.maybe_open_indented_code_in_new_list_item();
-                    self.dispatch_bq_after_list_item(finish);
-                    return;
+                    return self.dispatch_bq_after_list_item(finish);
                 }
             }
 
@@ -1058,10 +1086,11 @@ impl<'a> Parser<'a> {
                 indent_to_emit,
                 self.config,
             );
-            self.maybe_open_fenced_code_in_new_list_item();
+            if let Some(extras) = self.maybe_open_fenced_code_in_new_list_item() {
+                return extras;
+            }
             self.maybe_open_indented_code_in_new_list_item();
-            self.dispatch_bq_after_list_item(finish);
-            return;
+            return self.dispatch_bq_after_list_item(finish);
         }
 
         if let Some(level) = matched_level {
@@ -1095,10 +1124,11 @@ impl<'a> Parser<'a> {
                     self.config,
                 )
             };
-            self.maybe_open_fenced_code_in_new_list_item();
+            if let Some(extras) = self.maybe_open_fenced_code_in_new_list_item() {
+                return extras;
+            }
             self.maybe_open_indented_code_in_new_list_item();
-            self.dispatch_bq_after_list_item(finish);
-            return;
+            return self.dispatch_bq_after_list_item(finish);
         }
 
         if matches!(self.containers.last(), Some(Container::Paragraph { .. })) {
@@ -1138,17 +1168,25 @@ impl<'a> Parser<'a> {
                 self.config,
             )
         };
-        self.maybe_open_fenced_code_in_new_list_item();
+        if let Some(extras) = self.maybe_open_fenced_code_in_new_list_item() {
+            return extras;
+        }
         self.maybe_open_indented_code_in_new_list_item();
-        self.dispatch_bq_after_list_item(finish);
+        self.dispatch_bq_after_list_item(finish)
     }
 
+    /// Returns the number of extra lines consumed beyond the block parser's
+    /// reported `lines_consumed` (= 1 for definition list). Non-zero when
+    /// the Definition arm opens a fenced code block on the marker line
+    /// (multi-line fence consumes additional source lines) or dispatches
+    /// into a same-line blockquote, and on the Term arm when blank lines
+    /// are absorbed between term and definition.
     fn handle_definition_list_effect(
         &mut self,
         block_match: &super::block_dispatcher::PreparedBlockMatch,
         content: &str,
         indent_to_emit: Option<&str>,
-    ) {
+    ) -> usize {
         use super::block_dispatcher::DefinitionPrepared;
 
         let prepared = block_match
@@ -1156,9 +1194,10 @@ impl<'a> Parser<'a> {
             .as_ref()
             .and_then(|p| p.downcast_ref::<DefinitionPrepared>());
         let Some(prepared) = prepared else {
-            return;
+            return 0;
         };
 
+        let mut extras: usize = 0;
         match prepared {
             DefinitionPrepared::Definition {
                 marker_char,
@@ -1356,7 +1395,7 @@ impl<'a> Parser<'a> {
                                 self.config,
                             )
                         };
-                        self.dispatch_bq_after_list_item(finish);
+                        extras = self.dispatch_bq_after_list_item(finish);
                     } else if let Some(fence) = code_blocks::try_parse_fence_open(content_slice) {
                         self.containers.push(Container::Definition {
                             content_col,
@@ -1394,7 +1433,7 @@ impl<'a> Parser<'a> {
                                 Some(&fence_line),
                             )
                         };
-                        self.pos = new_pos - 1;
+                        extras = new_pos.saturating_sub(self.pos).saturating_sub(1);
                     } else {
                         let (_, newline_str) = strip_newline(current_line);
                         let (content_without_newline, _) = strip_newline(after_marker_and_spaces);
@@ -1453,9 +1492,10 @@ impl<'a> Parser<'a> {
                         self.builder.finish_node();
                     }
                 }
-                self.pos += *blank_count;
+                extras = *blank_count;
             }
-        }
+        };
+        extras
     }
 
     /// Get current blockquote depth from container stack.
@@ -1612,18 +1652,20 @@ impl<'a> Parser<'a> {
 
             log::trace!("Parsing line {}: {}", self.pos + 1, line);
 
-            if self.parse_line(line) {
-                continue;
+            match self.parse_line(line) {
+                LineDispatch::Consumed(n) => self.pos += n,
+                LineDispatch::Rejected => self.pos += 1,
             }
-            self.pos += 1;
         }
 
         self.close_containers_to(0);
         self.builder.finish_node(); // DOCUMENT
     }
 
-    /// Returns true if the line was consumed.
-    fn parse_line(&mut self, line: &str) -> bool {
+    /// Dispatch a single source line. Returns `LineDispatch::Consumed(n)`
+    /// when the line was claimed and `n` lines should be committed, or
+    /// `LineDispatch::Rejected` for the outer loop to advance by 1.
+    fn parse_line(&mut self, line: &str) -> LineDispatch {
         // Count blockquote markers on this line. Inside list items, blockquotes can begin
         // at the list content column (e.g. `    > ...` after `1. `), not at column 0.
         let (mut bq_depth, mut inner_content) = count_blockquote_markers(line);
@@ -1733,8 +1775,7 @@ impl<'a> Parser<'a> {
                     line,
                     self.config,
                 );
-                self.pos += 1;
-                return true;
+                return LineDispatch::consumed(1);
             }
 
             // Close paragraph if open
@@ -1871,8 +1912,7 @@ impl<'a> Parser<'a> {
                 .token(SyntaxKind::BLANK_LINE.into(), inner_content);
             self.builder.finish_node();
 
-            self.pos += 1;
-            return true;
+            return LineDispatch::consumed(1);
         }
 
         // Handle blockquote depth changes
@@ -1898,8 +1938,7 @@ impl<'a> Parser<'a> {
                     line,
                     self.config,
                 );
-                self.pos += 1;
-                return true;
+                return LineDispatch::consumed(1);
             }
 
             // For nested blockquotes, also need blank line before (blank_before_blockquote)
@@ -1954,8 +1993,7 @@ impl<'a> Parser<'a> {
                         content_at_current_depth,
                         self.config,
                     );
-                    self.pos += 1;
-                    return true;
+                    return LineDispatch::consumed(1);
                 } else {
                     // Start new paragraph with the extra > as content
                     paragraphs::start_paragraph_if_needed(&mut self.containers, &mut self.builder);
@@ -1965,8 +2003,7 @@ impl<'a> Parser<'a> {
                         content_at_current_depth,
                         self.config,
                     );
-                    self.pos += 1;
-                    return true;
+                    return LineDispatch::consumed(1);
                 }
             }
 
@@ -2086,8 +2123,7 @@ impl<'a> Parser<'a> {
                             self.config,
                         );
                     }
-                    self.pos += 1;
-                    return true;
+                    return LineDispatch::consumed(1);
                 }
             }
             // Lazy continuation of a list item's open content (its
@@ -2149,8 +2185,7 @@ impl<'a> Parser<'a> {
                             *marker_only = false;
                         }
                     }
-                    self.pos += 1;
-                    return true;
+                    return LineDispatch::consumed(1);
                 }
             }
             // CommonMark §5.1: a no-`>` line that begins a list marker
@@ -2188,7 +2223,7 @@ impl<'a> Parser<'a> {
                         }
 
                         // Check if content is a nested bullet marker
-                        if let Some(nested_marker) = is_content_nested_bullet_marker(
+                        let extras = if let Some(nested_marker) = is_content_nested_bullet_marker(
                             line,
                             marker_match.marker_len,
                             marker_match.spaces_after_bytes,
@@ -2208,6 +2243,7 @@ impl<'a> Parser<'a> {
                                 &list_item,
                                 nested_marker,
                             );
+                            0
                         } else {
                             let list_item = ListItemEmissionInput {
                                 content: line,
@@ -2224,10 +2260,9 @@ impl<'a> Parser<'a> {
                                 &list_item,
                                 self.config,
                             );
-                            self.dispatch_bq_after_list_item(finish);
-                        }
-                        self.pos += 1;
-                        return true;
+                            self.dispatch_bq_after_list_item(finish)
+                        };
+                        return LineDispatch::consumed(1 + extras);
                     }
                 }
             }
@@ -2371,11 +2406,14 @@ impl<'a> Parser<'a> {
                         &list_item,
                         self.config,
                     );
-                    self.maybe_open_fenced_code_in_new_list_item();
-                    self.maybe_open_indented_code_in_new_list_item();
-                    self.dispatch_bq_after_list_item(finish);
-                    self.pos += 1;
-                    return true;
+                    let extras =
+                        if let Some(extras) = self.maybe_open_fenced_code_in_new_list_item() {
+                            extras
+                        } else {
+                            self.maybe_open_indented_code_in_new_list_item();
+                            self.dispatch_bq_after_list_item(finish)
+                        };
+                    return LineDispatch::consumed(1 + extras);
                 }
             }
 
@@ -2496,8 +2534,7 @@ impl<'a> Parser<'a> {
                     line,
                     self.config,
                 );
-                self.pos += 1;
-                return true;
+                return LineDispatch::consumed(1);
             }
 
             // Check for lazy list continuation
@@ -2527,7 +2564,7 @@ impl<'a> Parser<'a> {
                     }
 
                     // Check if content is a nested bullet marker
-                    if let Some(nested_marker) = is_content_nested_bullet_marker(
+                    let extras = if let Some(nested_marker) = is_content_nested_bullet_marker(
                         line,
                         marker_match.marker_len,
                         marker_match.spaces_after_bytes,
@@ -2547,6 +2584,7 @@ impl<'a> Parser<'a> {
                             &list_item,
                             nested_marker,
                         );
+                        0
                     } else {
                         let list_item = ListItemEmissionInput {
                             content: line,
@@ -2563,10 +2601,9 @@ impl<'a> Parser<'a> {
                             &list_item,
                             self.config,
                         );
-                        self.dispatch_bq_after_list_item(finish);
-                    }
-                    self.pos += 1;
-                    return true;
+                        self.dispatch_bq_after_list_item(finish)
+                    };
+                    return LineDispatch::consumed(1 + extras);
                 }
             }
         }
@@ -2593,7 +2630,7 @@ impl<'a> Parser<'a> {
     /// `content` - The content to parse (may have indent/markers stripped)
     /// `line_to_append` - Optional line to use when appending to paragraphs.
     ///                    If None, uses self.lines[self.pos]
-    fn parse_inner_content(&mut self, content: &str, line_to_append: Option<&str>) -> bool {
+    fn parse_inner_content(&mut self, content: &str, line_to_append: Option<&str>) -> LineDispatch {
         log::trace!(
             "parse_inner_content [{}]: depth={}, last={:?}, content={:?}",
             self.pos,
@@ -2638,8 +2675,7 @@ impl<'a> Parser<'a> {
             self.containers.push(Container::Alert {
                 blockquote_depth: self.current_blockquote_depth(),
             });
-            self.pos += 1;
-            return true;
+            return LineDispatch::consumed(1);
         }
 
         // Check if we're in a Definition container (with or without an open PLAIN)
@@ -2717,8 +2753,7 @@ impl<'a> Parser<'a> {
                         *plain_open = true;
                     }
 
-                    self.pos += 1;
-                    return true;
+                    return LineDispatch::consumed(1);
                 }
             }
         }
@@ -2803,8 +2838,7 @@ impl<'a> Parser<'a> {
                 line_to_append.unwrap_or(self.lines[self.pos]),
                 self.config,
             );
-            self.pos += 1;
-            return true;
+            return LineDispatch::consumed(1);
         }
 
         // Precompute dispatcher match once per line (reused by multiple branches below).
@@ -2875,8 +2909,8 @@ impl<'a> Parser<'a> {
         // Setext heading folded over a list item's buffered first-line text.
         // Must run before block detection so that an HR-shaped underline like
         // `---` doesn't get claimed by the thematic-break parser.
-        if self.try_fold_list_item_buffer_into_setext(stripped_content) {
-            return true;
+        if let Some(dispatch) = self.try_fold_list_item_buffer_into_setext(stripped_content) {
+            return dispatch;
         }
 
         // Initial detection (before blank/doc-start are computed). Note: this can
@@ -2949,8 +2983,7 @@ impl<'a> Parser<'a> {
                     line_to_append.unwrap_or(self.lines[self.pos]),
                     self.config,
                 );
-                self.pos += 1;
-                return true;
+                return LineDispatch::consumed(1);
             }
 
             if let Some(block_match) = dispatcher_match.as_ref() {
@@ -2992,27 +3025,30 @@ impl<'a> Parser<'a> {
                     self.after_metadata_block = true;
                 }
 
-                match block_match.effect {
-                    BlockEffect::None => {}
+                let extras = match block_match.effect {
+                    BlockEffect::None => 0,
                     BlockEffect::OpenFencedDiv => {
                         self.containers.push(Container::FencedDiv {});
+                        0
                     }
                     BlockEffect::CloseFencedDiv => {
                         self.close_fenced_div();
+                        0
                     }
                     BlockEffect::OpenFootnoteDefinition => {
-                        self.handle_footnote_open_effect(block_match, content);
+                        self.handle_footnote_open_effect(block_match, content)
                     }
                     BlockEffect::OpenList => {
-                        self.handle_list_open_effect(block_match, content, indent_to_emit);
+                        self.handle_list_open_effect(block_match, content, indent_to_emit)
                     }
                     BlockEffect::OpenDefinitionList => {
-                        self.handle_definition_list_effect(block_match, content, indent_to_emit);
+                        self.handle_definition_list_effect(block_match, content, indent_to_emit)
                     }
                     BlockEffect::OpenBlockQuote => {
                         // Detection only for now; keep core blockquote handling intact.
+                        0
                     }
-                }
+                };
 
                 if lines_consumed == 0 {
                     log::warn!(
@@ -3020,11 +3056,10 @@ impl<'a> Parser<'a> {
                         self.pos + 1,
                         self.block_registry.parser_name(block_match)
                     );
-                    return false;
+                    return LineDispatch::Rejected;
                 }
 
-                self.pos += lines_consumed;
-                return true;
+                return LineDispatch::consumed(lines_consumed + extras);
             }
         } else if let Some(block_match) = dispatcher_match.as_ref() {
             // Without blank-before, only allow interrupting blocks OR blocks that are
@@ -3048,8 +3083,7 @@ impl<'a> Parser<'a> {
                             line_to_append.unwrap_or(self.lines[self.pos]),
                             self.config,
                         );
-                        self.pos += 1;
-                        return true;
+                        return LineDispatch::consumed(1);
                     }
 
                     if matches!(block_match.effect, BlockEffect::OpenList)
@@ -3086,8 +3120,7 @@ impl<'a> Parser<'a> {
                                 line_to_append.unwrap_or(self.lines[self.pos]),
                                 self.config,
                             );
-                            self.pos += 1;
-                            return true;
+                            return LineDispatch::consumed(1);
                         }
                     }
 
@@ -3100,8 +3133,7 @@ impl<'a> Parser<'a> {
                     if matches!(block_match.effect, BlockEffect::OpenList)
                         && self.try_lazy_list_continuation(block_match, content)
                     {
-                        self.pos += 1;
-                        return true;
+                        return LineDispatch::consumed(1);
                     }
 
                     self.emit_list_item_buffer_if_needed();
@@ -3151,8 +3183,7 @@ impl<'a> Parser<'a> {
                             underline_line,
                             level,
                         );
-                        self.pos += 2;
-                        return true;
+                        return LineDispatch::consumed(2);
                     }
 
                     // Keep ambiguous fenced-div openers from interrupting an
@@ -3170,8 +3201,7 @@ impl<'a> Parser<'a> {
                             line_to_append.unwrap_or(self.lines[self.pos]),
                             self.config,
                         );
-                        self.pos += 1;
-                        return true;
+                        return LineDispatch::consumed(1);
                     }
 
                     // Reference definitions cannot interrupt a paragraph
@@ -3183,8 +3213,7 @@ impl<'a> Parser<'a> {
                             line_to_append.unwrap_or(self.lines[self.pos]),
                             self.config,
                         );
-                        self.pos += 1;
-                        return true;
+                        return LineDispatch::consumed(1);
                     }
                 }
                 BlockDetectionResult::No => unreachable!(),
@@ -3207,27 +3236,30 @@ impl<'a> Parser<'a> {
                     self.pos,
                 );
 
-                match block_match.effect {
-                    BlockEffect::None => {}
+                let extras = match block_match.effect {
+                    BlockEffect::None => 0,
                     BlockEffect::OpenFencedDiv => {
                         self.containers.push(Container::FencedDiv {});
+                        0
                     }
                     BlockEffect::CloseFencedDiv => {
                         self.close_fenced_div();
+                        0
                     }
                     BlockEffect::OpenFootnoteDefinition => {
-                        self.handle_footnote_open_effect(block_match, content);
+                        self.handle_footnote_open_effect(block_match, content)
                     }
                     BlockEffect::OpenList => {
-                        self.handle_list_open_effect(block_match, content, indent_to_emit);
+                        self.handle_list_open_effect(block_match, content, indent_to_emit)
                     }
                     BlockEffect::OpenDefinitionList => {
-                        self.handle_definition_list_effect(block_match, content, indent_to_emit);
+                        self.handle_definition_list_effect(block_match, content, indent_to_emit)
                     }
                     BlockEffect::OpenBlockQuote => {
                         // Detection only for now; keep core blockquote handling intact.
+                        0
                     }
-                }
+                };
 
                 if lines_consumed == 0 {
                     log::warn!(
@@ -3235,11 +3267,10 @@ impl<'a> Parser<'a> {
                         self.pos + 1,
                         self.block_registry.parser_name(block_match)
                     );
-                    return false;
+                    return LineDispatch::Rejected;
                 }
 
-                self.pos += lines_consumed;
-                return true;
+                return LineDispatch::consumed(lines_consumed + extras);
             }
         }
 
@@ -3258,8 +3289,7 @@ impl<'a> Parser<'a> {
 
             let new_pos = parse_line_block(&self.lines, self.pos, &mut self.builder, self.config);
             if new_pos > self.pos {
-                self.pos = new_pos;
-                return true;
+                return LineDispatch::consumed(new_pos - self.pos);
             }
         }
 
@@ -3286,8 +3316,7 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            self.pos += 1;
-            return true;
+            return LineDispatch::consumed(1);
         }
 
         log::trace!(
@@ -3305,8 +3334,7 @@ impl<'a> Parser<'a> {
             line,
             self.config,
         );
-        self.pos += 1;
-        true
+        LineDispatch::consumed(1)
     }
 
     fn fenced_div_container_index(&self) -> Option<usize> {
