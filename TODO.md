@@ -447,6 +447,37 @@ intentionally excluded.
 
 ## Parser
 
+### Architecture
+
+- [ ] Unify the block dispatcher's input model. `detect_prepared` /
+      `parse_prepared` receive both `ctx.content` (stripped of bq + container
+      markers) and raw `&self.lines, line_pos` (multi-line lookahead). Helpers
+      like `pandoc_html_open_tag_closes` and `parse_html_block_with_wrapper`
+      walk raw lines and strip `bq_depth` via `strip_n_blockquote_markers`, but
+      list-item indent / list-marker bytes aren't part of that stripping
+      vocabulary. Net effect: any block parser that needs multi-line lookahead
+      silently misfires when invoked from a stacked container (list-item + bq,
+      list-in-fenced-div, ...). Concrete current blocker: pandoc-conformance
+      0452 / 0453 (`- > <div>...`). Fix shape sketched in
+      `.claude/skills/html-conformance/RECAP.md` (thread `list_content_col` from
+      `ctx.list_indent_info` + uniform line-prefix stripping).
+- [ ] Stop letting `pandoc_ast.rs` drift into a second-stage parser. Load-
+      bearing byte-walkers (`split_html_block_by_tags`, `parse_pandoc_blocks`
+      and the refs/heading-id reparse helpers) re-tokenize source the CST should
+      already encode. This violates the single-pass invariant in `AGENTS.md` and
+      hides structural decisions from downstream consumers (linter, salsa, LSP,
+      formatter) which all walk the CST, not the projector. Phase 6 of the HTML
+      lift is the ongoing migration; the goal is for `pandoc_ast.rs` to be a
+      pure CST → native projection with no byte reparse.
+- [ ] Centralize position advancement. `self.pos += 1` (or `+= lines_consumed`)
+      is replicated at many sites in `parser/core.rs`; there is no single
+      authority that knows "how many lines did this dispatch consume." This
+      caused the `self.pos -= 1` compensation hack inside
+      `Parser::dispatch_bq_after_list_item` (the bq-in-listitem fix landed
+      2026-05-18 in c1c0db50). A clean refactor would have block effects return
+      a `LinesConsumed(usize)` value that the outer loop commits, eliminating
+      both the manual `+= 1` sites and the compensation hack.
+
 ### Performance
 
 - [ ] Avoid temporary green tree when injecting `BLOCK_QUOTE_MARKER` tokens into
