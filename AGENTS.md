@@ -25,6 +25,10 @@ is the definitive reference for parser implementation.
 - Pandoc parser is the gold standard - if in doubt, see how Pandoc handles it.
 - Parsing failures take priority over formatting issues - the parser must be
   robust and lossless.
+- Preserve single-pass parsing when adding features. If a classification depends
+  on surrounding state, plumb that state into detection as context rather than
+  re-classifying or post-processing the parsed result. Two passes is a
+  regression, not a refactor.
 
 ## Essential Commands
 
