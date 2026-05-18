@@ -1271,9 +1271,14 @@ impl<'a> Parser<'a> {
                                 self.config,
                             );
                         }
-                    } else if let Some(marker_match) =
-                        try_parse_list_marker(content_slice, self.config)
-                        && should_start_list_from_first_line
+                    } else if let Some(marker_match) = try_parse_list_marker(
+                        content_slice,
+                        self.config,
+                        lists::open_list_hint_at_indent(
+                            &self.containers,
+                            leading_indent(content_slice).0,
+                        ),
+                    ) && should_start_list_from_first_line
                     {
                         self.containers.push(Container::Definition {
                             content_col,
@@ -1633,6 +1638,10 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 },
+                open_alpha_hint: lists::open_list_hint_at_indent(
+                    &self.containers,
+                    leading_indent(line).0,
+                ),
             })
         } else {
             None
@@ -2057,7 +2066,12 @@ impl<'a> Parser<'a> {
             // hasn't been wrapped yet.
             if matches!(self.containers.last(), Some(Container::ListItem { .. }))
                 && lists::in_blockquote_list(&self.containers)
-                && try_parse_list_marker(line, self.config).is_none()
+                && try_parse_list_marker(
+                    line,
+                    self.config,
+                    lists::open_list_hint_at_indent(&self.containers, leading_indent(line).0),
+                )
+                .is_none()
             {
                 let is_commonmark = self.config.dialect == crate::options::Dialect::CommonMark;
                 let interrupts_via_hr = is_commonmark && try_parse_horizontal_rule(line).is_some();
@@ -2115,7 +2129,11 @@ impl<'a> Parser<'a> {
                 // Check for lazy list continuation - if we're in a list item and
                 // this line looks like a list item with matching marker
                 if lists::in_blockquote_list(&self.containers)
-                    && let Some(marker_match) = try_parse_list_marker(line, self.config)
+                    && let Some(marker_match) = try_parse_list_marker(
+                        line,
+                        self.config,
+                        lists::open_list_hint_at_indent(&self.containers, leading_indent(line).0),
+                    )
                 {
                     let (indent_cols, indent_bytes) = leading_indent(line);
                     if let Some(level) = lists::find_matching_list_level(
@@ -2236,7 +2254,11 @@ impl<'a> Parser<'a> {
             // our own formatter emits — without this branch round-trips
             // would not be idempotent.
             let (inner_indent_cols_raw, inner_indent_bytes) = leading_indent(inner_content);
-            if let Some(marker_match) = try_parse_list_marker(inner_content, self.config) {
+            if let Some(marker_match) = try_parse_list_marker(
+                inner_content,
+                self.config,
+                lists::open_list_hint_at_indent(&self.containers, inner_indent_cols_raw),
+            ) {
                 // Don't steal lines whose leading whitespace inside the BQ
                 // would push the marker into the previous inner LIST_ITEM's
                 // content area — those are nested lists, not siblings.
@@ -2337,12 +2359,20 @@ impl<'a> Parser<'a> {
                 };
 
                 // Check if this line starts a new list item at outer level
-                let is_new_item_at_outer_level =
-                    if try_parse_list_marker(inner_content, self.config).is_some() {
-                        effective_indent < content_col
-                    } else {
-                        false
-                    };
+                let is_new_item_at_outer_level = if try_parse_list_marker(
+                    inner_content,
+                    self.config,
+                    lists::open_list_hint_at_indent(
+                        &self.containers,
+                        leading_indent(inner_content).0,
+                    ),
+                )
+                .is_some()
+                {
+                    effective_indent < content_col
+                } else {
+                    false
+                };
 
                 // Close ListItem if:
                 // 1. It's a new list item at an outer (or same) level, OR
@@ -2437,7 +2467,11 @@ impl<'a> Parser<'a> {
 
             // Check for lazy list continuation
             if lists::in_blockquote_list(&self.containers)
-                && let Some(marker_match) = try_parse_list_marker(line, self.config)
+                && let Some(marker_match) = try_parse_list_marker(
+                    line,
+                    self.config,
+                    lists::open_list_hint_at_indent(&self.containers, leading_indent(line).0),
+                )
             {
                 let (indent_cols, indent_bytes) = leading_indent(line);
                 if let Some(level) = lists::find_matching_list_level(
@@ -2615,6 +2649,10 @@ impl<'a> Parser<'a> {
                         } else {
                             None
                         },
+                        open_alpha_hint: lists::open_list_hint_at_indent(
+                            &self.containers,
+                            leading_indent(stripped_content).0,
+                        ),
                     },
                     &self.lines,
                     self.pos,
@@ -2788,6 +2826,10 @@ impl<'a> Parser<'a> {
             list_item_unclosed_html_block_tag: self.list_item_unclosed_html_block_tag(),
             paragraph_open: self.is_paragraph_open(),
             next_line,
+            open_alpha_hint: lists::open_list_hint_at_indent(
+                &self.containers,
+                leading_indent(content).0,
+            ),
         };
 
         // We'll update these two fields shortly (after they are computed), but we can still

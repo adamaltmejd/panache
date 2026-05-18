@@ -49,6 +49,21 @@ pub(crate) enum ListDelimiter {
     Parens,
 }
 
+/// Context hint for marker detection: the kind of open alphabetic list (if
+/// any) at the candidate line's indent column. Used to disambiguate
+/// single-letter Roman candidates {i,v,x,I,V,X} from their letter
+/// interpretation in Pandoc-dialect input. Pandoc parses `a. … h. … i. … j.`
+/// as a single LowerAlpha list (the `i.` after the blank line continues as
+/// the letter `i`, not as Roman numeral 1). Marker detection needs this
+/// signal to make that classification in a single pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum OpenListHint {
+    #[default]
+    None,
+    LowerAlpha,
+    UpperAlpha,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ListMarkerMatch {
     pub(crate) marker: ListMarker,
@@ -199,7 +214,39 @@ fn marker_spaces_after(after_marker: &str, marker_end_col: usize) -> (usize, usi
     }
 }
 
-pub(crate) fn try_parse_list_marker(line: &str, config: &ParserOptions) -> Option<ListMarkerMatch> {
+/// Pandoc-dialect single-pass disambiguation: when a single-letter Roman
+/// candidate `{i,v,x}` / `{I,V,X}` would shadow an open same-case alpha
+/// list, reject the Roman classification so detection falls through to the
+/// alpha branch. `numeral_bytes` is the buffer the Roman parser just
+/// validated; `len` is its byte-length. The check fires only for `len == 1`
+/// (multi-character romans like `ii.` are unambiguously Roman) and only in
+/// Pandoc dialect.
+fn single_char_roman_shadowed_by_alpha(
+    numeral_bytes: &[u8],
+    len: usize,
+    uppercase: bool,
+    hint: OpenListHint,
+    dialect: crate::Dialect,
+) -> bool {
+    if dialect != crate::Dialect::Pandoc || len != 1 {
+        return false;
+    }
+    match (uppercase, hint) {
+        (false, OpenListHint::LowerAlpha) => {
+            matches!(numeral_bytes[0], b'i' | b'v' | b'x')
+        }
+        (true, OpenListHint::UpperAlpha) => {
+            matches!(numeral_bytes[0], b'I' | b'V' | b'X')
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn try_parse_list_marker(
+    line: &str,
+    config: &ParserOptions,
+    open_alpha_hint: OpenListHint,
+) -> Option<ListMarkerMatch> {
     // Trailing newlines should not block bare-marker detection; the line `*\n`
     // is a bare bullet marker and the post-marker text is logically empty.
     let line = trim_end_newlines(line);
@@ -335,6 +382,13 @@ pub(crate) fn try_parse_list_marker(line: &str, config: &ParserOptions) -> Optio
             if let Some(len) = try_parse_roman_numeral(rest, false)
                 && rest.len() > len
                 && rest.as_bytes()[len] == b')'
+                && !single_char_roman_shadowed_by_alpha(
+                    rest.as_bytes(),
+                    len,
+                    false,
+                    open_alpha_hint,
+                    config.dialect,
+                )
             {
                 let after_marker = &rest[len + 1..];
                 if after_marker.starts_with(' ')
@@ -361,6 +415,13 @@ pub(crate) fn try_parse_list_marker(line: &str, config: &ParserOptions) -> Optio
             if let Some(len) = try_parse_roman_numeral(rest, true)
                 && rest.len() > len
                 && rest.as_bytes()[len] == b')'
+                && !single_char_roman_shadowed_by_alpha(
+                    rest.as_bytes(),
+                    len,
+                    true,
+                    open_alpha_hint,
+                    config.dialect,
+                )
             {
                 let after_marker = &rest[len + 1..];
                 if after_marker.starts_with(' ')
@@ -492,6 +553,13 @@ pub(crate) fn try_parse_list_marker(line: &str, config: &ParserOptions) -> Optio
             && trimmed.len() > len
             && let delim = trimmed.as_bytes()[len]
             && (delim == b'.' || delim == b')')
+            && !single_char_roman_shadowed_by_alpha(
+                trimmed.as_bytes(),
+                len,
+                false,
+                open_alpha_hint,
+                config.dialect,
+            )
         {
             let style = if delim == b'.' {
                 ListDelimiter::Period
@@ -525,6 +593,13 @@ pub(crate) fn try_parse_list_marker(line: &str, config: &ParserOptions) -> Optio
             && trimmed.len() > len
             && let delim = trimmed.as_bytes()[len]
             && (delim == b'.' || delim == b')')
+            && !single_char_roman_shadowed_by_alpha(
+                trimmed.as_bytes(),
+                len,
+                true,
+                open_alpha_hint,
+                config.dialect,
+            )
         {
             let style = if delim == b'.' {
                 ListDelimiter::Period
@@ -738,8 +813,8 @@ mod tests {
     #[test]
     fn detects_bullet_markers() {
         let config = ParserOptions::default();
-        assert!(try_parse_list_marker("* item", &config).is_some());
-        assert!(try_parse_list_marker("*\titem", &config).is_some());
+        assert!(try_parse_list_marker("* item", &config, OpenListHint::None).is_some());
+        assert!(try_parse_list_marker("*\titem", &config, OpenListHint::None).is_some());
     }
 
     #[test]
@@ -749,27 +824,209 @@ mod tests {
 
         // Test lowercase alpha period
         assert!(
-            try_parse_list_marker("a. item", &config).is_some(),
+            try_parse_list_marker("a. item", &config, OpenListHint::None).is_some(),
             "a. should parse"
         );
         assert!(
-            try_parse_list_marker("b. item", &config).is_some(),
+            try_parse_list_marker("b. item", &config, OpenListHint::None).is_some(),
             "b. should parse"
         );
         assert!(
-            try_parse_list_marker("c. item", &config).is_some(),
+            try_parse_list_marker("c. item", &config, OpenListHint::None).is_some(),
             "c. should parse"
         );
 
         // Test lowercase alpha right paren
         assert!(
-            try_parse_list_marker("a) item", &config).is_some(),
+            try_parse_list_marker("a) item", &config, OpenListHint::None).is_some(),
             "a) should parse"
         );
         assert!(
-            try_parse_list_marker("b) item", &config).is_some(),
+            try_parse_list_marker("b) item", &config, OpenListHint::None).is_some(),
             "b) should parse"
         );
+    }
+
+    #[test]
+    fn single_letter_i_classified_as_alpha_with_lower_alpha_hint() {
+        let config = ParserOptions::default(); // Pandoc + fancy_lists
+        let m = try_parse_list_marker("i. foo", &config, OpenListHint::LowerAlpha).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::LowerAlpha { letter: 'i', .. })
+            ),
+            "i. should classify as LowerAlpha when a LowerAlpha list is open: got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn single_letter_i_classified_as_roman_with_no_hint() {
+        let config = ParserOptions::default();
+        let m = try_parse_list_marker("i. foo", &config, OpenListHint::None).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::LowerRoman { .. })
+            ),
+            "i. should classify as LowerRoman with no hint: got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn multichar_roman_ignores_hint() {
+        let config = ParserOptions::default();
+        let m = try_parse_list_marker("ii. foo", &config, OpenListHint::LowerAlpha).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::LowerRoman { .. })
+            ),
+            "ii. must stay LowerRoman regardless of hint: got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn hint_ignored_in_commonmark_dialect() {
+        // CommonMark doesn't enable fancy_lists, so `i.` isn't recognized as
+        // an ordered marker at all in that dialect. The hint must not change
+        // that outcome.
+        let config = ParserOptions {
+            dialect: crate::Dialect::CommonMark,
+            extensions: crate::options::Extensions {
+                fancy_lists: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(
+            try_parse_list_marker("i. foo", &config, OpenListHint::LowerAlpha).is_none(),
+            "i. should not parse as a list marker under CommonMark"
+        );
+    }
+
+    #[test]
+    fn uppercase_i_classified_as_alpha_with_upper_alpha_hint() {
+        let config = ParserOptions::default();
+        // Uppercase + period requires 2 spaces (the I.M.Pei rule).
+        let m = try_parse_list_marker("I.  foo", &config, OpenListHint::UpperAlpha).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::UpperAlpha { letter: 'I', .. })
+            ),
+            "I. should classify as UpperAlpha when an UpperAlpha list is open: got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn lowercase_hint_does_not_shadow_uppercase_candidate() {
+        let config = ParserOptions::default();
+        let m = try_parse_list_marker("I.  foo", &config, OpenListHint::LowerAlpha).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::UpperRoman { .. })
+            ),
+            "I. + LowerAlpha hint must stay UpperRoman (case mismatch): got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn parenthesized_single_letter_i_obeys_hint() {
+        let config = ParserOptions::default();
+        let m = try_parse_list_marker("(i) foo", &config, OpenListHint::LowerAlpha).unwrap();
+        assert!(
+            matches!(
+                m.marker,
+                ListMarker::Ordered(OrderedMarker::LowerAlpha { letter: 'i', .. })
+            ),
+            "(i) should classify as LowerAlpha when a LowerAlpha list is open: got {:?}",
+            m.marker
+        );
+    }
+
+    #[test]
+    fn open_list_hint_at_indent_lower_alpha_at_same_indent() {
+        use crate::parser::utils::container_stack::{Container, ContainerStack};
+        let mut stack = ContainerStack::new();
+        stack.stack.push(Container::List {
+            marker: ListMarker::Ordered(OrderedMarker::LowerAlpha {
+                letter: 'a',
+                style: ListDelimiter::Period,
+            }),
+            base_indent_cols: 0,
+            has_blank_between_items: false,
+        });
+        assert_eq!(
+            open_list_hint_at_indent(&stack, 0),
+            OpenListHint::LowerAlpha
+        );
+    }
+
+    #[test]
+    fn open_list_hint_at_indent_returns_none_when_indent_differs() {
+        // Protects nested-roman-inside-alpha: an `i.` at indent 3 must NOT
+        // be reclassified against the outer alpha at indent 0.
+        use crate::parser::utils::container_stack::{Container, ContainerStack};
+        let mut stack = ContainerStack::new();
+        stack.stack.push(Container::List {
+            marker: ListMarker::Ordered(OrderedMarker::LowerAlpha {
+                letter: 'a',
+                style: ListDelimiter::Period,
+            }),
+            base_indent_cols: 0,
+            has_blank_between_items: false,
+        });
+        assert_eq!(open_list_hint_at_indent(&stack, 3), OpenListHint::None);
+    }
+
+    #[test]
+    fn open_list_hint_at_indent_returns_none_for_decimal_or_roman() {
+        use crate::parser::utils::container_stack::{Container, ContainerStack};
+        let mut stack = ContainerStack::new();
+        stack.stack.push(Container::List {
+            marker: ListMarker::Ordered(OrderedMarker::Decimal {
+                number: "1".to_string(),
+                style: ListDelimiter::Period,
+            }),
+            base_indent_cols: 0,
+            has_blank_between_items: false,
+        });
+        assert_eq!(open_list_hint_at_indent(&stack, 0), OpenListHint::None);
+
+        let mut stack = ContainerStack::new();
+        stack.stack.push(Container::List {
+            marker: ListMarker::Ordered(OrderedMarker::LowerRoman {
+                numeral: "i".to_string(),
+                style: ListDelimiter::Period,
+            }),
+            base_indent_cols: 0,
+            has_blank_between_items: false,
+        });
+        assert_eq!(open_list_hint_at_indent(&stack, 0), OpenListHint::None);
+    }
+
+    #[test]
+    fn open_list_hint_at_indent_stops_at_blockquote_barrier() {
+        use crate::parser::utils::container_stack::{Container, ContainerStack};
+        let mut stack = ContainerStack::new();
+        stack.stack.push(Container::List {
+            marker: ListMarker::Ordered(OrderedMarker::LowerAlpha {
+                letter: 'a',
+                style: ListDelimiter::Period,
+            }),
+            base_indent_cols: 0,
+            has_blank_between_items: false,
+        });
+        stack.stack.push(Container::BlockQuote {});
+        // Inside the blockquote at indent 0: the outer alpha must not leak in.
+        assert_eq!(open_list_hint_at_indent(&stack, 0), OpenListHint::None);
     }
 }
 
@@ -851,31 +1108,31 @@ fn detects_complex_roman_numerals() {
 
     // Test various Roman numerals
     assert!(
-        try_parse_list_marker("iv. item", &config).is_some(),
+        try_parse_list_marker("iv. item", &config, OpenListHint::None).is_some(),
         "iv. should parse"
     );
     assert!(
-        try_parse_list_marker("v. item", &config).is_some(),
+        try_parse_list_marker("v. item", &config, OpenListHint::None).is_some(),
         "v. should parse"
     );
     assert!(
-        try_parse_list_marker("vi. item", &config).is_some(),
+        try_parse_list_marker("vi. item", &config, OpenListHint::None).is_some(),
         "vi. should parse"
     );
     assert!(
-        try_parse_list_marker("vii. item", &config).is_some(),
+        try_parse_list_marker("vii. item", &config, OpenListHint::None).is_some(),
         "vii. should parse"
     );
     assert!(
-        try_parse_list_marker("viii. item", &config).is_some(),
+        try_parse_list_marker("viii. item", &config, OpenListHint::None).is_some(),
         "viii. should parse"
     );
     assert!(
-        try_parse_list_marker("ix. item", &config).is_some(),
+        try_parse_list_marker("ix. item", &config, OpenListHint::None).is_some(),
         "ix. should parse"
     );
     assert!(
-        try_parse_list_marker("x. item", &config).is_some(),
+        try_parse_list_marker("x. item", &config, OpenListHint::None).is_some(),
         "x. should parse"
     );
 }
@@ -887,21 +1144,21 @@ fn detects_example_list_markers() {
 
     // Test unlabeled example
     assert!(
-        try_parse_list_marker("(@) item", &config).is_some(),
+        try_parse_list_marker("(@) item", &config, OpenListHint::None).is_some(),
         "(@) should parse"
     );
 
     // Test labeled examples
     assert!(
-        try_parse_list_marker("(@foo) item", &config).is_some(),
+        try_parse_list_marker("(@foo) item", &config, OpenListHint::None).is_some(),
         "(@foo) should parse"
     );
     assert!(
-        try_parse_list_marker("(@my_label) item", &config).is_some(),
+        try_parse_list_marker("(@my_label) item", &config, OpenListHint::None).is_some(),
         "(@my_label) should parse"
     );
     assert!(
-        try_parse_list_marker("(@test-123) item", &config).is_some(),
+        try_parse_list_marker("(@test-123) item", &config, OpenListHint::None).is_some(),
         "(@test-123) should parse"
     );
 
@@ -914,7 +1171,7 @@ fn detects_example_list_markers() {
         ..Default::default()
     };
     assert!(
-        try_parse_list_marker("(@) item", &disabled_config).is_none(),
+        try_parse_list_marker("(@) item", &disabled_config, OpenListHint::None).is_none(),
         "(@) should not parse when extension disabled"
     );
 }
@@ -1077,6 +1334,45 @@ pub(in crate::parser) fn in_blockquote_list(containers: &ContainerStack) -> bool
         }
     }
     false
+}
+
+/// Return the kind of open alphabetic list at exactly `indent_cols`, if any.
+///
+/// Walks the container stack from deepest to shallowest, stopping at a
+/// `Container::BlockQuote` barrier (mirrors `find_matching_list_level`'s
+/// barrier behavior so a list outside a blockquote can't influence
+/// classification inside one). Returns `OpenListHint::None` for any
+/// non-alpha marker or when no list is open at the queried indent.
+///
+/// Used by `try_parse_list_marker` to disambiguate single-letter Roman
+/// candidates {i,v,x,I,V,X} against an open alpha list in Pandoc dialect.
+/// The exact-indent gate is what protects nested Roman-inside-alpha
+/// sublists like `a.\n   i.` — there the inner `i.` lives at a deeper
+/// indent than the outer alpha base, so this returns `None` and Roman
+/// classification wins.
+pub(in crate::parser) fn open_list_hint_at_indent(
+    containers: &ContainerStack,
+    indent_cols: usize,
+) -> OpenListHint {
+    for c in containers.stack.iter().rev() {
+        if matches!(c, Container::BlockQuote { .. }) {
+            return OpenListHint::None;
+        }
+        if let Container::List {
+            marker,
+            base_indent_cols,
+            ..
+        } = c
+            && *base_indent_cols == indent_cols
+        {
+            return match marker {
+                ListMarker::Ordered(OrderedMarker::LowerAlpha { .. }) => OpenListHint::LowerAlpha,
+                ListMarker::Ordered(OrderedMarker::UpperAlpha { .. }) => OpenListHint::UpperAlpha,
+                _ => OpenListHint::None,
+            };
+        }
+    }
+    OpenListHint::None
 }
 
 /// Find matching list level for a marker with the given indent.
@@ -1365,7 +1661,8 @@ fn finish_list_item_with_optional_nested(
     // shape so the round-trip stays idempotent.
 
     if !buffered_is_thematic_break
-        && let Some(inner_match) = try_parse_list_marker(&text_to_buffer, config)
+        && let Some(inner_match) =
+            try_parse_list_marker(&text_to_buffer, config, OpenListHint::None)
     {
         let inner_content_start = inner_match.marker_len + inner_match.spaces_after_bytes;
         let after_inner =
@@ -1457,7 +1754,7 @@ fn finish_list_item_with_optional_nested(
         let inner_is_thematic_break =
             super::horizontal_rules::try_parse_horizontal_rule(trimmed).is_some();
         if !inner_is_thematic_break
-            && let Some(inner_match) = try_parse_list_marker(remaining, config)
+            && let Some(inner_match) = try_parse_list_marker(remaining, config, OpenListHint::None)
         {
             let inner_content_start = inner_match.marker_len + inner_match.spaces_after_bytes;
             let after_inner = trim_end_newlines(remaining.get(inner_content_start..).unwrap_or(""));

@@ -399,6 +399,7 @@ fn dispatcher_blockquote_detection() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &[line], 0);
@@ -434,6 +435,7 @@ fn dispatcher_blockquote_requires_blank_before() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &[line], 0);
@@ -475,6 +477,7 @@ fn dispatcher_blockquote_payload_basic() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &[line], 0).unwrap();
@@ -513,6 +516,7 @@ fn dispatcher_blockquote_payload_nested_requires_blank() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &lines, 1).unwrap();
@@ -550,6 +554,7 @@ fn dispatcher_blockquote_ignored_inside_blockquote() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &[line], 0);
@@ -582,6 +587,7 @@ fn dispatcher_blockquote_payload_nested_with_blank() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &lines, 2).unwrap();
@@ -619,6 +625,7 @@ fn dispatcher_blockquote_payload_nested_after_blank_line() {
         list_item_unclosed_html_block_tag: None,
         paragraph_open: false,
         next_line: None,
+        open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
     };
 
     let result = registry.detect_prepared(&ctx, &lines, 2).unwrap();

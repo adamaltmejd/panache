@@ -142,6 +142,14 @@ pub(crate) struct BlockContext<'a> {
 
     /// Next line content for lookahead (used by setext headings)
     pub next_line: Option<&'a str>,
+
+    /// Open-alpha-at-indent hint for `ListParser::detect_prepared`.
+    /// Precomputed by the parser core from `self.containers` (which is
+    /// intentionally not threaded through `BlockContext` — see the note
+    /// above). Lets marker detection resolve single-letter Roman
+    /// candidates {i,v,x,I,V,X} against an open alpha list in a single
+    /// classification pass under Pandoc dialect.
+    pub open_alpha_hint: super::blocks::lists::OpenListHint,
 }
 
 /// Result of detecting whether a block can be parsed.
@@ -618,7 +626,7 @@ impl BlockParser for ListParser {
         _lines: &[&str],
         _line_pos: usize,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
-        let marker_match = try_parse_list_marker(ctx.content, ctx.config)?;
+        let marker_match = try_parse_list_marker(ctx.content, ctx.config, ctx.open_alpha_hint)?;
         let after_marker_text = {
             let (_, indent_bytes) = super::utils::container_stack::leading_indent(ctx.content);
             let marker_end = indent_bytes + marker_match.marker_len;
@@ -2481,7 +2489,8 @@ impl BlockParser for IndentedCodeBlockParser {
 
         let (indent_cols, _) = leading_indent(ctx.content);
         // Don't treat as code if it's a list marker and not indented enough for code.
-        if indent_cols < required_indent && try_parse_list_marker(ctx.content, ctx.config).is_some()
+        if indent_cols < required_indent
+            && try_parse_list_marker(ctx.content, ctx.config, ctx.open_alpha_hint).is_some()
         {
             return None;
         }

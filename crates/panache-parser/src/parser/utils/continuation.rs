@@ -46,7 +46,11 @@ impl<'a, 'cfg> ContinuationPolicy<'a, 'cfg> {
     ) -> usize {
         let (next_bq_depth, next_inner) = count_blockquote_markers(next_line);
         let (raw_indent_cols, _) = leading_indent(next_inner);
-        let next_marker = lists::try_parse_list_marker(next_inner, self.config);
+        let next_marker = lists::try_parse_list_marker(
+            next_inner,
+            self.config,
+            lists::open_list_hint_at_indent(containers, raw_indent_cols),
+        );
         let next_is_definition_marker =
             definition_lists::try_parse_definition_marker(next_inner).is_some();
         let next_is_definition_term = !is_blank_line(next_inner)
@@ -347,7 +351,9 @@ impl<'a, 'cfg> ContinuationPolicy<'a, 'cfg> {
                 return false;
             }
         }
-        if lists::try_parse_list_marker(stripped_content, self.config).is_some() {
+        if lists::try_parse_list_marker(stripped_content, self.config, block_ctx.open_alpha_hint)
+            .is_some()
+        {
             if prev_line_blank {
                 return false;
             }
