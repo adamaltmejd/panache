@@ -449,18 +449,29 @@ intentionally excluded.
 
 ### Architecture
 
-- [ ] Unify the block dispatcher's input model. `detect_prepared` /
-      `parse_prepared` receive both `ctx.content` (stripped of bq + container
-      markers) and raw `&self.lines, line_pos` (multi-line lookahead). Helpers
-      like `pandoc_html_open_tag_closes` and `parse_html_block_with_wrapper`
-      walk raw lines and strip `bq_depth` via `strip_n_blockquote_markers`, but
-      list-item indent / list-marker bytes aren't part of that stripping
-      vocabulary. Net effect: any block parser that needs multi-line lookahead
-      silently misfires when invoked from a stacked container (list-item + bq,
-      list-in-fenced-div, ...). Concrete current blocker: pandoc-conformance
-      0452 / 0453 (`- > <div>...`). Fix shape sketched in
-      `.claude/skills/html-conformance/RECAP.md` (thread `list_content_col` from
-      `ctx.list_indent_info` + uniform line-prefix stripping).
+- [x] Unify the line-prefix stripping vocabulary used by the block dispatcher's
+      helpers. `ContainerPrefix` (in `parser/blocks/container_prefix.rs`)
+      bundles `list_content_col`, `bq_depth`, and a
+      `list_marker_consumed_on_line_0` flag. The three helpers
+      `pandoc_html_open_tag_closes`, `find_multiline_open_end`, and
+      `parse_html_block_with_wrapper` take it instead of bare `bq_depth`, so
+      stacked-container dispatches strip both marker families. `BqPrefixState`
+      and `LinePrefixState` collapsed into a unified `ContainerPrefixState` for
+      graft re-injection. Unblocked pandoc-conformance 0452/0453 (`- > <div>...`
+      single- and multi-line); html 257 → 259, total 452 → 454.
+- [ ] Follow-up to the `ContainerPrefix` work: remove the dual `ctx.content` /
+      raw-`&self.lines, line_pos` redundancy in the `BlockParser` trait. The
+      strip vocabulary is now uniform, but the trait still passes both views. A
+      pre-stripped lines view (or computing `first_inner` once at the
+      dispatcher) would let helpers stop re-stripping and remove the
+      `list_marker_consumed_on_line_0` line-0 special case.
+- [ ] Audit other multi-line-lookahead block parsers for the same misfire class.
+      Concrete finding from the `ContainerPrefix` audit: fenced code in
+      list-item + bq breaks losslessness (CST text doesn't match input) for the
+      canonical input shape with a backtick fence inside `- >` continuation
+      lines. Pre-existing, not a regression from the `ContainerPrefix` work.
+      Tables (`tables.rs`), line blocks (`line_blocks.rs`), and definition lists
+      (`definition_lists.rs`) walk raw `lines` and weren't exhaustively probed.
 - [ ] Stop letting `pandoc_ast.rs` drift into a second-stage parser. Load-
       bearing byte-walkers (`split_html_block_by_tags`, `parse_pandoc_blocks`
       and the refs/heading-id reparse helpers) re-tokenize source the CST should
