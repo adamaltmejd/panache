@@ -1306,11 +1306,17 @@ impl<'a> Parser<'a> {
 
                 if *has_content {
                     let current_line = self.lines[self.pos];
-                    let (trimmed_line, _) = strip_newline(current_line);
+                    let (trimmed_content, _) = strip_newline(content);
 
-                    let content_start = content_start_bytes.min(trimmed_line.len());
-                    let content_slice = &trimmed_line[content_start..];
-                    let content_line = &current_line[content_start_bytes.min(current_line.len())..];
+                    // Slice the container-stripped `content` (not the raw
+                    // `current_line`) — otherwise the post-marker view still
+                    // carries the outer blockquote/list prefix and
+                    // `count_blockquote_markers` fabricates a phantom inner
+                    // blockquote (audit finding: see TODO.md
+                    // "Audit other multi-line-lookahead block parsers").
+                    let content_start = content_start_bytes.min(trimmed_content.len());
+                    let content_slice = &trimmed_content[content_start..];
+                    let content_line = &content[content_start_bytes.min(content.len())..];
 
                     let (blockquote_depth, inner_blockquote_content) =
                         count_blockquote_markers(content_line);
@@ -1430,7 +1436,7 @@ impl<'a> Parser<'a> {
                             self.builder
                                 .token(SyntaxKind::WHITESPACE.into(), indent_str);
                         }
-                        let fence_line = current_line[content_start..].to_string();
+                        let fence_line = content[content_start..].to_string();
                         let new_pos = if self.config.extensions.tex_math_gfm
                             && code_blocks::is_gfm_math_fence(&fence)
                         {

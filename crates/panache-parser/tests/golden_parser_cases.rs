@@ -197,10 +197,7 @@ golden_test_cases!(
     citation_prefix_paren_escape_278,
     definition_list,
     definition_list_blockquote_continuation,
-    // definition_list_in_list_blockquote — audit finding from
-    // TODO.md "Audit other multi-line-lookahead block parsers";
-    // currently breaks losslessness (+4 bytes). Fixture preserved for
-    // the eventual fix; gated out of the macro to keep CI green.
+    definition_list_in_list_blockquote,
     definition_list_inner_list_no_blank,
     definition_list_nesting,
     definition_list_pandoc_bare_leading_list,

@@ -488,8 +488,8 @@ intentionally excluded.
         `StripOp::ListAdvanceConditional` variant so the prefix self-encodes the
         semantic.
 - [~] Audit other multi-line-lookahead block parsers for the same misfire class.
-  Audit complete; partial fix landed for fenced code; tables, line blocks, and
-  definition lists remain as known audit findings.
+  Audit complete; partial fixes landed for fenced code and definition lists;
+  tables and line blocks remain as known audit findings.
   - **Fenced code** --- fixed. `parse_fenced_code_block` /
     `parse_fenced_math_block` now take
     `(list_content_col,         list_marker_consumed_on_line_0, bq_outer, content_indent)`
@@ -499,11 +499,18 @@ intentionally excluded.
     lines aren't eaten). Adjacent WHITESPACE emissions are coalesced for
     byte-range- equivalent CST stability. Locked in by parser golden case
     `fenced_code_in_list_blockquote`.
-  - **Definition lists** --- audit finding (not yet fixed). For input
-    `- > Term\n  > : Definition\n`, the parser invents 4 prefix bytes (`>` +
-    `:`) inside the emitted `DEFINITION` node, breaking losslessness (+4 bytes).
-    Fixture `definition_list_in_list_blockquote/input.md` preserved; gated out
-    of `golden_test_cases!` until the fix lands.
+  - **Definition lists** --- fixed. The marker-line branch of
+    `handle_definition_list_effect` was slicing the **raw** `self.lines[pos]`
+    using `content_start_bytes` computed against the **container-stripped**
+    `content` argument from `StrippedLines`, so the post-marker view still
+    carried the outer `>` prefix and `count_blockquote_markers` fabricated a
+    phantom inner blockquote (+4 bytes). The fix slices `content` directly for
+    `content_slice` / `content_line` (and for the fence-open `fence_line` in the
+    same branch, proactively). Locked in by parser golden case
+    `definition_list_in_list_blockquote`. Pandoc-native reads this as
+    `BulletList → BlockQuote → DefinitionList`; our CST keeps Term as a
+    PARAGRAPH outside the DEFINITION_LIST (same status quo as before; only the
+    +4 losslessness break was in scope here).
   - **Pipe tables** --- audit finding (not yet fixed). Multi-line lookahead in
     `tables.rs` (separator detection, multi-line cells, caption scans) walks raw
     `lines` so a `- > | a | b |` shape falls back to paragraph emission
