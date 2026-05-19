@@ -262,7 +262,7 @@
       "type": "string"
     }
   },
-  "$id": "https://panache.bz/reference/panache.schema.json",
+  "$id": "https://panache.bz/panache.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Schema for panache.toml. Generated from the host Config types; do not hand-edit — run `UPDATE_EXPECTED=1 cargo test config_schema` instead.",
   "properties": {

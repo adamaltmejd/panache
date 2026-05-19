@@ -17,7 +17,7 @@ use jsonschema::Validator;
 use panache::Config;
 use serde_json::Value;
 
-const SCHEMA_ID: &str = "https://panache.bz/reference/panache.schema.json";
+const SCHEMA_ID: &str = "https://panache.bz/panache.schema.json";
 const SCHEMA_PATH: &str = "panache.schema.json";
 
 fn generate_schema_json() -> Value {

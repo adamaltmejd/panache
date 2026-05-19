@@ -34,7 +34,7 @@ so editors with TOML support can offer key/value completion, inline
 documentation, and validation while you edit your config.
 
 Schema URL
-:   <https://panache.bz/reference/panache.schema.json>
+:   <https://panache.bz/panache.schema.json>
 
 The schema is regenerated from the host configuration types on every release, so
 it always reflects the keys, enums, and defaults the current CLI accepts.
@@ -50,7 +50,7 @@ extension installed, add the following to your user or workspace
 {
   "evenBetterToml.schema.associations": {
     "^(.*/)?\\.?panache\\.toml$":
-      "https://panache.bz/reference/panache.schema.json"
+      "https://panache.bz/panache.schema.json"
   }
 }
 ```
@@ -64,7 +64,7 @@ Some editors (including newer Even Better TOML builds) support an inline schema
 reference. Drop this at the top of any `panache.toml`:
 
 ```toml
-#:schema https://panache.bz/reference/panache.schema.json
+#:schema https://panache.bz/panache.schema.json
 ```
 
 ### Other editors

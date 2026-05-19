@@ -123,6 +123,7 @@ website:
 
 resources:
   - "playground/**"
+  - "panache.schema.json"
   - "apple-touch-icon.png"
   - "favicon-96x96.png"
   - "favicon.ico"
