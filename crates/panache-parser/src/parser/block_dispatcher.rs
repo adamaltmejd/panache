@@ -201,29 +201,6 @@ pub(crate) enum BlockEffect {
     OpenBlockQuote,
 }
 
-/// Per-dispatch cache of values that today are recomputed at multiple
-/// sites in `core.rs` (and the FencedCode closer scan) from the
-/// already-stripped line-0 content and the next-line lookahead.
-///
-/// Populated once at the dispatcher entry point and read by block
-/// parsers via `BlockContext::prefix_info` (Step 8 plumb-through). The
-/// invariants:
-///
-/// * `bq_depth` mirrors `ctx.blockquote_depth` (no re-derivation needed,
-///   but keeping it here groups the cache under one type).
-/// * `marker_info` is `parse_blockquote_marker_info(stripped_first)` —
-///   computed once instead of at core.rs:2811 / :2838.
-/// * `next_line_inner` is `count_blockquote_markers(next_line).1` —
-///   matches today's `ctx.next_line` strip (bq-only, NOT list-col),
-///   computed once instead of at core.rs:2882.
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-pub(crate) struct BlockPrefixInfo<'a> {
-    pub bq_depth: usize,
-    pub marker_info: Vec<crate::parser::utils::marker_utils::BlockQuoteMarkerInfo>,
-    pub next_line_inner: Option<&'a str>,
-}
-
 /// Trait for block-level parsers.
 ///
 /// Each block type implements this trait with a two-phase approach:

@@ -2840,36 +2840,37 @@ impl<'a> Parser<'a> {
                     // as WHITESPACE before the first marker for losslessness.
                     self.close_paragraph_if_open();
 
-                    if bq_depth > current_bq_depth {
-                        let marker_info = parse_blockquote_marker_info(stripped_content);
-
-                        // Open new blockquotes and emit their markers.
-                        for level in current_bq_depth..bq_depth {
-                            self.builder.start_node(SyntaxKind::BLOCK_QUOTE.into());
-
-                            if level == current_bq_depth
-                                && let Some(indent_str) = indent_to_emit
-                            {
-                                self.builder
-                                    .token(SyntaxKind::WHITESPACE.into(), indent_str);
-                            }
-
-                            if let Some(info) = marker_info.get(level) {
-                                blockquotes::emit_one_blockquote_marker(
-                                    &mut self.builder,
-                                    info.leading_spaces,
-                                    info.has_trailing_space,
-                                );
-                            }
-
-                            self.containers.push(Container::BlockQuote {});
-                        }
-                    } else if bq_depth < current_bq_depth {
+                    if bq_depth < current_bq_depth {
                         self.close_blockquotes_to_depth(bq_depth);
                     } else {
-                        // Same depth: emit markers for losslessness.
                         let marker_info = parse_blockquote_marker_info(stripped_content);
-                        self.emit_blockquote_markers(&marker_info, bq_depth);
+
+                        if bq_depth > current_bq_depth {
+                            // Open new blockquotes and emit their markers.
+                            for level in current_bq_depth..bq_depth {
+                                self.builder.start_node(SyntaxKind::BLOCK_QUOTE.into());
+
+                                if level == current_bq_depth
+                                    && let Some(indent_str) = indent_to_emit
+                                {
+                                    self.builder
+                                        .token(SyntaxKind::WHITESPACE.into(), indent_str);
+                                }
+
+                                if let Some(info) = marker_info.get(level) {
+                                    blockquotes::emit_one_blockquote_marker(
+                                        &mut self.builder,
+                                        info.leading_spaces,
+                                        info.has_trailing_space,
+                                    );
+                                }
+
+                                self.containers.push(Container::BlockQuote {});
+                            }
+                        } else {
+                            // Same depth: emit markers for losslessness.
+                            self.emit_blockquote_markers(&marker_info, bq_depth);
+                        }
                     }
 
                     return self.parse_inner_content(inner_content, Some(inner_content));
