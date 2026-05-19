@@ -50,6 +50,7 @@ required-features = ["cli"]
 panache-formatter = { path = "crates/panache-formatter", version = "0.6.0" }
 panache-parser = { path = "crates/panache-parser", version = "0.10.0", features = [
     "serde",
+    "schema",
 ] }
 annotate-snippets = "0.12.15"
 clap = { version = "4.6.1", features = ["derive", "env"], optional = true }
@@ -64,6 +65,7 @@ rowan = "0.16.1"
 salsa = "0.26.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
+schemars = "1.0"
 wincode = { version = "0.5.2", features = ["derive"] }
 yaml_parser = "0.3.0"
 pretty_yaml = "0.6.0"
@@ -89,6 +91,7 @@ insta = { version = "1.47.2", features = ["json"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 assert_cmd = "2.0"
 predicates = "3.0"
+jsonschema = { version = "0.36", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"

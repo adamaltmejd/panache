@@ -1,0 +1,444 @@
+{
+  "$defs": {
+    "BlankLines": {
+      "oneOf": [
+        {
+          "const": "preserve",
+          "description": "Preserve original blank lines (any number)",
+          "type": "string"
+        },
+        {
+          "const": "collapse",
+          "description": "Collapse multiple consecutive blank lines to a single blank line",
+          "type": "string"
+        }
+      ]
+    },
+    "ExtensionEntry": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Schema entry for a single `[extensions]` key.\n\nEither a boolean (`gfm-auto-identifiers = true`) or a nested\ntable keyed by flavor name (`[extensions.pandoc] fenced-divs = false`)."
+    },
+    "Flavor": {
+      "description": "Markdown flavor to parse and format against.",
+      "enum": [
+        "pandoc",
+        "quarto",
+        "rmarkdown",
+        "gfm",
+        "common-mark",
+        "commonmark",
+        "multimarkdown"
+      ],
+      "type": "string"
+    },
+    "FormatterDefinition": {
+      "description": "NEW: Named formatter definition (formatters.NAME sections in new format)\nOLD: Language-specific formatter config (formatters.LANG sections in old format)\n\nIn new format, if the definition name matches a built-in preset, unspecified fields\nwill inherit from that preset. This allows partial overrides like:\n\n```toml\n[formatters.air]\nargs = [\"format\", \"--custom\"]  # Overrides args, inherits cmd/stdin from built-in \"air\"\n```\n\nAdditionally, you can modify arguments incrementally using `prepend-args` and `append-args`:\n\n```toml\n[formatters.air]\nappend-args = [\"-i\", \"2\"]  # Adds args to end: [\"format\", \"{}\", \"-i\", \"2\"]\n```",
+      "properties": {
+        "append-args": {
+          "default": null,
+          "description": "Arguments to append to base args (from preset or explicit args)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "args": {
+          "default": null,
+          "description": "Arguments to pass (None = inherit from preset if name matches)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "cmd": {
+          "default": null,
+          "description": "Custom command to execute (None = inherit from preset if name matches)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "DEPRECATED: Whether formatter is enabled (old format only)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "prepend-args": {
+          "default": null,
+          "description": "Arguments to prepend to base args (from preset or explicit args)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "preset": {
+          "default": null,
+          "description": "Reference to a built-in preset (e.g., \"air\", \"black\") - OLD FORMAT ONLY\nIn new format, presets are referenced directly in [formatters] mapping",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stdin": {
+          "default": null,
+          "description": "Whether the formatter reads from stdin (None = inherit from preset if name matches)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "FormatterEntry": {
+      "anyOf": [
+        {
+          "description": "Single preset or named definition: `r = \"air\"`.",
+          "type": "string"
+        },
+        {
+          "description": "Sequential chain: `python = [\"isort\", \"black\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/FormatterDefinition",
+          "description": "Named definition table: `[formatters.air] args = [...]`."
+        }
+      ]
+    },
+    "LineEnding": {
+      "enum": [
+        "auto",
+        "lf",
+        "crlf"
+      ],
+      "type": "string"
+    },
+    "LintConfig": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "description": "Linter configuration.",
+      "properties": {
+        "rules": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "description": "Map of lint rule names to enabled/disabled. Preferred over the legacy flat `[lint]` shape.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "MathDelimiterStyle": {
+      "description": "Style for formatting math delimiters",
+      "oneOf": [
+        {
+          "const": "preserve",
+          "description": "Preserve original delimiter style (\\(...\\) stays \\(...\\), $...$ stays $...$)",
+          "type": "string"
+        },
+        {
+          "const": "dollars",
+          "description": "Normalize all to dollar syntax ($...$ and $$...$$)",
+          "type": "string"
+        },
+        {
+          "const": "backslash",
+          "description": "Normalize all to backslash syntax (\\(...\\) and \\[...\\])",
+          "type": "string"
+        }
+      ]
+    },
+    "PandocCompat": {
+      "description": "Compatibility target for ambiguous Pandoc behavior.",
+      "enum": [
+        "latest",
+        "3.7",
+        "3-7",
+        "v3.7",
+        "v3-7",
+        "3.9",
+        "3-9",
+        "v3.9",
+        "v3-9"
+      ],
+      "type": "string"
+    },
+    "StyleConfig": {
+      "description": "Formatting style configuration.\nGroups all style-related settings together.",
+      "properties": {
+        "blank-lines": {
+          "$ref": "#/$defs/BlankLines",
+          "description": "Blank line handling between blocks"
+        },
+        "built-in-greedy-wrap": {
+          "default": true,
+          "description": "Use panache-native greedy wrapping instead of textwrap.",
+          "type": "boolean"
+        },
+        "math-delimiter-style": {
+          "$ref": "#/$defs/MathDelimiterStyle",
+          "description": "Math delimiter style preference"
+        },
+        "math-indent": {
+          "default": 0,
+          "description": "Math indentation (spaces)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tab-stops": {
+          "$ref": "#/$defs/TabStopMode",
+          "description": "Tab stop handling (normalize or preserve)"
+        },
+        "tab-width": {
+          "default": 4,
+          "description": "Tab width for expanding tabs when normalizing",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wrap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WrapMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Text wrapping mode"
+        }
+      },
+      "type": "object"
+    },
+    "TabStopMode": {
+      "description": "Tab stop handling for formatter output.",
+      "oneOf": [
+        {
+          "const": "normalize",
+          "description": "Normalize tabs to spaces (4-column tab stop).",
+          "type": "string"
+        },
+        {
+          "const": "preserve",
+          "description": "Preserve tabs in literal code spans/blocks.",
+          "type": "string"
+        }
+      ]
+    },
+    "WrapMode": {
+      "enum": [
+        "preserve",
+        "reflow",
+        "sentence"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://panache.bz/reference/panache.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Schema for panache.toml. Generated from the host Config types; do not hand-edit — run `UPDATE_EXPECTED=1 cargo test config_schema` instead.",
+  "properties": {
+    "blank-lines": {
+      "$ref": "#/$defs/BlankLines"
+    },
+    "cache-dir": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "exclude": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "extend-exclude": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "extend-include": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "extensions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ExtensionEntry"
+      },
+      "default": null,
+      "type": "object"
+    },
+    "external-max-parallel": {
+      "default": null,
+      "description": "Max parallel external tool invocations (formatters/linters) per document.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "flavor": {
+      "$ref": "#/$defs/Flavor",
+      "default": "pandoc"
+    },
+    "flavor-overrides": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Flavor"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "format": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StyleConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "formatters": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FormatterEntry"
+      },
+      "default": null,
+      "type": "object"
+    },
+    "include": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "line-ending": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LineEnding"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "line-width": {
+      "default": 80,
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "lint": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LintConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "linters": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "math-delimiter-style": {
+      "$ref": "#/$defs/MathDelimiterStyle"
+    },
+    "math-indent": {
+      "default": 0,
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "pandoc-compat": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PandocCompat"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "style": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StyleConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tab-stops": {
+      "$ref": "#/$defs/TabStopMode"
+    },
+    "tab-width": {
+      "default": 4,
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "wrap": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WrapMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Panache configuration",
+  "type": "object"
+}

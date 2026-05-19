@@ -27,6 +27,52 @@ inherited. The same rule applies to both the CLI and the LSP. If no `.git`
 ancestor exists (e.g. an untracked scratch file), the walk falls back to today's
 filesystem-root behavior.
 
+## Editor Support {#editor-support}
+
+Panache publishes a [JSON Schema](https://json-schema.org/) for `panache.toml`
+so editors with TOML support can offer key/value completion, inline
+documentation, and validation while you edit your config.
+
+Schema URL
+:   <https://panache.bz/reference/panache.schema.json>
+
+The schema is regenerated from the host configuration types on every release, so
+it always reflects the keys, enums, and defaults the current CLI accepts.
+
+### VS Code (Even Better TOML)
+
+With the [Even Better
+TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+extension installed, add the following to your user or workspace
+`settings.json`:
+
+```jsonc
+{
+  "evenBetterToml.schema.associations": {
+    "^(.*/)?\\.?panache\\.toml$":
+      "https://panache.bz/reference/panache.schema.json"
+  }
+}
+```
+
+Even Better TOML will then offer completion, hover documentation, and
+diagnostics whenever you open a `panache.toml` or `.panache.toml` file.
+
+### Inline `#:schema` directive
+
+Some editors (including newer Even Better TOML builds) support an inline schema
+reference. Drop this at the top of any `panache.toml`:
+
+```toml
+#:schema https://panache.bz/reference/panache.schema.json
+```
+
+### Other editors
+
+Any editor or LSP that consumes JSON Schemas (Helix, Neovim with `taplo-lsp`,
+Zed, IntelliJ, etc.) can be pointed at the same URL using its local
+TOML/JSON-schema mechanism.
+
 ## Basic Options
 
 Here, we list the top-level configuration options that control general behavior.

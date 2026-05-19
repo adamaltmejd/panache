@@ -32,6 +32,7 @@ pub enum Flavor {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Extensions {
     // ===== Block-level extensions =====
 
@@ -746,6 +747,7 @@ impl PandocCompat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum Dialect {
     /// Pandoc-markdown family. Default for Pandoc, Quarto, RMarkdown,
     /// MultiMarkdown.
@@ -770,6 +772,7 @@ impl Dialect {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default, rename_all = "kebab-case"))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ParserOptions {
     pub flavor: Flavor,
     pub dialect: Dialect,
@@ -806,5 +809,50 @@ impl Default for ParserOptions {
 impl ParserOptions {
     pub fn effective_pandoc_compat(&self) -> PandocCompat {
         self.pandoc_compat.effective()
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Flavor {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Flavor".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Include serde aliases so the schema accepts every spelling the
+        // parser accepts (e.g. `commonmark` alongside the kebab-case
+        // `common-mark` canonical form).
+        schemars::json_schema!({
+            "type": "string",
+            "description": "Markdown flavor to parse and format against.",
+            "enum": [
+                "pandoc",
+                "quarto",
+                "rmarkdown",
+                "gfm",
+                "common-mark",
+                "commonmark",
+                "multimarkdown"
+            ]
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for PandocCompat {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PandocCompat".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "Compatibility target for ambiguous Pandoc behavior.",
+            "enum": [
+                "latest",
+                "3.7", "3-7", "v3.7", "v3-7",
+                "3.9", "3-9", "v3.9", "v3-9"
+            ]
+        })
     }
 }

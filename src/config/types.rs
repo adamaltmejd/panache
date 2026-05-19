@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use panache_formatter::config::FormatterExtensions;
 use panache_parser::{Extensions, Flavor, PandocCompat, ParserOptions};
 
 use super::formatter_presets;
+
+mod schema_helpers;
 
 /// Configuration for an external code formatter.
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +24,7 @@ pub struct FormatterConfig {
 }
 
 /// NEW: Language → Formatter mapping value (single formatter or chain)
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(untagged)]
 pub enum FormatterValue {
     /// Single formatter: r = "air"
@@ -47,7 +50,7 @@ pub enum FormatterValue {
 /// [formatters.air]
 /// append-args = ["-i", "2"]  # Adds args to end: ["format", "{}", "-i", "2"]
 /// ```
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Default)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct FormatterDefinition {
@@ -213,7 +216,7 @@ pub fn default_formatters() -> HashMap<String, FormatterConfig> {
 }
 
 /// Style for formatting math delimiters
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum MathDelimiterStyle {
     /// Preserve original delimiter style (\(...\) stays \(...\), $...$ stays $...$)
@@ -226,7 +229,7 @@ pub enum MathDelimiterStyle {
 }
 
 /// Tab stop handling for formatter output.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TabStopMode {
     /// Normalize tabs to spaces (4-column tab stop).
@@ -238,7 +241,7 @@ pub enum TabStopMode {
 
 /// Formatting style configuration.
 /// Groups all style-related settings together.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct StyleConfig {
@@ -312,6 +315,33 @@ impl LintConfig {
     }
 }
 
+impl JsonSchema for LintConfig {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LintConfig".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Two accepted shapes:
+        //   [lint.rules] my-rule = true   (preferred)
+        //   [lint] my-rule = true         (legacy, deprecated)
+        // Modelled as an object whose `rules` field is a string→bool map and
+        // whose additionalProperties are also bools (for the legacy shape).
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Linter configuration.",
+            "properties": {
+                "rules": {
+                    "type": "object",
+                    "description": "Map of lint rule names to enabled/disabled. \
+                                    Preferred over the legacy flat `[lint]` shape.",
+                    "additionalProperties": { "type": "boolean" },
+                },
+            },
+            "additionalProperties": { "type": "boolean" },
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for LintConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -365,12 +395,13 @@ impl<'de> Deserialize<'de> for LintConfig {
 }
 
 /// Internal deserialization struct that allows for optional fields
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 struct RawConfig {
     #[serde(default)]
     flavor: Flavor,
     #[serde(default)]
+    #[schemars(schema_with = "schema_helpers::extensions_schema")]
     extensions: Option<toml::Value>,
     #[serde(default)]
     line_ending: Option<LineEnding>,
@@ -404,6 +435,7 @@ struct RawConfig {
     // NEW: Language → Formatter(s) mapping
     // This will be a raw Value that we'll parse manually to handle both formats
     #[serde(default)]
+    #[schemars(schema_with = "schema_helpers::formatters_schema")]
     formatters: Option<toml::Value>,
 
     /// Max parallel external tool invocations (formatters/linters) per document.
@@ -910,6 +942,20 @@ impl<'de> Deserialize<'de> for Config {
     }
 }
 
+impl JsonSchema for Config {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PanacheConfig".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // `Config` is the post-finalization runtime type; the user-facing
+        // TOML shape is described by `RawConfig`. Delegate so the generated
+        // schema reflects what users actually write, including all
+        // deprecated/legacy aliases that `RawConfig` still accepts.
+        <RawConfig as JsonSchema>::json_schema(generator)
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         let flavor = Flavor::default();
@@ -994,7 +1040,7 @@ impl ConfigBuilder {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum WrapMode {
     Preserve,
@@ -1002,7 +1048,7 @@ pub enum WrapMode {
     Sentence,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LineEnding {
     Auto,
@@ -1010,7 +1056,7 @@ pub enum LineEnding {
     Crlf,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlankLines {
     /// Preserve original blank lines (any number)
