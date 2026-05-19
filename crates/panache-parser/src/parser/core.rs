@@ -3393,7 +3393,22 @@ impl<'a> Parser<'a> {
             // Close paragraph before opening line block
             self.close_paragraph_if_open();
 
-            let new_pos = parse_line_block(&self.lines, self.pos, &mut self.builder, self.config);
+            // Legacy fallback path: dispatcher-based `LineBlockParser` handles
+            // nesting (list+blockquote container prefixes); this fallback runs
+            // only when the dispatcher rejected the line and the raw source
+            // line is itself a top-level line-block start (see guard above),
+            // so threading zero container params is correct here.
+            let new_pos = parse_line_block(
+                &self.lines,
+                self.pos,
+                &mut self.builder,
+                self.config,
+                0,
+                0,
+                false,
+                false,
+                0,
+            );
             if new_pos > self.pos {
                 return LineDispatch::consumed(new_pos - self.pos);
             }

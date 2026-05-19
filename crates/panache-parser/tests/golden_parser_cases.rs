@@ -425,10 +425,7 @@ golden_test_cases!(
     latex_environment,
     lazy_continuation_deep,
     leading_blanklines,
-    // line_block_in_list_blockquote — audit finding from TODO.md;
-    // currently falls back to paragraph emission (losslessness OK,
-    // structural detection misses the line block). Fixture preserved
-    // for the eventual detection-via-stripped-line fix.
+    line_block_in_list_blockquote,
     line_blocks,
     line_ending_crlf,
     line_ending_lf,

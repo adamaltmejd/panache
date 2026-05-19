@@ -13,7 +13,7 @@ use crate::parser::utils::container_stack::byte_index_at_column;
 /// rather than being consumed — important on blank lines inside a
 /// fenced code block). Mirrors the legacy
 /// `byte_index_at_column`-based strip used by the formatter.
-fn strip_list_indent(line: &str, list_content_col: usize) -> &str {
+pub(crate) fn strip_list_indent(line: &str, list_content_col: usize) -> &str {
     if list_content_col == 0 {
         return line;
     }
@@ -639,7 +639,7 @@ fn prepare_fence_open_line<'a>(
     (first_trimmed, s)
 }
 
-fn emit_blockquote_prefix_tokens(builder: &mut GreenNodeBuilder<'static>, prefix: &str) {
+pub(crate) fn emit_blockquote_prefix_tokens(builder: &mut GreenNodeBuilder<'static>, prefix: &str) {
     for ch in prefix.chars() {
         if ch == '>' {
             builder.token(SyntaxKind::BLOCK_QUOTE_MARKER.into(), ">");
@@ -650,7 +650,7 @@ fn emit_blockquote_prefix_tokens(builder: &mut GreenNodeBuilder<'static>, prefix
     }
 }
 
-fn emit_content_line_prefixes<'a>(
+pub(crate) fn emit_content_line_prefixes<'a>(
     builder: &mut GreenNodeBuilder<'static>,
     content_line: &'a str,
     bq_depth: usize,

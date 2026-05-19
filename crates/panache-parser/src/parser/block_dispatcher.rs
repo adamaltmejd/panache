@@ -2181,19 +2181,17 @@ impl BlockParser for LineBlockParser {
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         let content = lines.first();
-        let line_pos = lines.pos();
-        let lines = lines.raw();
         if !ctx.config.extensions.line_blocks {
             return None;
         }
 
         try_parse_line_block_start(content)?;
-        // Ensure the raw source line at the current parser position also starts
-        // a line block marker. This prevents false positives when the
-        // bq-stripped first line was stripped from container markers
-        // (e.g. blockquote prefixes).
-        let raw_line = lines.get(line_pos)?;
-        try_parse_line_block_start(raw_line)?;
+        // Note: a previous raw-line guard (re-checking
+        // `try_parse_line_block_start` on `lines.raw()[line_pos]`) was removed
+        // here — it misfired for nested cases like `- > | First line` where the
+        // stripped `content` correctly starts with `| ` but the raw line is
+        // prefixed with container markers (`- > `). Stripping is already done
+        // by `lines.first()`; the raw probe was redundant and over-strict.
 
         // Require a blank line (or document start) before a line block.
         // This prevents accidental line-block parsing for wrapped paragraph lines
@@ -2214,9 +2212,24 @@ impl BlockParser for LineBlockParser {
         lines: &StrippedLines<'_, '_>,
         _payload: Option<&dyn Any>,
     ) -> usize {
+        let list_marker_consumed_on_line_0 = lines.prefix().list_marker_consumed_on_line_0;
+        let bq_outer = bq_outer_of_list(lines.prefix());
+        let list_content_col = ctx.list_indent_info.map(|i| i.content_col).unwrap_or(0);
+        let bq_depth = ctx.blockquote_depth;
+        let content_indent = ctx.content_indent;
         let line_pos = lines.pos();
         let lines = lines.raw();
-        let new_pos = parse_line_block(lines, line_pos, builder, ctx.config);
+        let new_pos = parse_line_block(
+            lines,
+            line_pos,
+            builder,
+            ctx.config,
+            bq_depth,
+            list_content_col,
+            list_marker_consumed_on_line_0,
+            bq_outer,
+            content_indent,
+        );
         new_pos - line_pos
     }
 

@@ -1722,38 +1722,50 @@ impl Formatter {
                     self.output.push('\n');
                 }
 
-                // Format each line preserving line breaks and leading spaces
+                // Format each line preserving line breaks and leading spaces.
+                // Walk LINE_BLOCK_LINE children-with-tokens so we can skip
+                // leading container-prefix tokens (WHITESPACE,
+                // BLOCK_QUOTE_MARKER) that the parser now emits inside
+                // LINE_BLOCK_LINE for nested cases like `- > | foo`. The
+                // outer LIST_ITEM / BLOCK_QUOTE walkers re-emit those
+                // prefixes; if we left them in `content` they'd appear
+                // twice in the output.
                 for child in node.children() {
-                    if child.kind() == SyntaxKind::LINE_BLOCK_LINE {
-                        // Get the text content, preserving leading spaces
-                        let text = child.text().to_string();
-                        if text.trim_end() == "|" {
-                            self.output.push('|');
-                            self.output.push('\n');
+                    if child.kind() != SyntaxKind::LINE_BLOCK_LINE {
+                        continue;
+                    }
+                    let mut content = String::new();
+                    let mut past_prefix = false;
+                    for elem in child.children_with_tokens() {
+                        let kind = elem.kind();
+                        if !past_prefix
+                            && matches!(
+                                kind,
+                                SyntaxKind::WHITESPACE | SyntaxKind::BLOCK_QUOTE_MARKER
+                            )
+                        {
                             continue;
                         }
-                        // The text might start with "| " from the marker, or be continuation
-                        // We need to skip the marker if present and output the rest
-                        let content = if let Some(stripped) = text.strip_prefix("| ") {
-                            stripped
-                        } else {
-                            // Continuation line - output as-is but with proper marker
-                            text.trim_start()
-                        };
-
-                        // Output the marker
-                        // Check if content is empty or just whitespace/newline
-                        let content_trimmed = content.trim();
-                        if content_trimmed.is_empty() {
-                            // Empty line block line - just output "|"
-                            self.output.push('|');
-                        } else {
-                            // Normal line - output "| " followed by content
-                            self.output.push_str("| ");
-                            self.output.push_str(content.trim_end());
+                        past_prefix = true;
+                        match kind {
+                            SyntaxKind::LINE_BLOCK_MARKER => continue,
+                            SyntaxKind::NEWLINE => break,
+                            _ => match &elem {
+                                NodeOrToken::Token(t) => content.push_str(t.text()),
+                                NodeOrToken::Node(n) => content.push_str(&n.text().to_string()),
+                            },
                         }
-                        self.output.push('\n');
                     }
+                    let content_trimmed = content.trim();
+                    if content_trimmed.is_empty() {
+                        // Empty line block line - just output "|"
+                        self.output.push('|');
+                    } else {
+                        // Normal line - output "| " followed by content
+                        self.output.push_str("| ");
+                        self.output.push_str(content.trim_end());
+                    }
+                    self.output.push('\n');
                 }
 
                 // Add blank line after if followed by block element

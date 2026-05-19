@@ -488,8 +488,8 @@ intentionally excluded.
         `StripOp::ListAdvanceConditional` variant so the prefix self-encodes the
         semantic.
 - [~] Audit other multi-line-lookahead block parsers for the same misfire class.
-  Audit complete; partial fixes landed for fenced code and definition lists;
-  tables and line blocks remain as known audit findings.
+  Audit complete; partial fixes landed for fenced code, definition lists, and
+  line blocks; pipe tables remain as the last known audit finding.
   - **Fenced code** --- fixed. `parse_fenced_code_block` /
     `parse_fenced_math_block` now take
     `(list_content_col,         list_marker_consumed_on_line_0, bq_outer, content_indent)`
@@ -517,16 +517,29 @@ intentionally excluded.
     (structural detection misses the table; losslessness is preserved). Fixture
     `pipe_table_in_list_blockquote/input.md` preserved; gated out of
     `golden_test_cases!` until the fix lands.
-  - **Line blocks** --- audit finding (not yet fixed). `parse_line_block` walks
-    raw `lines[pos..]` and fails to recognize
-    `- > | First         line\n  >   continued` as a line block; structural
-    detection misses, losslessness preserved. Fixture
-    `line_block_in_list_blockquote/input.md` preserved; gated out of
-    `golden_test_cases!` until the fix lands.
-  - **Follow-up (after tables + line blocks land)**: evaluate extracting the
-    per-line container-stripping pattern into a shared `StrippedLineWindow` (or
-    similar) that any forward-scanning block parser can iterate. The
-    threaded-params approach (fenced code:
+  - **Line blocks** --- fixed. `parse_line_block` now takes
+    `(bq_depth, list_content_col, list_marker_consumed_on_line_0, bq_outer, content_indent)`
+    mirroring fenced code, with a `silent_strip_container_prefix` peek for
+    continuation/next-marker detection and an `emit_open_line_prefixes` helper
+    on the dispatch line (a near-clone of `prepare_fence_open_line` minus the
+    final leading-space strip, since `LINE_BLOCK_MARKER` swallows any leading
+    spaces before `|`). The dispatcher (`LineBlockParser::parse_prepared`)
+    threads container geometry from `lines.prefix()` / `ctx`; the over-strict
+    raw-line guard in `detect_prepared` was also removed. Helpers
+    `strip_list_indent` / `emit_blockquote_prefix_tokens` /
+    `emit_content_line_prefixes` were promoted to `pub(crate)` in
+    `code_blocks.rs`. Formatter LINE_BLOCK walker updated to skip leading
+    WS/BQ_MARKER prefix tokens before emitting the marker line, since the parser
+    now emits those prefix tokens inside LINE_BLOCK_LINE. Locked in by parser
+    golden case `line_block_in_list_blockquote`. Pandoc-native reads this as
+    `BulletList → BlockQuote → LineBlock`. (Formatter round-trip for the nested
+    case is still imperfect because the BLOCK_QUOTE walker doesn't re-emit `>`
+    for continuation lines under a LIST_ITEM --- pre-existing, unrelated to this
+    fix; no test exercises that round-trip.)
+  - **Follow-up (after pipe tables land)**: evaluate extracting the per-line
+    container-stripping pattern into a shared `StrippedLineWindow` (or similar)
+    that any forward-scanning block parser can iterate. The threaded-params
+    approach (fenced code:
     `list_content_col, list_marker_consumed_on_line_0, bq_outer, content_indent`)
     and the "slice the stripped view" approach (definition lists) are both
     ad-hoc patches for the same root: long-lookahead parsers re-derive the
