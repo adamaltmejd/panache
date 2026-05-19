@@ -523,6 +523,17 @@ intentionally excluded.
     detection misses, losslessness preserved. Fixture
     `line_block_in_list_blockquote/input.md` preserved; gated out of
     `golden_test_cases!` until the fix lands.
+  - **Follow-up (after tables + line blocks land)**: evaluate extracting the
+    per-line container-stripping pattern into a shared `StrippedLineWindow` (or
+    similar) that any forward-scanning block parser can iterate. The
+    threaded-params approach (fenced code:
+    `list_content_col, list_marker_consumed_on_line_0, bq_outer, content_indent`)
+    and the "slice the stripped view" approach (definition lists) are both
+    ad-hoc patches for the same root: long-lookahead parsers re-derive the
+    container prefix on each line because the `StrippedLines` view only covers
+    `lines.first()`. Three concrete call sites is enough signal to design
+    against; don't pull the abstraction forward before the remaining two
+    findings are fixed.
 - [ ] Stop letting `pandoc_ast.rs` drift into a second-stage parser. Load-
       bearing byte-walkers (`split_html_block_by_tags`, `parse_pandoc_blocks`
       and the refs/heading-id reparse helpers) re-tokenize source the CST should
