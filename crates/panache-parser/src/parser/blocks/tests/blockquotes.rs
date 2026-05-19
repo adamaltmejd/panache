@@ -384,7 +384,6 @@ fn dispatcher_blockquote_detection() {
     let line = "> Quote";
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: line,
         has_blank_before: true,
         has_blank_before_strict: true,
         at_document_start: true,
@@ -400,10 +399,9 @@ fn dispatcher_blockquote_detection() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let raw = [line];
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&raw, 0, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped);
@@ -424,7 +422,6 @@ fn dispatcher_blockquote_requires_blank_before() {
     let line = "> Quote";
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: line,
         has_blank_before: false,
         has_blank_before_strict: false,
         at_document_start: false,
@@ -440,10 +437,9 @@ fn dispatcher_blockquote_requires_blank_before() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let raw = [line];
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&raw, 0, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped);
@@ -470,7 +466,6 @@ fn dispatcher_blockquote_payload_basic() {
     let line = "> Quote";
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: line,
         has_blank_before: true,
         has_blank_before_strict: true,
         at_document_start: true,
@@ -486,10 +481,9 @@ fn dispatcher_blockquote_payload_basic() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let raw = [line];
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&raw, 0, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped).unwrap();
@@ -513,7 +507,6 @@ fn dispatcher_blockquote_payload_nested_requires_blank() {
     let lines = ["> Outer", ">> Inner"];
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: lines[1],
         has_blank_before: false,
         has_blank_before_strict: false,
         at_document_start: false,
@@ -529,10 +522,9 @@ fn dispatcher_blockquote_payload_nested_requires_blank() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&lines, 1, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped).unwrap();
     let payload = result
@@ -554,7 +546,6 @@ fn dispatcher_blockquote_ignored_inside_blockquote() {
     let line = "Lazy continuation";
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: line,
         has_blank_before: false,
         has_blank_before_strict: false,
         at_document_start: false,
@@ -570,10 +561,9 @@ fn dispatcher_blockquote_ignored_inside_blockquote() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let raw = [line];
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&raw, 0, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped);
@@ -591,7 +581,6 @@ fn dispatcher_blockquote_payload_nested_with_blank() {
     let lines = ["> Outer", ">", ">> Inner"];
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: lines[2],
         has_blank_before: false,
         has_blank_before_strict: false,
         at_document_start: false,
@@ -607,10 +596,9 @@ fn dispatcher_blockquote_payload_nested_with_blank() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&lines, 2, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped).unwrap();
     let payload = result
@@ -632,7 +620,6 @@ fn dispatcher_blockquote_payload_nested_after_blank_line() {
     let lines = ["> Outer", "", ">> Inner"];
     let registry = BlockParserRegistry::new();
     let ctx = BlockContext {
-        content: lines[2],
         has_blank_before: true,
         has_blank_before_strict: true,
         at_document_start: false,
@@ -648,10 +635,9 @@ fn dispatcher_blockquote_payload_nested_after_blank_line() {
         paragraph_open: false,
         next_line: None,
         open_alpha_hint: crate::parser::blocks::lists::OpenListHint::None,
-        list_marker_consumed_on_line_0: false,
     };
 
-    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::from_ctx(&ctx);
+    let prefix = crate::parser::blocks::container_prefix::ContainerPrefix::default();
     let stripped = crate::parser::blocks::container_prefix::StrippedLines::new(&lines, 2, &prefix);
     let result = registry.detect_prepared(&ctx, &stripped).unwrap();
     let payload = result

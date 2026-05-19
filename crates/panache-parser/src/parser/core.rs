@@ -1706,7 +1706,6 @@ impl<'a> Parser<'a> {
         let mut blockquote_match: Option<PreparedBlockMatch> = None;
         let dispatcher_ctx = if current_bq_depth == 0 {
             Some(BlockContext {
-                content: line,
                 has_blank_before,
                 has_blank_before_strict: has_blank_before,
                 at_document_start: self.pos == 0,
@@ -1715,7 +1714,6 @@ impl<'a> Parser<'a> {
                 config: self.config,
                 content_indent: 0,
                 indent_to_emit: None,
-                list_marker_consumed_on_line_0: self.dispatch_list_marker_consumed,
                 list_indent_info: None,
                 in_list: lists::in_list(&self.containers),
                 in_marker_only_list_item: matches!(
@@ -2746,7 +2744,6 @@ impl<'a> Parser<'a> {
                     content,
                     content_indent,
                     &BlockContext {
-                        content: stripped_content,
                         has_blank_before: self.pos == 0 || is_blank_line(self.lines[self.pos - 1]),
                         has_blank_before_strict: self.pos == 0
                             || is_blank_line(self.lines[self.pos - 1]),
@@ -2776,7 +2773,6 @@ impl<'a> Parser<'a> {
                             &self.containers,
                             leading_indent(stripped_content).0,
                         ),
-                        list_marker_consumed_on_line_0: self.dispatch_list_marker_consumed,
                     },
                     &self.lines,
                     self.pos,
@@ -2928,7 +2924,6 @@ impl<'a> Parser<'a> {
         }
 
         let dispatcher_ctx = BlockContext {
-            content,
             has_blank_before: false,        // filled in later
             has_blank_before_strict: false, // filled in later
             at_document_start: false,       // filled in later
@@ -2953,7 +2948,6 @@ impl<'a> Parser<'a> {
                 &self.containers,
                 leading_indent(content).0,
             ),
-            list_marker_consumed_on_line_0: self.dispatch_list_marker_consumed,
         };
 
         // We'll update these two fields shortly (after they are computed), but we can still
@@ -2961,28 +2955,13 @@ impl<'a> Parser<'a> {
         let mut dispatcher_ctx = dispatcher_ctx;
 
         // Build a stack-aware prefix once; reused across the
-        // dispatcher's multiple detect_prepared calls below.
-        let dispatcher_prefix = ContainerPrefix::from_stack(
-            &self.containers.stack,
-            dispatcher_ctx.list_marker_consumed_on_line_0,
-        );
-
-        // Invariant during the `ctx.content` → `lines.first()` migration:
-        // the pre-stripped `ctx.content` and the lazy `StrippedLines::first()`
-        // computed from the stack-aware prefix must produce byte-identical
-        // slices. Trips early in debug builds if the strip vocabulary diverges
-        // from `parse_inner_content`'s own strip.
-        // Invariant: the pre-stripped `ctx.content` and the lazy
-        // `StrippedLines::first()` computed from the stack-aware prefix
-        // produce byte-identical slices. Trips early in debug builds if
-        // the strip vocabulary in `ContainerPrefix::from_stack` diverges
-        // from `parse_inner_content`'s strip cascade — the chief risk of
-        // the migration away from `ctx.content`.
-        debug_assert_eq!(
-            StrippedLines::new(&self.lines, self.pos, &dispatcher_prefix).first(),
-            dispatcher_ctx.content,
-            "lines.first() must match ctx.content for the dispatch line",
-        );
+        // dispatcher's multiple detect_prepared calls below. The
+        // `list_marker_consumed_on_line_0` flag is sourced directly from
+        // the parser's `dispatch_list_marker_consumed` field — it never
+        // lived on `BlockContext` after the trait migration since no
+        // `BlockParser` impl reads it.
+        let dispatcher_prefix =
+            ContainerPrefix::from_stack(&self.containers.stack, self.dispatch_list_marker_consumed);
 
         // Setext heading folded over a list item's buffered first-line text.
         // Must run before block detection so that an HR-shaped underline like

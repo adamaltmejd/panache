@@ -143,6 +143,14 @@ impl ContainerPrefix {
     /// correct for the common container shapes but may diverge from
     /// [`Self::from_stack`] for exotic orderings (Definition above
     /// List, FootnoteDef interleaved with BlockQuote, etc.).
+    ///
+    /// `list_marker_consumed_on_line_0` is hard-wired to `false`. The
+    /// dispatcher in `parse_inner_content` is the only path that needs
+    /// the flag set true (the marker-line-after-`add_list_item` strip),
+    /// and it always builds the prefix via [`Self::from_stack`] with the
+    /// flag threaded explicitly from `dispatch_list_marker_consumed`.
+    /// Every `from_ctx` call site runs in a continuation or detection
+    /// context where the flag would be false anyway.
     pub fn from_ctx(ctx: &BlockContext) -> Self {
         let list_content_col = ctx
             .list_indent_info
@@ -164,7 +172,7 @@ impl ContainerPrefix {
         }
         Self {
             ops,
-            list_marker_consumed_on_line_0: ctx.list_marker_consumed_on_line_0,
+            list_marker_consumed_on_line_0: false,
         }
     }
 

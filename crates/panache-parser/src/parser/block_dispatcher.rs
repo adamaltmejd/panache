@@ -78,9 +78,6 @@ pub(crate) struct ListIndentInfo {
 /// Contains immutable references to parser state that block parsers need
 /// to check conditions (e.g., blank line before, blockquote depth, etc.).
 pub(crate) struct BlockContext<'a> {
-    /// Current line content (after blockquote markers stripped if any)
-    pub content: &'a str,
-
     /// Whether there was a blank line before this line (relaxed, container-aware)
     pub has_blank_before: bool,
 
@@ -151,19 +148,6 @@ pub(crate) struct BlockContext<'a> {
     /// candidates {i,v,x,I,V,X} against an open alpha list in a single
     /// classification pass under Pandoc dialect.
     pub open_alpha_hint: super::blocks::lists::OpenListHint,
-
-    /// True iff the dispatch is for the LIST-MARKER line — i.e. the
-    /// LIST_MARKER + WHITESPACE bytes have just been emitted upstream
-    /// and `lines[line_pos]`'s first `list_content_col` columns are
-    /// "consumed" from the emission's perspective. Set true by
-    /// `parse_inner_content` (which is invoked right after
-    /// `add_list_item` emits the marker), false by normal continuation-
-    /// line dispatch (where the indent bytes belong to inner content).
-    ///
-    /// Consumed by `super::blocks::container_prefix::ContainerPrefix`'s
-    /// emission-safe line-0 strip — see
-    /// `ContainerPrefix::strip_line_0_for_emission`.
-    pub list_marker_consumed_on_line_0: bool,
 }
 
 /// Result of detecting whether a block can be parsed.
@@ -249,7 +233,7 @@ impl BlockParser for HorizontalRuleParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         // CommonMark §4.1: thematic breaks can interrupt a paragraph (no
         // blank line required). Pandoc-markdown disagrees and treats a
@@ -261,7 +245,7 @@ impl BlockParser for HorizontalRuleParser {
         }
 
         // Check if this looks like a horizontal rule
-        if try_parse_horizontal_rule(ctx.content).is_some() {
+        if try_parse_horizontal_rule(lines.first()).is_some() {
             let detection = if common_mark {
                 BlockDetectionResult::YesCanInterrupt
             } else {
@@ -275,12 +259,12 @@ impl BlockParser for HorizontalRuleParser {
 
     fn parse_prepared(
         &self,
-        ctx: &BlockContext,
+        _ctx: &BlockContext,
         builder: &mut GreenNodeBuilder<'static>,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
         _payload: Option<&dyn Any>,
     ) -> usize {
-        emit_horizontal_rule(builder, ctx.content);
+        emit_horizontal_rule(builder, lines.first());
         1 // Consumed 1 line
     }
 
@@ -296,13 +280,13 @@ impl BlockParser for AtxHeadingParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if ctx.config.extensions.blank_before_header && !ctx.has_blank_before {
             return None;
         }
 
-        let level = try_parse_atx_heading(ctx.content)?;
+        let level = try_parse_atx_heading(lines.first())?;
         // CommonMark §4.2: an ATX heading can interrupt a paragraph (no blank
         // line required between the paragraph and the heading). Pandoc-markdown
         // disagrees: without a blank line, `# foo` inside a paragraph stays
@@ -319,14 +303,15 @@ impl BlockParser for AtxHeadingParser {
         &self,
         ctx: &BlockContext,
         builder: &mut GreenNodeBuilder<'static>,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
         payload: Option<&dyn Any>,
     ) -> usize {
+        let content = lines.first();
         let heading_level = payload
             .and_then(|p| p.downcast_ref::<usize>().copied())
-            .or_else(|| try_parse_atx_heading(ctx.content))
+            .or_else(|| try_parse_atx_heading(content))
             .unwrap_or(1);
-        emit_atx_heading(builder, ctx.content, heading_level, ctx.config);
+        emit_atx_heading(builder, content, heading_level, ctx.config);
         1
     }
 
@@ -355,7 +340,7 @@ impl BlockParser for PandocTitleBlockParser {
         }
 
         // Must start with % (allow leading spaces).
-        if !ctx.content.trim_start().starts_with('%') {
+        if !lines.first().trim_start().starts_with('%') {
             return None;
         }
 
@@ -401,7 +386,8 @@ impl BlockParser for MmdTitleBlockParser {
         }
 
         // Quick guard to avoid work on obvious non-matches.
-        if ctx.content.trim().is_empty() || !ctx.content.contains(':') {
+        let first = lines.first();
+        if first.trim().is_empty() || !first.contains(':') {
             return None;
         }
 
@@ -440,6 +426,7 @@ impl BlockParser for YamlMetadataParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         if !ctx.config.extensions.yaml_metadata_block {
@@ -452,7 +439,7 @@ impl BlockParser for YamlMetadataParser {
         }
 
         // Must start with ---
-        if ctx.content.trim() != "---" {
+        if content.trim() != "---" {
             return None;
         }
 
@@ -516,7 +503,7 @@ impl BlockParser for FigureParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         // Pandoc-only behavior; CommonMark/GFM keep the image inline within
         // the paragraph and do not promote it to a figure block.
@@ -529,7 +516,7 @@ impl BlockParser for FigureParser {
             return None;
         }
 
-        let trimmed = ctx.content.trim();
+        let trimmed = lines.first().trim();
 
         // Must start with ![
         if !trimmed.starts_with("![") {
@@ -633,14 +620,15 @@ impl BlockParser for ListParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
-        let marker_match = try_parse_list_marker(ctx.content, ctx.config, ctx.open_alpha_hint)?;
+        let content = lines.first();
+        let marker_match = try_parse_list_marker(content, ctx.config, ctx.open_alpha_hint)?;
         let after_marker_text = {
-            let (_, indent_bytes) = super::utils::container_stack::leading_indent(ctx.content);
+            let (_, indent_bytes) = super::utils::container_stack::leading_indent(content);
             let marker_end = indent_bytes + marker_match.marker_len;
-            if marker_end <= ctx.content.len() {
-                &ctx.content[marker_end..]
+            if marker_end <= content.len() {
+                &content[marker_end..]
             } else {
                 ""
             }
@@ -677,12 +665,11 @@ impl BlockParser for ListParser {
         if (ctx.has_blank_before
             || ctx.at_document_start
             || ctx.config.dialect == crate::options::Dialect::CommonMark)
-            && try_parse_horizontal_rule(ctx.content).is_some()
+            && try_parse_horizontal_rule(content).is_some()
         {
             return None;
         }
-        let (indent_cols, indent_bytes) =
-            super::utils::container_stack::leading_indent(ctx.content);
+        let (indent_cols, indent_bytes) = super::utils::container_stack::leading_indent(content);
         if !ctx.has_blank_before
             && ctx.in_list
             && let Some(list_indent) = ctx.list_indent_info
@@ -724,7 +711,7 @@ impl BlockParser for ListParser {
         }
 
         let nested_marker = is_content_nested_bullet_marker(
-            ctx.content,
+            content,
             marker_match.marker_len,
             marker_match.spaces_after_bytes,
         );
@@ -867,6 +854,7 @@ impl BlockParser for DefinitionListParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         if !ctx.config.extensions.definition_lists {
@@ -874,7 +862,7 @@ impl BlockParser for DefinitionListParser {
         }
 
         if let Some((marker_char, indent, spaces_after_cols, spaces_after_bytes)) =
-            try_parse_definition_marker(ctx.content)
+            try_parse_definition_marker(content)
         {
             // If this `:` line is actually a table caption marker and a table
             // follows, let TableParser claim it instead of starting a definition list.
@@ -885,10 +873,8 @@ impl BlockParser for DefinitionListParser {
                 return None;
             }
 
-            let indent_bytes =
-                super::utils::container_stack::byte_index_at_column(ctx.content, indent);
-            let has_content = ctx
-                .content
+            let indent_bytes = super::utils::container_stack::byte_index_at_column(content, indent);
+            let has_content = content
                 .get(indent_bytes + 1 + spaces_after_bytes..)
                 .map(|slice| !slice.trim().is_empty())
                 .unwrap_or(false);
@@ -905,7 +891,7 @@ impl BlockParser for DefinitionListParser {
         }
 
         if let Some(blank_count) = next_line_is_definition_marker(lines, line_pos)
-            && !ctx.content.trim().is_empty()
+            && !content.trim().is_empty()
         {
             return Some((
                 BlockDetectionResult::YesCanInterrupt,
@@ -947,18 +933,19 @@ impl BlockParser for FootnoteDefinitionParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if !ctx.config.extensions.footnotes {
             return None;
         }
 
+        let content = lines.first();
         // A footnote def starts with `[^` after no leading indent.
-        if !ctx.content.starts_with("[^") {
+        if !content.starts_with("[^") {
             return None;
         }
 
-        let (_id, content_start) = try_parse_footnote_marker(ctx.content)?;
+        let (_id, content_start) = try_parse_footnote_marker(content)?;
         Some((
             BlockDetectionResult::YesCanInterrupt,
             Some(Box::new(FootnoteDefinitionPrepared { content_start })),
@@ -969,15 +956,16 @@ impl BlockParser for FootnoteDefinitionParser {
         &self,
         ctx: &BlockContext,
         builder: &mut GreenNodeBuilder<'static>,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
         payload: Option<&dyn Any>,
     ) -> usize {
         use crate::syntax::SyntaxKind;
 
+        let content = lines.first();
         let prepared = payload.and_then(|p| p.downcast_ref::<FootnoteDefinitionPrepared>());
         let content_start = prepared
             .map(|p| p.content_start)
-            .or_else(|| try_parse_footnote_marker(ctx.content).map(|(_, pos)| pos));
+            .or_else(|| try_parse_footnote_marker(content).map(|(_, pos)| pos));
 
         let Some(content_start) = content_start else {
             return 1;
@@ -988,7 +976,7 @@ impl BlockParser for FootnoteDefinitionParser {
         }
 
         builder.start_node(SyntaxKind::FOOTNOTE_DEFINITION.into());
-        let marker_text = &ctx.content[..content_start];
+        let marker_text = &content[..content_start];
         if let Some((id, _)) = try_parse_footnote_marker(marker_text) {
             builder.token(SyntaxKind::FOOTNOTE_LABEL_START.into(), "[^");
             builder.token(SyntaxKind::FOOTNOTE_LABEL_ID.into(), &id);
@@ -1024,6 +1012,7 @@ impl BlockParser for ReferenceDefinitionParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         if !ctx.config.extensions.reference_links {
@@ -1035,7 +1024,7 @@ impl BlockParser for ReferenceDefinitionParser {
         // multi-line String::new() build below if the gate fails — this
         // is the by-far common case on a typical doc.
         {
-            let bytes = ctx.content.as_bytes();
+            let bytes = content.as_bytes();
             let mut i = 0;
             while i < bytes.len() && i < 3 && bytes[i] == b' ' {
                 i += 1;
@@ -1051,10 +1040,10 @@ impl BlockParser for ReferenceDefinitionParser {
         // stop the input there.
         //
         // Inside blockquotes, the raw `lines` carry the `>` markers. The
-        // dispatcher already strips them into `ctx.content`, but a multi-line
-        // join here would feed those markers back to the parser. Fall back to
-        // a single-line attempt in that case — multi-line ref defs inside
-        // blockquotes are tracked separately.
+        // dispatcher already strips them into `lines.first()`, but a
+        // multi-line join here would feed those markers back to the parser.
+        // Fall back to a single-line attempt in that case — multi-line ref
+        // defs inside blockquotes are tracked separately.
         type RefDefParseFn =
             fn(&str, crate::options::Dialect) -> Option<(usize, String, String, Option<String>)>;
         let parse_fn: RefDefParseFn = if ctx.config.extensions.mmd_link_attributes {
@@ -1065,7 +1054,7 @@ impl BlockParser for ReferenceDefinitionParser {
         let dialect = ctx.config.dialect;
 
         let consumed = if ctx.blockquote_depth > 0 {
-            parse_fn(ctx.content, dialect)?;
+            parse_fn(content, dialect)?;
             1usize
         } else {
             let mut multi = String::new();
@@ -1134,6 +1123,7 @@ impl BlockParser for ReferenceDefinitionParser {
     ) -> usize {
         use crate::syntax::SyntaxKind;
 
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
 
@@ -1148,9 +1138,9 @@ impl BlockParser for ReferenceDefinitionParser {
         // emitted by the dispatcher; using lines[line_pos] would duplicate the
         // `>` marker (CST losslessness violation). detect_prepared restricts
         // blockquote-context defs to a single line, so we can rely on
-        // ctx.content here.
+        // the bq-stripped first line here.
         if ctx.blockquote_depth > 0 {
-            let single = [ctx.content];
+            let single = [content];
             emit_reference_definition_lines(builder, &single);
         } else {
             let target_lines: Vec<&str> = lines
@@ -1587,18 +1577,19 @@ impl BlockParser for FencedCodeBlockParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         // Calculate content to check - may need to strip list indentation
         let content_to_check = if let Some(list_info) = ctx.list_indent_info {
-            if list_info.content_col > 0 && !ctx.content.is_empty() {
-                let idx = byte_index_at_column(ctx.content, list_info.content_col);
-                &ctx.content[idx..]
+            if list_info.content_col > 0 && !content.is_empty() {
+                let idx = byte_index_at_column(content, list_info.content_col);
+                &content[idx..]
             } else {
-                ctx.content
+                content
             }
         } else {
-            ctx.content
+            content
         };
 
         let fence = try_parse_fence_open(content_to_check)?;
@@ -1723,6 +1714,7 @@ impl BlockParser for FencedCodeBlockParser {
         lines: &StrippedLines<'_, '_>,
         payload: Option<&dyn Any>,
     ) -> usize {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         let list_indent_stripped = ctx.list_indent_info.map(|i| i.content_col).unwrap_or(0);
@@ -1730,11 +1722,11 @@ impl BlockParser for FencedCodeBlockParser {
         let fence = if let Some(fence) = payload.and_then(|p| p.downcast_ref::<FenceInfo>()) {
             fence.clone()
         } else {
-            let content_to_check = if list_indent_stripped > 0 && !ctx.content.is_empty() {
-                let idx = byte_index_at_column(ctx.content, list_indent_stripped);
-                &ctx.content[idx..]
+            let content_to_check = if list_indent_stripped > 0 && !content.is_empty() {
+                let idx = byte_index_at_column(content, list_indent_stripped);
+                &content[idx..]
             } else {
-                ctx.content
+                content
             };
             try_parse_fence_open(content_to_check).expect("Fence should exist")
         };
@@ -1805,6 +1797,8 @@ impl BlockParser for HtmlBlockParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
+        let prefix = lines.prefix();
         let line_pos = lines.pos();
         let lines = lines.raw();
         if !ctx.config.extensions.raw_html {
@@ -1813,7 +1807,7 @@ impl BlockParser for HtmlBlockParser {
 
         // HTML block must start with `<` after up to 3 leading spaces.
         {
-            let bytes = ctx.content.as_bytes();
+            let bytes = content.as_bytes();
             let mut i = 0;
             while i < bytes.len() && i < 3 && bytes[i] == b' ' {
                 i += 1;
@@ -1824,7 +1818,7 @@ impl BlockParser for HtmlBlockParser {
         }
 
         let is_commonmark = ctx.config.dialect == crate::options::Dialect::CommonMark;
-        let block_type = try_parse_html_block_start(ctx.content, is_commonmark)?;
+        let block_type = try_parse_html_block_start(content, is_commonmark)?;
 
         // Pandoc-only: suppress close-form dispatch when the enclosing
         // LIST_ITEM buffer has an unclosed matched-pair open of the same
@@ -1859,11 +1853,7 @@ impl BlockParser for HtmlBlockParser {
         // so the validation is gated on Pandoc dialect and BlockTag types.
         if !is_commonmark
             && matches!(block_type, HtmlBlockType::BlockTag { .. })
-            && !pandoc_html_open_tag_closes(
-                lines,
-                line_pos,
-                &super::blocks::container_prefix::ContainerPrefix::from_ctx(ctx),
-            )
+            && !pandoc_html_open_tag_closes(lines, line_pos, prefix)
         {
             return None;
         }
@@ -1912,7 +1902,7 @@ impl BlockParser for HtmlBlockParser {
                         || (*is_closing && tag_name.eq_ignore_ascii_case("script"))
                         || (!*is_closing
                             && tag_name.eq_ignore_ascii_case("script")
-                            && is_math_tex_script_open(ctx.content))));
+                            && is_math_tex_script_open(content))));
         // Pandoc-specific: when an `isInlineTag` construct (the
         // `cannot_interrupt` set) appears with leading indent BEYOND
         // the current container's content_col, pandoc-native treats
@@ -1920,12 +1910,12 @@ impl BlockParser for HtmlBlockParser {
         // return None so the dispatcher falls through to paragraph
         // parsing, where the inline parser handles the tag as
         // `RawInline`. Blockquote markers are already stripped from
-        // `ctx.content`; for list-items, `list_indent_info.content_col`
-        // is the column we treat as "column 0" within the item.
-        // CommonMark keeps the RawBlock shape (block-level recognition).
+        // the bq-stripped first line; for list-items,
+        // `list_indent_info.content_col` is the column we treat as
+        // "column 0" within the item. CommonMark keeps the RawBlock
+        // shape (block-level recognition).
         if is_pandoc && cannot_interrupt {
-            let leading_spaces = ctx
-                .content
+            let leading_spaces = content
                 .as_bytes()
                 .iter()
                 .take_while(|&&b| b == b' ')
@@ -1957,13 +1947,15 @@ impl BlockParser for HtmlBlockParser {
         lines: &StrippedLines<'_, '_>,
         payload: Option<&dyn Any>,
     ) -> usize {
+        let content = lines.first();
+        let prefix = lines.prefix();
         let line_pos = lines.pos();
         let lines = lines.raw();
         let is_commonmark = ctx.config.dialect == crate::options::Dialect::CommonMark;
         let block_type = if let Some(bt) = payload.and_then(|p| p.downcast_ref::<HtmlBlockType>()) {
             bt.clone()
         } else {
-            try_parse_html_block_start(ctx.content, is_commonmark)
+            try_parse_html_block_start(content, is_commonmark)
                 .expect("HTML block type should exist")
         };
 
@@ -2000,12 +1992,8 @@ impl BlockParser for HtmlBlockParser {
             } if tag_name == "div"
                 && ctx.config.dialect == crate::options::Dialect::Pandoc
                 && ctx.config.extensions.native_divs
-                && (probe_open_tag_line_has_close_gt(ctx.content, "div")
-                    || pandoc_html_open_tag_closes(
-                        lines,
-                        line_pos,
-                        &super::blocks::container_prefix::ContainerPrefix::from_ctx(ctx),
-                    )) =>
+                && (probe_open_tag_line_has_close_gt(content, "div")
+                    || pandoc_html_open_tag_closes(lines, line_pos, prefix)) =>
             {
                 crate::syntax::SyntaxKind::HTML_BLOCK_DIV
             }
@@ -2017,7 +2005,7 @@ impl BlockParser for HtmlBlockParser {
             lines,
             line_pos,
             block_type,
-            &super::blocks::container_prefix::ContainerPrefix::from_ctx(ctx),
+            prefix,
             wrapper_kind,
             ctx.config,
         );
@@ -2039,13 +2027,13 @@ impl BlockParser for LatexEnvironmentParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if !ctx.config.extensions.raw_tex {
             return None;
         }
 
-        let env_name = extract_environment_name(ctx.content)?.to_string();
+        let env_name = extract_environment_name(lines.first())?.to_string();
         let env_info = LatexEnvInfo { env_name };
 
         // Skip inline math environments - they should be parsed inline in paragraphs
@@ -2067,20 +2055,21 @@ impl BlockParser for LatexEnvironmentParser {
 
     fn parse_prepared(
         &self,
-        ctx: &BlockContext,
+        _ctx: &BlockContext,
         builder: &mut GreenNodeBuilder<'static>,
         lines: &StrippedLines<'_, '_>,
         payload: Option<&dyn Any>,
     ) -> usize {
         use crate::syntax::SyntaxKind;
 
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
 
         let env_info = if let Some(info) = payload.and_then(|p| p.downcast_ref::<LatexEnvInfo>()) {
             info.clone()
         } else {
-            let env_name = extract_environment_name(ctx.content)
+            let env_name = extract_environment_name(content)
                 .expect("LaTeX env info should exist")
                 .to_string();
             LatexEnvInfo { env_name }
@@ -2138,7 +2127,7 @@ impl BlockParser for RawTexBlockParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if !ctx.config.extensions.raw_tex {
             return None;
@@ -2150,7 +2139,7 @@ impl BlockParser for RawTexBlockParser {
             return None;
         }
 
-        if !raw_blocks::can_start_raw_block(ctx.content, ctx.config) {
+        if !raw_blocks::can_start_raw_block(lines.first(), ctx.config) {
             return None;
         }
 
@@ -2186,16 +2175,18 @@ impl BlockParser for LineBlockParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         if !ctx.config.extensions.line_blocks {
             return None;
         }
 
-        try_parse_line_block_start(ctx.content)?;
+        try_parse_line_block_start(content)?;
         // Ensure the raw source line at the current parser position also starts
-        // a line block marker. This prevents false positives when `ctx.content`
-        // was stripped from container markers (e.g. blockquote prefixes).
+        // a line block marker. This prevents false positives when the
+        // bq-stripped first line was stripped from container markers
+        // (e.g. blockquote prefixes).
         let raw_line = lines.get(line_pos)?;
         try_parse_line_block_start(raw_line)?;
 
@@ -2235,15 +2226,15 @@ impl BlockParser for LineBlockParser {
 
 pub(crate) struct FencedDivOpenParser;
 
-fn content_for_fenced_div_detection<'a>(ctx: &BlockContext<'a>) -> &'a str {
+fn content_for_fenced_div_detection<'a>(ctx: &BlockContext, content: &'a str) -> &'a str {
     if let Some(list_info) = ctx.list_indent_info {
-        let (indent_cols, _) = leading_indent(ctx.content);
+        let (indent_cols, _) = leading_indent(content);
         if indent_cols >= list_info.content_col {
-            let idx = byte_index_at_column(ctx.content, list_info.content_col);
-            return &ctx.content[idx..];
+            let idx = byte_index_at_column(content, list_info.content_col);
+            return &content[idx..];
         }
     }
-    ctx.content
+    content
 }
 
 impl BlockParser for FencedDivOpenParser {
@@ -2254,13 +2245,13 @@ impl BlockParser for FencedDivOpenParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if !ctx.config.extensions.fenced_divs {
             return None;
         }
 
-        let content = content_for_fenced_div_detection(ctx);
+        let content = content_for_fenced_div_detection(ctx, lines.first());
         // A fenced-div open fence starts with `:::` (Pandoc dialect)
         // after up to 3 leading spaces. Bail before the full
         // `try_parse_div_fence_open` scan when this byte gate fails.
@@ -2287,13 +2278,14 @@ impl BlockParser for FencedDivOpenParser {
     ) -> usize {
         use crate::syntax::SyntaxKind;
 
+        let first = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
 
         let div_fence = payload
             .and_then(|p| p.downcast_ref::<DivFenceInfo>())
             .cloned()
-            .or_else(|| try_parse_div_fence_open(content_for_fenced_div_detection(ctx)))
+            .or_else(|| try_parse_div_fence_open(content_for_fenced_div_detection(ctx, first)))
             .unwrap_or(DivFenceInfo {
                 attributes: String::new(),
                 fence_count: 3,
@@ -2389,7 +2381,7 @@ impl BlockParser for FencedDivCloseParser {
     fn detect_prepared(
         &self,
         ctx: &BlockContext,
-        _lines: &StrippedLines<'_, '_>,
+        lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
         if !ctx.config.extensions.fenced_divs {
             return None;
@@ -2399,7 +2391,7 @@ impl BlockParser for FencedDivCloseParser {
             return None;
         }
 
-        if !is_div_closing_fence(content_for_fenced_div_detection(ctx)) {
+        if !is_div_closing_fence(content_for_fenced_div_detection(ctx, lines.first())) {
             return None;
         }
 
@@ -2457,6 +2449,7 @@ impl BlockParser for IndentedCodeBlockParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         // CommonMark §4.4: indented code blocks cannot interrupt a paragraph,
@@ -2516,15 +2509,15 @@ impl BlockParser for IndentedCodeBlockParser {
             .unwrap_or(0);
         let required_indent = list_content_col + 4;
 
-        let (indent_cols, _) = leading_indent(ctx.content);
+        let (indent_cols, _) = leading_indent(content);
         // Don't treat as code if it's a list marker and not indented enough for code.
         if indent_cols < required_indent
-            && try_parse_list_marker(ctx.content, ctx.config, ctx.open_alpha_hint).is_some()
+            && try_parse_list_marker(content, ctx.config, ctx.open_alpha_hint).is_some()
         {
             return None;
         }
 
-        if indent_cols < required_indent || !is_indented_code_line(ctx.content) {
+        if indent_cols < required_indent || !is_indented_code_line(content) {
             return None;
         }
 
@@ -2573,6 +2566,7 @@ impl BlockParser for SetextHeadingParser {
         ctx: &BlockContext,
         lines: &StrippedLines<'_, '_>,
     ) -> Option<(BlockDetectionResult, Option<Box<dyn Any>>)> {
+        let content = lines.first();
         let line_pos = lines.pos();
         let lines = lines.raw();
         // Setext headings usually require blank line before (unless at document start),
@@ -2613,7 +2607,7 @@ impl BlockParser for SetextHeadingParser {
         }
 
         // Create lines array for detection function (avoid allocation)
-        let lines = [ctx.content, next_line];
+        let lines = [content, next_line];
 
         // Try to detect setext heading
         if try_parse_setext_heading(&lines, 0).is_some() {
@@ -2621,7 +2615,7 @@ impl BlockParser for SetextHeadingParser {
             // valid thematic break. Pandoc-markdown allows it (e.g. `***\n---`
             // becomes `<h2>***</h2>`), so this branch is dialect-gated.
             if ctx.config.dialect == crate::options::Dialect::CommonMark
-                && try_parse_horizontal_rule(ctx.content).is_some()
+                && try_parse_horizontal_rule(content).is_some()
             {
                 return None;
             }
@@ -2632,7 +2626,7 @@ impl BlockParser for SetextHeadingParser {
             // text `[foo]: /url`, so this branch is dialect-gated.
             if ctx.config.dialect == crate::options::Dialect::CommonMark
                 && ctx.config.extensions.reference_links
-                && try_parse_reference_definition(ctx.content, ctx.config.dialect).is_some()
+                && try_parse_reference_definition(content, ctx.config.dialect).is_some()
             {
                 return None;
             }
