@@ -352,6 +352,19 @@ impl ConfigSource {
             ConfigSource::None => None,
         }
     }
+
+    /// The project directory that relative globs in this config anchor against
+    /// (its own directory, with a `.config/` wrapper unwrapped to the project
+    /// root). `None` for the global XDG config and the no-config case, which
+    /// have no project location.
+    pub fn project_anchor(&self) -> Option<PathBuf> {
+        match self {
+            ConfigSource::Explicit(p) | ConfigSource::Discovered(p) => {
+                p.parent().map(unwrap_dot_config)
+            }
+            ConfigSource::Global(_) | ConfigSource::None => None,
+        }
+    }
 }
 
 pub fn load(
@@ -377,11 +390,14 @@ pub fn load(
         (Config::default(), ConfigSource::None)
     };
 
-    let cfg_path = source.path();
-    let resolved_flavor = flavor_override.or_else(|| detect_flavor(input_file, cfg_path, &cfg));
+    let anchor = source.project_anchor();
+    let resolved_flavor =
+        flavor_override.or_else(|| detect_flavor(input_file, anchor.as_deref(), &cfg));
 
     if let Some(flavor) = resolved_flavor {
-        apply_flavor(&mut cfg, flavor, cfg_path);
+        // `apply_flavor` re-reads the config file, so it needs the actual path,
+        // not the (possibly `.config/`-unwrapped) anchor directory.
+        apply_flavor(&mut cfg, flavor, source.path());
     }
 
     Ok((cfg, source))
@@ -536,11 +552,7 @@ fn resolve_formatter_extensions_for_flavor(
     FormatterExtensions::merge_with_flavor(global_overrides, flavor)
 }
 
-fn detect_flavor(
-    input_file: Option<&Path>,
-    cfg_path: Option<&Path>,
-    cfg: &Config,
-) -> Option<Flavor> {
+fn detect_flavor(input_file: Option<&Path>, anchor: Option<&Path>, cfg: &Config) -> Option<Flavor> {
     let input_path = input_file?;
     let ext = input_path.extension().and_then(|e| e.to_str())?;
     let ext_lower = ext.to_lowercase();
@@ -549,9 +561,7 @@ fn detect_flavor(
         "qmd" => Some(Flavor::Quarto),
         "rmd" | "rmarkdown" => Some(Flavor::RMarkdown),
         _ if MARKDOWN_FAMILY_EXTENSIONS.contains(&ext_lower.as_str()) => {
-            let base_dir = cfg_path.and_then(Path::parent);
-            let override_flavor =
-                detect_flavor_override(input_path, base_dir, &cfg.flavor_overrides);
+            let override_flavor = detect_flavor_override(input_path, anchor, &cfg.flavor_overrides);
             Some(override_flavor.unwrap_or(cfg.flavor))
         }
         _ => None,
@@ -648,13 +658,9 @@ fn unwrap_dot_config(dir: &Path) -> PathBuf {
 /// back to `fallback` — the cwd for the CLI, or the input file's directory for
 /// the LSP.
 pub fn anchor_dir(source: &ConfigSource, fallback: &Path) -> PathBuf {
-    match source {
-        ConfigSource::Explicit(p) | ConfigSource::Discovered(p) => p
-            .parent()
-            .map(unwrap_dot_config)
-            .unwrap_or_else(|| fallback.to_path_buf()),
-        ConfigSource::Global(_) | ConfigSource::None => fallback.to_path_buf(),
-    }
+    source
+        .project_anchor()
+        .unwrap_or_else(|| fallback.to_path_buf())
 }
 
 /// Expand one user/default glob into globset patterns, layering gitignore-style
@@ -776,6 +782,32 @@ mod tests {
 
         let (cfg, _) = load(None, tmp.path(), Some(&md), Some(Flavor::Gfm)).expect("load");
         assert_eq!(cfg.flavor, Flavor::Gfm);
+    }
+
+    #[test]
+    fn flavor_override_dot_config_anchors_at_project_root() {
+        // A `.config/panache.toml` flavor-override glob must resolve relative to
+        // the project root (the dir above `.config/`), so `docs/*.md` matches a
+        // `docs/x.md` at the root — not `docs/` under `.config/`.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join(".config")).unwrap();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(
+            root.join(".config").join("panache.toml"),
+            "[flavor-overrides]\n\"docs/*.md\" = \"quarto\"\n",
+        )
+        .unwrap();
+        let md = root.join("docs").join("x.md");
+        std::fs::write(&md, "").unwrap();
+
+        let (cfg, _) = load(None, root, Some(&md), None).expect("load");
+        assert_eq!(
+            cfg.flavor,
+            Flavor::Quarto,
+            "`.config/panache.toml` flavor-override globs must anchor at the project root"
+        );
     }
 
     #[test]
