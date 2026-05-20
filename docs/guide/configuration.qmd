@@ -30,13 +30,13 @@ untracked scratch file), the walk falls back to today's filesystem-root
 behavior.
 
 Putting the file in `.config/` (the [dot-config](https://dot-config.github.io)
-convention) keeps the project root tidy. A `.config/panache.toml` is treated
-like any config that lives in a subdirectory: most settings are unaffected, but
-**path-based** settings --- `exclude` / `include` and `flavor-overrides` glob
-keys --- resolve relative to the `.config/` directory, not the directory above
-it (see [Path matching base](#file-selection-directory-traversal)). To target
-files outside `.config/`, write the pattern accordingly (for example
-`../vendor/**`).
+convention) keeps the project root tidy. A `.config/panache.toml` behaves
+exactly like a `panache.toml` in the directory that contains `.config/`: the
+`.config/` wrapper is purely cosmetic. In particular, **path-based** settings
+--- `exclude` / `include` and `flavor-overrides` glob keys --- anchor at that
+parent directory (the project root), so a pattern like `vendor/**` matches
+`vendor/` next to `.config/`, with no `../` prefix needed (see [Path matching
+base](#file-selection-directory-traversal)).
 
 ## Editor Support {#editor-support}
 
@@ -188,15 +188,24 @@ extend-include = ["*.Rmd"]
 
 Path matching base:
 
-- For discovered config files, include/exclude globs are resolved relative to
-  the directory containing the active config file --- including a
-  `.config/panache.toml`, whose globs resolve relative to `.config/`.
-- For explicit `--config path/to/panache.toml`, include/exclude globs are
-  resolved relative to the current working directory.
+- Relative `include` / `exclude` globs (and `flavor-overrides` glob keys)
+  resolve against the directory of the config file that declared them. A
+  `.config/panache.toml` is unwrapped to the project root, so it behaves exactly
+  like a `panache.toml` in the directory above `.config/`. The same rule applies
+  to discovered configs and to an explicit `--config path/to/panache.toml`
+  (anchored at `path/to/`, not the current working directory).
+- The global `~/.config/panache/config.toml` has no project location, so its
+  globs resolve against the directory being traversed (typically the current
+  working directory).
 - CLI path arguments (for example `panache format docs/`) limit traversal scope
-  but do not change how include/exclude globs are resolved.
+  but do not change how globs are anchored.
 
 If a path matches both include and exclude, exclude wins.
+
+Patterns are matched with [globset](https://docs.rs/globset/). Gitignore-style
+shorthand works: a bare name like `*.md` matches at any depth, and a trailing
+slash (`build/`) matches a directory's contents. Gitignore negation (`!pattern`)
+is **not** supported.
 
 ### Pandoc Compatibility
 
