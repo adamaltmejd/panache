@@ -27,6 +27,10 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # Publish targets one at a time: all targets share a single Open VSX
+      # version record, so concurrent publishes of the same release race on the
+      # server and lose with a 405. Serializing trades ~5 min for reliability.
+      max-parallel: 1
       matrix:
         include:
           - vsce_target: win32-x64
