@@ -626,6 +626,108 @@ fn glob_matches_path(pattern: &str, candidate: &str) -> bool {
     glob.compile_matcher().is_match(candidate)
 }
 
+/// `<dir>/.config` → `<dir>` (the dot-config convention is purely cosmetic);
+/// any other directory is returned unchanged. Literal final-component check —
+/// no canonicalization — to match [`find_in_tree`]'s literal `.config` probe.
+fn unwrap_dot_config(dir: &Path) -> PathBuf {
+    if dir.file_name().and_then(|n| n.to_str()) == Some(".config")
+        && let Some(parent) = dir.parent()
+    {
+        return parent.to_path_buf();
+    }
+    dir.to_path_buf()
+}
+
+/// Directory that relative globs declared in `source` anchor against (the
+/// single rule shared by `flavor-overrides` and `exclude`/`include`).
+///
+/// A discovered or explicit config anchors at its own directory, with a
+/// `.config/` wrapper unwrapped to the project root so a `.config/panache.toml`
+/// behaves exactly like a `panache.toml` in the directory above it. The global
+/// XDG user config has no project location, so it (and the no-config case) fall
+/// back to `fallback` — the cwd for the CLI, or the input file's directory for
+/// the LSP.
+pub fn anchor_dir(source: &ConfigSource, fallback: &Path) -> PathBuf {
+    match source {
+        ConfigSource::Explicit(p) | ConfigSource::Discovered(p) => p
+            .parent()
+            .map(unwrap_dot_config)
+            .unwrap_or_else(|| fallback.to_path_buf()),
+        ConfigSource::Global(_) | ConfigSource::None => fallback.to_path_buf(),
+    }
+}
+
+/// Expand one user/default glob into globset patterns, layering gitignore-style
+/// ergonomics on top of `globset` (which, with `literal_separator(true)`, never
+/// lets `*` cross `/` and does not treat a bare name as "at any depth").
+///
+/// - bare name (`*.md`, `target`) → `**/<name>` (any depth) and `**/<name>/**`
+///   (contents, when it names a directory)
+/// - trailing slash (`tests/`) → `**/<name>/**` (directory contents only; the
+///   directory entry itself is never tested during traversal)
+/// - embedded slash (`docs/**/*.qmd`, `a/b/`) → anchored at the config dir,
+///   plus a `/**` contents variant
+///
+/// Already-explicit patterns like `**/target/**` contain a slash, so they hit
+/// the anchored branch and are preserved as-is (the extra `/**` variant is
+/// harmless), keeping the rule idempotent over the rewritten defaults.
+fn expand_glob_pattern(pattern: &str, out: &mut Vec<String>) {
+    let core = pattern.trim_end_matches('/');
+    if core.is_empty() {
+        return;
+    }
+    let had_trailing_slash = pattern.ends_with('/');
+    let anchored = core.contains('/');
+    match (had_trailing_slash, anchored) {
+        (true, true) => out.push(format!("{core}/**")),
+        (true, false) => out.push(format!("**/{core}/**")),
+        (false, true) => {
+            out.push(core.to_string());
+            out.push(format!("{core}/**"));
+        }
+        (false, false) => {
+            out.push(format!("**/{core}"));
+            out.push(format!("**/{core}/**"));
+        }
+    }
+}
+
+/// A set of `exclude`/`include` globs, anchored at a config directory and
+/// matched against config-directory-relative, forward-slashed paths. Backed by
+/// `globset` (the single engine shared with `flavor-overrides`); negation
+/// (`!pattern`) is intentionally unsupported.
+pub struct GlobMatcher {
+    set: globset::GlobSet,
+}
+
+impl GlobMatcher {
+    /// Compile `patterns` (gitignore-style; see [`expand_glob_pattern`]).
+    pub fn build(patterns: &[String]) -> Result<Self, globset::Error> {
+        let mut builder = globset::GlobSetBuilder::new();
+        let mut expanded = Vec::new();
+        for pattern in patterns {
+            expanded.clear();
+            expand_glob_pattern(pattern, &mut expanded);
+            for glob in &expanded {
+                builder.add(
+                    globset::GlobBuilder::new(glob)
+                        .literal_separator(true)
+                        .backslash_escape(true)
+                        .build()?,
+                );
+            }
+        }
+        Ok(Self {
+            set: builder.build()?,
+        })
+    }
+
+    /// Whether `rel` (a config-dir-relative, forward-slashed path) matches.
+    pub fn is_match(&self, rel: &str) -> bool {
+        self.set.is_match(rel)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -902,5 +1004,124 @@ mod tests {
             Some(inner_cfg.as_path()),
             "nearest config must win"
         );
+    }
+
+    #[test]
+    fn unwrap_dot_config_strips_dot_config_component() {
+        assert_eq!(
+            unwrap_dot_config(Path::new("/proj/.config")),
+            Path::new("/proj")
+        );
+        assert_eq!(unwrap_dot_config(Path::new("/proj")), Path::new("/proj"));
+        // Only the literal final `.config` component is unwrapped.
+        assert_eq!(
+            unwrap_dot_config(Path::new("/proj/.config/sub")),
+            Path::new("/proj/.config/sub")
+        );
+    }
+
+    #[test]
+    fn anchor_dir_unwraps_dot_config_for_project_configs() {
+        let fallback = Path::new("/cwd");
+        // Bare config: parent dir.
+        assert_eq!(
+            anchor_dir(
+                &ConfigSource::Discovered(PathBuf::from("/proj/panache.toml")),
+                fallback
+            ),
+            Path::new("/proj")
+        );
+        // `.config/panache.toml`: project root, not `.config/`.
+        assert_eq!(
+            anchor_dir(
+                &ConfigSource::Discovered(PathBuf::from("/proj/.config/panache.toml")),
+                fallback
+            ),
+            Path::new("/proj")
+        );
+        // Explicit follows the same rule.
+        assert_eq!(
+            anchor_dir(
+                &ConfigSource::Explicit(PathBuf::from("/elsewhere/panache.toml")),
+                fallback
+            ),
+            Path::new("/elsewhere")
+        );
+        // Global XDG config and the no-config case fall back (never `~/.config`).
+        assert_eq!(
+            anchor_dir(
+                &ConfigSource::Global(PathBuf::from("/home/u/.config/panache/config.toml")),
+                fallback
+            ),
+            fallback
+        );
+        assert_eq!(anchor_dir(&ConfigSource::None, fallback), fallback);
+    }
+
+    fn matches(patterns: &[&str], rel: &str) -> bool {
+        let owned: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        GlobMatcher::build(&owned).expect("build").is_match(rel)
+    }
+
+    #[test]
+    fn glob_matcher_bare_name_matches_at_any_depth() {
+        // gitignore-style: a bare `*.md` matches at the root and nested.
+        assert!(matches(&["*.md"], "readme.md"));
+        assert!(matches(&["*.md"], "docs/guide/intro.md"));
+        assert!(!matches(&["*.md"], "docs/intro.qmd"));
+        // A bare directory name (no slash) excludes its contents at any depth.
+        assert!(matches(&["target"], "target/x.rs"));
+        assert!(matches(&["target"], "a/target/x.rs"));
+    }
+
+    #[test]
+    fn glob_matcher_trailing_slash_matches_directory_contents() {
+        assert!(matches(&["tests/"], "tests/snapshot.md"));
+        assert!(matches(&["tests/"], "a/tests/snapshot.md"));
+        // The directory entry itself is never tested, but a sibling file is not
+        // a directory and must not match.
+        assert!(!matches(&["tests/"], "tests.md"));
+    }
+
+    #[test]
+    fn glob_matcher_anchored_pattern_resolves_from_root() {
+        assert!(matches(&["docs/**/*.qmd"], "docs/index.qmd"));
+        assert!(matches(&["docs/**/*.qmd"], "docs/guides/intro.qmd"));
+        // Anchored: a same-named file outside `docs/` does not match.
+        assert!(!matches(&["docs/**/*.qmd"], "other/index.qmd"));
+    }
+
+    #[test]
+    fn glob_matcher_preserves_explicit_default_forms() {
+        // The rewritten defaults already contain `/`, so they round-trip
+        // through expansion unchanged (idempotent, no double `**/`).
+        assert!(matches(&["**/target/**"], "target/debug/app"));
+        assert!(matches(&["**/target/**"], "crates/x/target/debug/app"));
+        assert!(matches(&["**/*.md"], "readme.md"));
+        assert!(matches(&["**/*.md"], "docs/intro.md"));
+        assert!(matches(&["**/LICENSE.md"], "LICENSE.md"));
+        assert!(matches(&["**/LICENSE.md"], "vendor/LICENSE.md"));
+    }
+
+    #[test]
+    fn glob_matcher_default_patterns_compile_and_match() {
+        let excludes: Vec<String> = DEFAULT_EXCLUDE_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let m = GlobMatcher::build(&excludes).expect("default excludes build");
+        assert!(m.is_match("node_modules/lib/index.md"));
+        assert!(m.is_match(".git/HEAD"));
+        assert!(m.is_match("tests/testthat/_snaps/x.md"));
+        assert!(!m.is_match("docs/intro.qmd"));
+
+        let includes: Vec<String> = DEFAULT_INCLUDE_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let inc = GlobMatcher::build(&includes).expect("default includes build");
+        assert!(inc.is_match("docs/guide/intro.qmd"));
+        assert!(inc.is_match("readme.md"));
+        assert!(!inc.is_match("script.py"));
     }
 }
