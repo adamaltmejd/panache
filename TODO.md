@@ -226,7 +226,7 @@ intentionally excluded.
 - [ ] `commitmsgfmt`
 - [ ] `crlfmt`
 - [ ] `crystal`
-- [ ] `csharpier`
+- [x] `csharpier`
 - [ ] `css_beautify`
 - [x] `cue_fmt`
 - [ ] `d2`
@@ -314,7 +314,7 @@ intentionally excluded.
 - [ ] `mdslw`
 - [ ] `meson`
 - [ ] `mh_style`
-- [ ] `mix`
+- [x] `mix`
 - [ ] `mojo_format`
 - [x] `nginxfmt`
 - [ ] `nickel`
@@ -329,7 +329,7 @@ intentionally excluded.
 - [ ] `ocp-indent`
 - [ ] `odinfmt`
 - [ ] `opa_fmt`
-- [ ] `ormolu`
+- [x] `ormolu`
 - [ ] `oxfmt`
 - [ ] `oxlint`
 - [ ] `packer_fmt`
@@ -371,7 +371,7 @@ intentionally excluded.
 - [ ] `ruff_organize_imports`
 - [x] `rufo`
 - [ ] `rumdl`
-- [ ] `runic`
+- [x] `runic`
 - [x] `rustfmt`
 - [ ] `rustywind`
 - [ ] `scalafmt`

@@ -213,6 +213,15 @@ const PRESETS: &[FormatterPresetMetadata] = &[
         supported_languages: &["clojure", "clj", "cljs", "cljc", "edn"],
     },
     FormatterPresetMetadata {
+        name: "csharpier",
+        url: "https://csharpier.com/",
+        description: "Opinionated C# code formatter.",
+        cmd: "csharpier",
+        args: &["format"],
+        stdin: true,
+        supported_languages: &["csharp", "c-sharp", "cs", "c#"],
+    },
+    FormatterPresetMetadata {
         name: "cue-fmt",
         url: "https://cuelang.org",
         description: "Format CUE files.",
@@ -357,6 +366,15 @@ const PRESETS: &[FormatterPresetMetadata] = &[
         supported_languages: &["md", "markdown", "qmd", "rmd"],
     },
     FormatterPresetMetadata {
+        name: "mix",
+        url: "https://hexdocs.pm/mix/Mix.Tasks.Format.html",
+        description: "Elixir code formatter via mix format.",
+        cmd: "mix",
+        args: &["format", "-"],
+        stdin: true,
+        supported_languages: &["elixir", "ex", "exs"],
+    },
+    FormatterPresetMetadata {
         name: "nixfmt",
         url: "https://github.com/NixOS/nixfmt",
         description: "Official formatter for Nix code.",
@@ -373,6 +391,15 @@ const PRESETS: &[FormatterPresetMetadata] = &[
         args: &["-"],
         stdin: true,
         supported_languages: &["nginx", "nginxconf"],
+    },
+    FormatterPresetMetadata {
+        name: "ormolu",
+        url: "https://github.com/tweag/ormolu",
+        description: "Formatter for Haskell source code.",
+        cmd: "ormolu",
+        args: &[],
+        stdin: true,
+        supported_languages: &["haskell", "hs"],
     },
     FormatterPresetMetadata {
         name: "prettier",
@@ -457,6 +484,15 @@ const PRESETS: &[FormatterPresetMetadata] = &[
         args: &[],
         stdin: true,
         supported_languages: &["ruby", "rb"],
+    },
+    FormatterPresetMetadata {
+        name: "runic",
+        url: "https://github.com/fredrikekre/Runic.jl",
+        description: "Code formatter for Julia.",
+        cmd: "runic",
+        args: &[],
+        stdin: true,
+        supported_languages: &["julia", "jl"],
     },
     FormatterPresetMetadata {
         name: "rustfmt",
@@ -628,6 +664,7 @@ pub fn formatter_preset_names() -> &'static [&'static str] {
         "clang-format",
         "cljfmt",
         "cmake-format",
+        "csharpier",
         "cue-fmt",
         "dfmt",
         "efmt",
@@ -644,8 +681,10 @@ pub fn formatter_preset_names() -> &'static [&'static str] {
         "ktfmt",
         "leptosfmt",
         "mdformat",
+        "mix",
         "nixfmt",
         "nginxfmt",
+        "ormolu",
         "prettier",
         "pycln",
         "pyproject-fmt",
@@ -653,6 +692,7 @@ pub fn formatter_preset_names() -> &'static [&'static str] {
         "rubyfmt",
         "ruff",
         "rufo",
+        "runic",
         "rustfmt",
         "shfmt",
         "sqlfmt",
@@ -719,6 +759,50 @@ mod tests {
             presets.iter().any(|preset| preset.name == "stylua"),
             "Expected stylua preset to support lua"
         );
+    }
+
+    #[test]
+    fn runic_is_available_for_julia() {
+        for language in ["julia", "jl"] {
+            let presets = formatter_presets_for_language(language);
+            assert!(
+                presets.iter().any(|preset| preset.name == "runic"),
+                "Expected runic preset to support {language}"
+            );
+        }
+    }
+
+    #[test]
+    fn ormolu_is_available_for_haskell() {
+        for language in ["haskell", "hs"] {
+            let presets = formatter_presets_for_language(language);
+            assert!(
+                presets.iter().any(|preset| preset.name == "ormolu"),
+                "Expected ormolu preset to support {language}"
+            );
+        }
+    }
+
+    #[test]
+    fn mix_is_available_for_elixir() {
+        for language in ["elixir", "ex", "exs"] {
+            let presets = formatter_presets_for_language(language);
+            assert!(
+                presets.iter().any(|preset| preset.name == "mix"),
+                "Expected mix preset to support {language}"
+            );
+        }
+    }
+
+    #[test]
+    fn csharpier_is_available_for_csharp() {
+        for language in ["csharp", "c_sharp", "cs", "c#"] {
+            let presets = formatter_presets_for_language(language);
+            assert!(
+                presets.iter().any(|preset| preset.name == "csharpier"),
+                "Expected csharpier preset to support {language}"
+            );
+        }
     }
 
     #[test]

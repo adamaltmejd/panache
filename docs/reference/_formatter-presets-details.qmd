@@ -341,6 +341,25 @@ Command
 Type
 :   Stdin
 
+## `csharpier`
+
+Opinionated C# code formatter.
+
+Homepage
+:   <https://csharpier.com/>
+
+Supported Languages
+:   `csharp`, `c-sharp`, `cs`, `c#`
+
+Command
+:   `csharpier`
+
+`args`
+:   `[format]`
+
+Type
+:   Stdin
+
 ## `cue-fmt`
 
 Format CUE files.
@@ -645,6 +664,25 @@ Command
 Type
 :   Stdin
 
+## `mix`
+
+Elixir code formatter via mix format.
+
+Homepage
+:   <https://hexdocs.pm/mix/Mix.Tasks.Format.html>
+
+Supported Languages
+:   `elixir`, `ex`, `exs`
+
+Command
+:   `mix`
+
+`args`
+:   `[format, -]`
+
+Type
+:   Stdin
+
 ## `nginxfmt`
 
 Formatter for nginx configuration files.
@@ -676,6 +714,25 @@ Supported Languages
 
 Command
 :   `nixfmt`
+
+`args`
+:   `[]`
+
+Type
+:   Stdin
+
+## `ormolu`
+
+Formatter for Haskell source code.
+
+Homepage
+:   <https://github.com/tweag/ormolu>
+
+Supported Languages
+:   `haskell`, `hs`
+
+Command
+:   `ormolu`
 
 `args`
 :   `[]`
@@ -809,6 +866,25 @@ Supported Languages
 
 Command
 :   `rufo`
+
+`args`
+:   `[]`
+
+Type
+:   Stdin
+
+## `runic`
+
+Code formatter for Julia.
+
+Homepage
+:   <https://github.com/fredrikekre/Runic.jl>
+
+Supported Languages
+:   `julia`, `jl`
+
+Command
+:   `runic`
 
 `args`
 :   `[]`
