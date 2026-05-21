@@ -48,14 +48,9 @@ pub(super) fn format_inline_node(node: &SyntaxNode, config: &Config) -> String {
                         }
                         SyntaxKind::AUTO_LINK_MARKER | SyntaxKind::TEXT => {
                             skip_marker_whitespace = false;
-                            result.push_str(
-                                normalize_smart_punctuation(
-                                    tok.text(),
-                                    config.formatter_extensions.smart,
-                                    config.formatter_extensions.smart_quotes,
-                                )
-                                .as_ref(),
-                            );
+                            // Autolinks are literal URLs/emails: emit verbatim,
+                            // never smart-normalize (pandoc keeps `—`/`…` here).
+                            result.push_str(tok.text());
                         }
                         _ => {}
                     }
@@ -84,14 +79,10 @@ pub(super) fn format_inline_node(node: &SyntaxNode, config: &Config) -> String {
                             marker_len = marker_len.max(t.text().len());
                         } else if t.kind() == SyntaxKind::INLINE_CODE_CONTENT {
                             skip_marker_whitespace = false;
-                            content.push_str(
-                                normalize_smart_punctuation(
-                                    t.text(),
-                                    config.formatter_extensions.smart,
-                                    config.formatter_extensions.smart_quotes,
-                                )
-                                .as_ref(),
-                            );
+                            // Code spans are literal: never apply smart
+                            // punctuation normalization to their contents
+                            // (pandoc keeps `—`/`…`/curly quotes verbatim here).
+                            content.push_str(t.text());
                         }
                     }
                     _ => {}

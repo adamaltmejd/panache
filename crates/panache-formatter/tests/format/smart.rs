@@ -47,6 +47,31 @@ fn smart_normalizes_unicode_ellipsis() {
 }
 
 #[test]
+fn smart_does_not_normalize_inline_code_span_content() {
+    // Code spans are literal: smart punctuation must never rewrite their
+    // contents. Pandoc keeps em/en dashes, ellipsis, and curly quotes verbatim
+    // inside code.
+    let mut cfg = Config::default();
+    cfg.formatter_extensions.smart = true;
+    let input = "`a — b … “q” –`\n";
+    let out = format(input, Some(cfg.clone()), None);
+    assert_eq!(out, input, "code span content must stay verbatim");
+    assert_eq!(format(&out, Some(cfg), None), input, "must be idempotent");
+}
+
+#[test]
+fn smart_does_not_normalize_autolink_url() {
+    // Autolinks are literal URLs/emails: smart punctuation must not rewrite
+    // their contents (pandoc keeps `—` verbatim inside the URL).
+    let mut cfg = Config::default();
+    cfg.formatter_extensions.smart = true;
+    let input = "<https://example.com/a—b>\n";
+    let out = format(input, Some(cfg.clone()), None);
+    assert_eq!(out, input, "autolink URL must stay verbatim");
+    assert_eq!(format(&out, Some(cfg), None), input, "must be idempotent");
+}
+
+#[test]
 fn smart_normalizes_dashes_in_atx_heading() {
     // Regression: document-body headings bypassed smart normalization while
     // paragraphs (and list-nested headings) applied it, so `# —` stayed but a
