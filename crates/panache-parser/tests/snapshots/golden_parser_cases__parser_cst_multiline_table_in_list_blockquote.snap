@@ -1,0 +1,62 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..146
+  LIST@0..146
+    LIST_ITEM@0..146
+      LIST_MARKER@0..1 "-"
+      WHITESPACE@1..2 " "
+      BLOCK_QUOTE@2..146
+        BLOCK_QUOTE_MARKER@2..3 ">"
+        WHITESPACE@3..4 " "
+        MULTILINE_TABLE@4..146
+          TABLE_SEPARATOR@4..26
+            TEXT@4..25 "---------------------"
+            NEWLINE@25..26 "\n"
+          TABLE_HEADER@26..48
+            WHITESPACE@26..28 "  "
+            BLOCK_QUOTE_MARKER@28..29 ">"
+            WHITESPACE@29..30 " "
+            TABLE_CELL@30..39
+              TEXT@30..39 "Fruit    "
+            WHITESPACE@39..40 " "
+            TABLE_CELL@40..47
+              TEXT@40..47 "  Price"
+            NEWLINE@47..48 "\n"
+          TABLE_SEPARATOR@48..74
+            WHITESPACE@48..50 "  "
+            BLOCK_QUOTE_MARKER@50..51 ">"
+            WHITESPACE@51..52 " "
+            TEXT@52..73 "--------- -----------"
+            NEWLINE@73..74 "\n"
+          TABLE_ROW@74..95
+            WHITESPACE@74..76 "  "
+            BLOCK_QUOTE_MARKER@76..77 ">"
+            WHITESPACE@77..78 " "
+            TABLE_CELL@78..87
+              TEXT@78..87 "Apple    "
+            WHITESPACE@87..88 " "
+            TABLE_CELL@88..94
+              TEXT@88..94 "  1.00"
+            NEWLINE@94..95 "\n"
+          BLANK_LINE@95..99
+            WHITESPACE@95..97 "  "
+            BLOCK_QUOTE_MARKER@97..98 ">"
+            BLANK_LINE@98..99 "\n"
+          TABLE_ROW@99..120
+            WHITESPACE@99..101 "  "
+            BLOCK_QUOTE_MARKER@101..102 ">"
+            WHITESPACE@102..103 " "
+            TABLE_CELL@103..112
+              TEXT@103..112 "Pear     "
+            WHITESPACE@112..113 " "
+            TABLE_CELL@113..119
+              TEXT@113..119 "  2.00"
+            NEWLINE@119..120 "\n"
+          TABLE_SEPARATOR@120..146
+            WHITESPACE@120..122 "  "
+            BLOCK_QUOTE_MARKER@122..123 ">"
+            WHITESPACE@123..124 " "
+            TEXT@124..145 "---------------------"
+            NEWLINE@145..146 "\n"

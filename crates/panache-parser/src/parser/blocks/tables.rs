@@ -2400,16 +2400,25 @@ fn is_headerless_single_row_without_blank(
 /// Try to parse a multiline table starting at the given position.
 /// Returns the number of lines consumed if successful.
 pub(crate) fn try_parse_multiline_table(
-    lines: &[&str],
-    start_pos: usize,
+    window: &StrippedLines<'_, '_>,
     builder: &mut GreenNodeBuilder<'static>,
     config: &ParserOptions,
 ) -> Option<usize> {
+    let lines = window.raw();
+    let start_pos = window.pos();
     if start_pos >= lines.len() {
         return None;
     }
 
-    let first_line = lines[start_pos];
+    // Detection scans run against the container-prefix-stripped view so a
+    // multiline table nested in `list → blockquote` (e.g. `- > ----`) has its
+    // `  > ` prefix removed before the separator/blank-row shape checks. The
+    // interior `>`-only row then strips to `""` and registers as a blank row
+    // separator. With an empty prefix `stripped == lines`. Emission re-emits
+    // the prefix bytes as tokens via the window; captions read raw `lines`.
+    let stripped = window.strip_all();
+
+    let first_line = stripped[start_pos];
 
     // First line can be either:
     // 1. A full-width dash separator (for tables with headers)
@@ -2437,7 +2446,7 @@ pub(crate) fn try_parse_multiline_table(
 
     // Scan for header section and column separator
     while pos < lines.len() {
-        let line = lines[pos];
+        let line = stripped[pos];
 
         // Check for column separator (defines columns) - only if we started with full-width
         if is_full_width_start && is_column_separator(line) && !found_column_sep {
@@ -2454,7 +2463,7 @@ pub(crate) fn try_parse_multiline_table(
             pos += 1;
             // Check if next line is a valid closing separator for this table shape.
             if pos < lines.len() {
-                let next = lines[pos];
+                let next = stripped[pos];
                 let is_valid_closer = if is_full_width_start {
                     try_parse_multiline_separator(next).is_some()
                 } else {
@@ -2499,7 +2508,7 @@ pub(crate) fn try_parse_multiline_table(
             return None;
         }
         let columns = headerless_columns.as_deref()?;
-        if !is_headerless_single_row_without_blank(lines, start_pos + 1, pos - 1, columns) {
+        if !is_headerless_single_row_without_blank(&stripped, start_pos + 1, pos - 1, columns) {
             return None;
         }
     }
@@ -2517,17 +2526,17 @@ pub(crate) fn try_parse_multiline_table(
     let end_pos = pos;
 
     // Extract column boundaries from the separator line
-    let columns =
-        try_parse_table_separator(lines[column_sep_pos]).expect("Column separator must be valid");
+    let columns = try_parse_table_separator(stripped[column_sep_pos])
+        .expect("Column separator must be valid");
 
     // Check for caption before table
-    let caption_before = find_caption_before_table(lines, start_pos);
+    let caption_before = find_caption_before_table(&stripped, start_pos);
 
     // Check for caption after table
     let caption_after = if caption_before.is_some() {
         None
     } else {
-        find_caption_after_table(lines, end_pos)
+        find_caption_after_table(&stripped, end_pos)
     };
 
     // Build the multiline table
@@ -2549,32 +2558,44 @@ pub(crate) fn try_parse_multiline_table(
         }
     }
 
-    // Emit opening separator
+    // Emit opening separator. The dispatch line's prefix was already consumed
+    // by core (`dispatch_tail`); a non-dispatch start (caption-before case)
+    // re-emits its `  > ` prefix via `emit_prefix_at`.
     builder.start_node(SyntaxKind::TABLE_SEPARATOR.into());
-    emit_line_tokens(builder, lines[start_pos]);
+    let tail = window.emit_or_dispatch_tail(builder, start_pos);
+    emit_line_tokens(builder, tail);
     builder.finish_node();
 
-    // Track state for emitting
+    // Track state for emitting. Accumulate ABSOLUTE indices of the lines making
+    // up a multi-line row so each line's container prefix can be re-emitted via
+    // the window.
     let mut in_header = has_header;
-    let mut current_row_lines: Vec<&str> = Vec::new();
+    let mut current_row_indices: Vec<usize> = Vec::new();
 
-    for (i, line) in lines.iter().enumerate().take(end_pos).skip(start_pos + 1) {
+    for (i, &line) in stripped
+        .iter()
+        .enumerate()
+        .take(end_pos)
+        .skip(start_pos + 1)
+    {
         // Column separator (header/body divider)
         if i == column_sep_pos {
             // Emit any accumulated header lines
-            if !current_row_lines.is_empty() {
+            if !current_row_indices.is_empty() {
                 emit_multiline_table_row(
                     builder,
-                    &current_row_lines,
+                    window,
+                    &current_row_indices,
                     &columns,
                     SyntaxKind::TABLE_HEADER,
                     config,
                 );
-                current_row_lines.clear();
+                current_row_indices.clear();
             }
 
             builder.start_node(SyntaxKind::TABLE_SEPARATOR.into());
-            emit_line_tokens(builder, line);
+            let tail = window.emit_or_dispatch_tail(builder, i);
+            emit_line_tokens(builder, tail);
             builder.finish_node();
             in_header = false;
             continue;
@@ -2583,18 +2604,26 @@ pub(crate) fn try_parse_multiline_table(
         // Closing separator (full-width or column separator at end)
         if try_parse_multiline_separator(line).is_some() || is_column_separator(line) {
             // Emit any accumulated row lines
-            if !current_row_lines.is_empty() {
+            if !current_row_indices.is_empty() {
                 let kind = if in_header {
                     SyntaxKind::TABLE_HEADER
                 } else {
                     SyntaxKind::TABLE_ROW
                 };
-                emit_multiline_table_row(builder, &current_row_lines, &columns, kind, config);
-                current_row_lines.clear();
+                emit_multiline_table_row(
+                    builder,
+                    window,
+                    &current_row_indices,
+                    &columns,
+                    kind,
+                    config,
+                );
+                current_row_indices.clear();
             }
 
             builder.start_node(SyntaxKind::TABLE_SEPARATOR.into());
-            emit_line_tokens(builder, line);
+            let tail = window.emit_or_dispatch_tail(builder, i);
+            emit_line_tokens(builder, tail);
             builder.finish_node();
             continue;
         }
@@ -2602,34 +2631,51 @@ pub(crate) fn try_parse_multiline_table(
         // Blank line (row separator)
         if line.trim().is_empty() {
             // Emit accumulated row
-            if !current_row_lines.is_empty() {
+            if !current_row_indices.is_empty() {
                 let kind = if in_header {
                     SyntaxKind::TABLE_HEADER
                 } else {
                     SyntaxKind::TABLE_ROW
                 };
-                emit_multiline_table_row(builder, &current_row_lines, &columns, kind, config);
-                current_row_lines.clear();
+                emit_multiline_table_row(
+                    builder,
+                    window,
+                    &current_row_indices,
+                    &columns,
+                    kind,
+                    config,
+                );
+                current_row_indices.clear();
             }
 
+            // Re-emit the interior `>`-only separator row's container prefix
+            // (`  > `) inside the BLANK_LINE node so it round-trips losslessly.
             builder.start_node(SyntaxKind::BLANK_LINE.into());
-            builder.token(SyntaxKind::BLANK_LINE.into(), line);
+            let tail = window.emit_or_dispatch_tail(builder, i);
+            builder.token(SyntaxKind::BLANK_LINE.into(), tail);
             builder.finish_node();
             continue;
         }
 
         // Content line - accumulate for current row
-        current_row_lines.push(line);
+        current_row_indices.push(i);
     }
 
     // Emit any remaining accumulated lines
-    if !current_row_lines.is_empty() {
+    if !current_row_indices.is_empty() {
         let kind = if in_header {
             SyntaxKind::TABLE_HEADER
         } else {
             SyntaxKind::TABLE_ROW
         };
-        emit_multiline_table_row(builder, &current_row_lines, &columns, kind, config);
+        emit_multiline_table_row(
+            builder,
+            window,
+            &current_row_indices,
+            &columns,
+            kind,
+            config,
+        );
     }
 
     // Emit caption after if present
@@ -2685,24 +2731,30 @@ fn extract_first_line_cell_contents(line: &str, columns: &[Column]) -> Vec<Strin
 }
 
 /// Emit a multiline table row with inline parsing (Phase 7.1).
+///
+/// `indices` are ABSOLUTE line indices into the window's raw buffer; each
+/// physical line re-emits its container prefix (`  > `) via the window before
+/// its content. With an empty prefix the tails equal the raw lines, so emission
+/// is byte-identical to the pre-window path.
 fn emit_multiline_table_row(
     builder: &mut GreenNodeBuilder<'static>,
-    lines: &[&str],
+    window: &StrippedLines<'_, '_>,
+    indices: &[usize],
     columns: &[Column],
     kind: SyntaxKind,
     config: &ParserOptions,
 ) {
-    if lines.is_empty() {
+    if indices.is_empty() {
         return;
     }
 
-    // Extract cell contents from first line only (for CST losslessness)
-    let first_line = lines[0];
-    let cell_contents = extract_first_line_cell_contents(first_line, columns);
-
     builder.start_node(kind.into());
 
-    // Emit first line with TABLE_CELL nodes
+    // Emit the first line's container prefix as tokens, then slice cells from
+    // the prefix-stripped tail (for CST losslessness, only the first physical
+    // line is parsed into cells; continuation lines stay verbatim TEXT).
+    let first_line = window.emit_or_dispatch_tail(builder, indices[0]);
+    let cell_contents = extract_first_line_cell_contents(first_line, columns);
     let (trimmed, newline_str) = strip_newline(first_line);
     let mut current_pos = 0;
 
@@ -2735,9 +2787,11 @@ fn emit_multiline_table_row(
         builder.token(SyntaxKind::NEWLINE.into(), newline_str);
     }
 
-    // Emit continuation lines as TEXT to preserve exact line structure
-    for line in lines.iter().skip(1) {
-        emit_line_tokens(builder, line);
+    // Emit continuation lines as TEXT to preserve exact line structure,
+    // re-emitting each line's container prefix first.
+    for &idx in &indices[1..] {
+        let tail = window.emit_or_dispatch_tail(builder, idx);
+        emit_line_tokens(builder, tail);
     }
 
     builder.finish_node();
@@ -2745,6 +2799,7 @@ fn emit_multiline_table_row(
 
 #[cfg(test)]
 mod multiline_table_tests {
+    use super::super::container_prefix::ContainerPrefix;
     use super::*;
     use crate::syntax::SyntaxNode;
 
@@ -2779,7 +2834,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 9);
@@ -2798,7 +2855,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 6);
@@ -2816,7 +2875,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_none());
     }
@@ -2832,7 +2893,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 4);
@@ -2853,7 +2916,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_some());
         // table (6 lines) + blank + caption
@@ -2873,7 +2938,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 6);
@@ -2903,7 +2970,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         assert!(result.is_none());
     }
@@ -2919,7 +2988,9 @@ mod multiline_table_tests {
         ];
 
         let mut builder = GreenNodeBuilder::new();
-        let result = try_parse_multiline_table(&input, 0, &mut builder, &ParserOptions::default());
+        let prefix = ContainerPrefix::default();
+        let window = StrippedLines::new(&input, 0, &prefix);
+        let result = try_parse_multiline_table(&window, &mut builder, &ParserOptions::default());
 
         // Should not parse because first line isn't a full-width separator
         assert!(result.is_none());

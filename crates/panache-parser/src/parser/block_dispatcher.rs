@@ -1246,7 +1246,12 @@ impl BlockParser for TableParser {
             }
 
             if ctx.config.extensions.multiline_tables
-                && try_parse_multiline_table(lines, table_pos, &mut tmp, ctx.config).is_some()
+                && try_parse_multiline_table(
+                    &StrippedLines::with_dispatch(lines, table_pos, line_pos, prefix),
+                    &mut tmp,
+                    ctx.config,
+                )
+                .is_some()
             {
                 return Some((
                     detection,
@@ -1308,7 +1313,12 @@ impl BlockParser for TableParser {
         }
 
         if ctx.config.extensions.multiline_tables
-            && try_parse_multiline_table(lines, line_pos, &mut tmp, ctx.config).is_some()
+            && try_parse_multiline_table(
+                &StrippedLines::with_dispatch(lines, line_pos, line_pos, prefix),
+                &mut tmp,
+                ctx.config,
+            )
+            .is_some()
         {
             return Some((
                 BlockDetectionResult::Yes,
@@ -1400,7 +1410,11 @@ impl BlockParser for TableParser {
                 }
                 TableKind::Multiline => {
                     if ctx.config.extensions.multiline_tables {
-                        try_parse_multiline_table(lines, pos, builder, ctx.config)
+                        try_parse_multiline_table(
+                            &StrippedLines::with_dispatch(lines, pos, line_pos, prefix),
+                            builder,
+                            ctx.config,
+                        )
                     } else {
                         None
                     }
