@@ -762,12 +762,39 @@ pub(crate) fn markers_match(a: &ListMarker, b: &ListMarker, dialect: crate::Dial
     }
 }
 
+/// One tab stop: the indentation (in columns) required for list continuation
+/// paragraphs and nested lists under the `four_space_rule` extension
+/// (pandoc <= 2.0 list semantics).
+const FOUR_SPACE_RULE_COLS: usize = 4;
+
+/// Column at which a list item's content logically begins. This is the
+/// threshold used downstream for continuation/nesting classification and for
+/// stripping the leading indent off continuation lines.
+///
+/// By default it lines up with the first non-space character after the marker
+/// (CommonMark / pandoc default). Under the `four_space_rule` extension it is a
+/// flat one-tab-width per nesting level, independent of marker width — so a
+/// `100.` marker still requires four-space continuation, not six.
+pub(in crate::parser) fn list_item_content_col(
+    indent_cols: usize,
+    marker_len: usize,
+    spaces_after_cols: usize,
+    config: &ParserOptions,
+) -> usize {
+    if config.extensions.four_space_rule {
+        indent_cols + FOUR_SPACE_RULE_COLS
+    } else {
+        indent_cols + marker_len + spaces_after_cols
+    }
+}
+
 /// Emit a list item node to the builder (marker and whitespace only).
 /// Returns (content_col, text_to_buffer) where text_to_buffer is the content that should be
 /// added to the list item buffer for later inline parsing.
 pub(in crate::parser) fn emit_list_item(
     builder: &mut GreenNodeBuilder<'static>,
     item: &ListItemEmissionInput<'_>,
+    config: &ParserOptions,
 ) -> (usize, String) {
     builder.start_node(SyntaxKind::LIST_ITEM.into());
 
@@ -793,7 +820,12 @@ pub(in crate::parser) fn emit_list_item(
         }
     }
 
-    let content_col = item.indent_cols + item.marker_len + item.spaces_after_cols;
+    let content_col = list_item_content_col(
+        item.indent_cols,
+        item.marker_len,
+        item.spaces_after_cols,
+        config,
+    );
     let content_start = item.indent_bytes + item.marker_len + item.spaces_after_bytes;
 
     // Extract text content to be buffered (instead of emitting it directly).
@@ -1516,7 +1548,7 @@ pub(in crate::parser) fn start_nested_list(
     });
 
     // Add the nested list item
-    let (content_col, text_to_buffer) = emit_list_item(builder, item);
+    let (content_col, text_to_buffer) = emit_list_item(builder, item, config);
     finish_list_item_with_optional_nested(
         containers,
         builder,
@@ -1563,6 +1595,7 @@ pub(in crate::parser) fn add_list_item_with_nested_empty_list(
     builder: &mut GreenNodeBuilder<'static>,
     item: &ListItemEmissionInput<'_>,
     nested_marker: char,
+    config: &ParserOptions,
 ) {
     // First, emit the outer list item (just marker + whitespace)
     builder.start_node(SyntaxKind::LIST_ITEM.into());
@@ -1613,7 +1646,12 @@ pub(in crate::parser) fn add_list_item_with_nested_empty_list(
     builder.finish_node(); // Close nested LIST
 
     // Push container for the outer list item
-    let content_col = item.indent_cols + item.marker_len + item.spaces_after_cols;
+    let content_col = list_item_content_col(
+        item.indent_cols,
+        item.marker_len,
+        item.spaces_after_cols,
+        config,
+    );
     containers.push(Container::ListItem {
         content_col,
         buffer: ListItemBuffer::new(),
@@ -1629,7 +1667,7 @@ pub(in crate::parser) fn add_list_item(
     item: &ListItemEmissionInput<'_>,
     config: &ParserOptions,
 ) -> ListItemFinish {
-    let (content_col, text_to_buffer) = emit_list_item(builder, item);
+    let (content_col, text_to_buffer) = emit_list_item(builder, item, config);
 
     log::trace!(
         "add_list_item: content={:?}, text_to_buffer={:?}",
@@ -1710,7 +1748,8 @@ fn finish_list_item_with_optional_nested(
                 indent_bytes: 0,
                 virtual_marker_space: inner_match.virtual_marker_space,
             };
-            let (inner_content_col, inner_text_to_buffer) = emit_list_item(builder, &inner_item);
+            let (inner_content_col, inner_text_to_buffer) =
+                emit_list_item(builder, &inner_item, config);
             // Recursive call is for nested same-line markers (`- - foo`);
             // the inner content doesn't begin with `>` so no BqDispatch can
             // propagate up. Discard the result.
@@ -1793,7 +1832,7 @@ fn finish_list_item_with_optional_nested(
                     virtual_marker_space: inner_match.virtual_marker_space,
                 };
                 let (inner_content_col, inner_text_to_buffer) =
-                    emit_list_item(builder, &inner_item);
+                    emit_list_item(builder, &inner_item, config);
                 // Same as above: inner content doesn't start with `>` so no
                 // BqDispatch can propagate.
                 let _ = finish_list_item_with_optional_nested(

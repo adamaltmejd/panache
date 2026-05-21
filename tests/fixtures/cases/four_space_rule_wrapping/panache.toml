@@ -1,0 +1,5 @@
+flavor = "pandoc"
+line-width = 40
+
+[extensions]
+four-space-rule = true

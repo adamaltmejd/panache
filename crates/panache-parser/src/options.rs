@@ -73,6 +73,10 @@ pub struct Extensions {
     /// Allow lists without a preceding blank line
     #[cfg_attr(feature = "serde", serde(alias = "lists_without_preceding_blankline"))]
     pub lists_without_preceding_blankline: bool,
+    /// [NON-DEFAULT] Pandoc <= 2.0 list semantics: continuation paragraphs and
+    /// nested lists require four-space (one tab-width) indentation
+    #[cfg_attr(feature = "serde", serde(alias = "four_space_rule"))]
+    pub four_space_rule: bool,
 
     // Code blocks
     /// Fenced code blocks with backticks
@@ -294,6 +298,7 @@ impl Extensions {
             fenced_code_blocks: false,
             fenced_divs: false,
             footnotes: false,
+            four_space_rule: false,
             gfm_auto_identifiers: false,
             grid_tables: false,
             hard_line_breaks: false,
@@ -446,6 +451,7 @@ impl Extensions {
             alerts: false,
             autolink_bare_uris: false,
             emoji: false,
+            four_space_rule: false,
             hard_line_breaks: false,
             mark: false,
             mmd_header_identifiers: false,
@@ -600,6 +606,7 @@ impl Extensions {
                 "lists-without-preceding-blankline" => {
                     base.lists_without_preceding_blankline = value
                 }
+                "four-space-rule" => base.four_space_rule = value,
                 "backtick-code-blocks" => base.backtick_code_blocks = value,
                 "fenced-code-blocks" => base.fenced_code_blocks = value,
                 "fenced-code-attributes" => base.fenced_code_attributes = value,
@@ -697,6 +704,31 @@ mod tests {
         overrides.insert("lists-without-preceding-blankline".to_string(), true);
         let ext = Extensions::merge_with_flavor(overrides, Flavor::Pandoc);
         assert!(ext.lists_without_preceding_blankline);
+    }
+
+    #[test]
+    fn four_space_rule_defaults_off_for_every_flavor() {
+        for flavor in [
+            Flavor::Pandoc,
+            Flavor::Quarto,
+            Flavor::RMarkdown,
+            Flavor::Gfm,
+            Flavor::CommonMark,
+            Flavor::MultiMarkdown,
+        ] {
+            assert!(
+                !Extensions::for_flavor(flavor).four_space_rule,
+                "four_space_rule should be off by default for {flavor:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_with_flavor_accepts_four_space_rule_override() {
+        let mut overrides = HashMap::new();
+        overrides.insert("four-space-rule".to_string(), true);
+        let ext = Extensions::merge_with_flavor(overrides, Flavor::Pandoc);
+        assert!(ext.four_space_rule);
     }
 }
 

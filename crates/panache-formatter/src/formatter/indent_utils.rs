@@ -17,19 +17,38 @@ pub(super) struct ListItemIndent {
     pub spaces_after: usize,
     /// Width of task checkbox if present ("[x] " = 4)
     pub checkbox_width: usize,
+    /// Whether the `four_space_rule` extension is active (changes where
+    /// continuation/nested content is placed).
+    four_space_rule: bool,
+    /// One tab stop in columns — the indent unit used under `four_space_rule`.
+    tab_width: usize,
 }
 
 impl ListItemIndent {
-    /// Calculate the total content indent (where the actual text starts).
+    /// Calculate the total content indent (where the first-line text starts).
     /// This is the sum of all spacing components.
     pub fn content_offset(&self) -> usize {
         self.marker_padding + self.marker_width + self.spaces_after + self.checkbox_width
     }
 
+    /// Column (relative to the list's base indent) at which continuation
+    /// paragraphs and nested lists are placed. By default this lines up with the
+    /// first-line content (`content_offset`); under the `four_space_rule`
+    /// extension it is a flat one-tab-width per nesting level, decoupled from
+    /// marker width — so a wide `100.` marker still nests its children at four
+    /// columns, not six.
+    pub fn continuation_offset(&self) -> usize {
+        if self.four_space_rule {
+            self.tab_width
+        } else {
+            self.content_offset()
+        }
+    }
+
     /// Calculate the hanging indent (including base list indent).
-    /// This is used for wrapping continuation lines.
+    /// This is used for continuation paragraphs, nested lists, and wrapping.
     pub fn hanging_indent(&self, base_indent: usize) -> usize {
-        base_indent + self.content_offset()
+        base_indent + self.continuation_offset()
     }
 }
 
@@ -39,10 +58,14 @@ impl ListItemIndent {
 /// * `marker` - The list marker string (e.g., "-", "1.", "a)", "(i)")
 /// * `max_marker_width` - Maximum marker width in this list (for alignment), 0 if no alignment
 /// * `has_checkbox` - Whether this item has a task checkbox ([x] or [ ])
+/// * `four_space_rule` - Whether the `four_space_rule` extension is active
+/// * `tab_width` - One tab stop in columns (the four-space-rule indent unit)
 pub(super) fn calculate_list_item_indent(
     marker: &str,
     max_marker_width: usize,
     has_checkbox: bool,
+    four_space_rule: bool,
+    tab_width: usize,
 ) -> ListItemIndent {
     // Determine if this marker should be right-aligned
     let is_alignable = is_alignable_marker(marker);
@@ -55,6 +78,11 @@ pub(super) fn calculate_list_item_indent(
     };
 
     // Spaces after marker (minimum 1, or 2 for uppercase letter markers like "A.")
+    // The `four_space_rule` extension does NOT change marker spacing: the marker
+    // keeps its normal trailing space and only continuation/nested content moves
+    // to a flat tab stop (see `continuation_offset`). Padding the marker so the
+    // first line also lands on that tab stop (pandoc's `-   a` / `1.  a` style)
+    // is a separate formatting choice we may add as its own knob later.
     let spaces_after = if marker.len() == 2
         && marker.starts_with(|c: char| c.is_ascii_uppercase())
         && marker.ends_with('.')
@@ -72,6 +100,8 @@ pub(super) fn calculate_list_item_indent(
         marker_width: marker.len(),
         spaces_after,
         checkbox_width,
+        four_space_rule,
+        tab_width,
     }
 }
 
@@ -114,17 +144,18 @@ mod tests {
 
     #[test]
     fn test_bullet_marker_no_alignment() {
-        let indent = calculate_list_item_indent("-", 0, false);
+        let indent = calculate_list_item_indent("-", 0, false, false, 4);
         assert_eq!(indent.marker_padding, 0);
         assert_eq!(indent.marker_width, 1);
         assert_eq!(indent.spaces_after, 1);
         assert_eq!(indent.checkbox_width, 0);
         assert_eq!(indent.content_offset(), 2);
+        assert_eq!(indent.continuation_offset(), 2);
     }
 
     #[test]
     fn test_numeric_marker_no_alignment() {
-        let indent = calculate_list_item_indent("1.", 0, false);
+        let indent = calculate_list_item_indent("1.", 0, false, false, 4);
         assert_eq!(indent.marker_padding, 0);
         assert_eq!(indent.marker_width, 2);
         assert_eq!(indent.spaces_after, 1);
@@ -134,7 +165,7 @@ mod tests {
     #[test]
     fn test_roman_numeral_with_alignment() {
         // "i." in a list where max width is 4 (e.g., "iv.")
-        let indent = calculate_list_item_indent("i.", 4, false);
+        let indent = calculate_list_item_indent("i.", 4, false, false, 4);
         assert_eq!(indent.marker_padding, 2); // Pad "i." to align with "iv."
         assert_eq!(indent.marker_width, 2);
         assert_eq!(indent.spaces_after, 1);
@@ -143,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_uppercase_letter_marker() {
-        let indent = calculate_list_item_indent("A.", 0, false);
+        let indent = calculate_list_item_indent("A.", 0, false, false, 4);
         assert_eq!(indent.marker_padding, 0);
         assert_eq!(indent.marker_width, 2);
         assert_eq!(indent.spaces_after, 2); // Uppercase letters get 2 spaces
@@ -152,9 +183,40 @@ mod tests {
 
     #[test]
     fn test_task_checkbox() {
-        let indent = calculate_list_item_indent("-", 0, true);
+        let indent = calculate_list_item_indent("-", 0, true, false, 4);
         assert_eq!(indent.checkbox_width, 4);
         assert_eq!(indent.content_offset(), 6); // 1 + 1 + 4
+    }
+
+    #[test]
+    fn four_space_rule_keeps_bullet_marker_spacing_but_nests_at_tab_stop() {
+        // The marker keeps its single trailing space (`- a`); only continuation
+        // and nested content move to the flat tab stop.
+        let indent = calculate_list_item_indent("-", 0, false, true, 4);
+        assert_eq!(indent.spaces_after, 1);
+        assert_eq!(indent.content_offset(), 2); // first-line content stays at col 2
+        assert_eq!(indent.continuation_offset(), 4);
+        assert_eq!(indent.hanging_indent(0), 4);
+        assert_eq!(indent.hanging_indent(4), 8); // depth 2 = 8 columns
+    }
+
+    #[test]
+    fn four_space_rule_keeps_ordered_marker_spacing_but_nests_at_tab_stop() {
+        let indent = calculate_list_item_indent("1.", 0, false, true, 4);
+        assert_eq!(indent.spaces_after, 1);
+        assert_eq!(indent.content_offset(), 3); // first-line content stays at col 3
+        assert_eq!(indent.continuation_offset(), 4);
+    }
+
+    #[test]
+    fn four_space_rule_wide_marker_nests_at_flat_tab_stop() {
+        // "100." overhangs the tab stop; children still sit at a flat tab-width
+        // (col 4), never rounded up.
+        let indent = calculate_list_item_indent("100.", 0, false, true, 4);
+        assert_eq!(indent.spaces_after, 1);
+        assert_eq!(indent.content_offset(), 5);
+        assert_eq!(indent.continuation_offset(), 4);
+        assert_eq!(indent.hanging_indent(0), 4);
     }
 
     #[test]
@@ -180,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_hanging_indent() {
-        let indent = calculate_list_item_indent("i.", 4, false);
+        let indent = calculate_list_item_indent("i.", 4, false, false, 4);
         assert_eq!(indent.hanging_indent(0), 5); // No base indent
         assert_eq!(indent.hanging_indent(2), 7); // With base indent of 2
     }

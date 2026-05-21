@@ -798,7 +798,7 @@ for initial implementation.
       `lists_without_preceding_blankline`.
 - [x] Extension behavior: four-space list indentation rules are supported in
       compatibility mode.
-- [ ] Add explicit extension-gated handling/config semantics for
+- [x] Add explicit extension-gated handling/config semantics for
       `four_space_rule`.
 
 #### Non-Default: Line Breaks

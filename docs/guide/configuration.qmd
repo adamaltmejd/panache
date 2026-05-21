@@ -452,6 +452,7 @@ startnum = true
 example-lists = true
 task-lists = true
 definition-lists = true
+four-space-rule = false
 ```
 
 `fancy-lists`
@@ -468,6 +469,16 @@ definition-lists = true
 
 `definition-lists`
 :   Term/definition syntax (default: enabled)
+
+`four-space-rule`
+:   Pandoc \<= 2.0 list semantics: list continuation paragraphs and nested lists
+    require four-space (one tab-width) indentation rather than lining up with
+    the first character after the marker (default: disabled, non-default
+    extension). Enable this to produce output that strict Markdown parsers such
+    as [Python-Markdown](https://python-markdown.github.io/) accept --- they
+    treat two-space-indented continuations as escaping the list. When enabled,
+    the formatter indents nested and continuation content a flat four columns
+    per level (`- a` / `- a1`); markers keep their normal trailing space.
 
 #### Code Blocks
 

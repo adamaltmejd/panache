@@ -1078,6 +1078,7 @@ impl<'a> Parser<'a> {
                             &mut self.builder,
                             &list_item,
                             nested_marker,
+                            self.config,
                         );
                         lists::ListItemFinish::Done
                     } else {
@@ -1134,6 +1135,7 @@ impl<'a> Parser<'a> {
                     &mut self.builder,
                     &list_item,
                     nested_marker,
+                    self.config,
                 );
                 lists::ListItemFinish::Done
             } else {
@@ -1178,6 +1180,7 @@ impl<'a> Parser<'a> {
                 &mut self.builder,
                 &list_item,
                 nested_marker,
+                self.config,
             );
             lists::ListItemFinish::Done
         } else {
@@ -1411,6 +1414,7 @@ impl<'a> Parser<'a> {
                                 &mut self.builder,
                                 &list_item,
                                 nested_marker,
+                                self.config,
                             );
                             lists::ListItemFinish::Done
                         } else {
@@ -2318,6 +2322,7 @@ impl<'a> Parser<'a> {
                                 &mut self.builder,
                                 &list_item,
                                 nested_marker,
+                                self.config,
                             );
                             0
                         } else {
@@ -2670,6 +2675,7 @@ impl<'a> Parser<'a> {
                             &mut self.builder,
                             &list_item,
                             nested_marker,
+                            self.config,
                         );
                         0
                     } else {

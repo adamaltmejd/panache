@@ -197,6 +197,8 @@ impl Formatter {
     pub(super) fn calculate_list_item_content_indent(
         item_node: &SyntaxNode,
         max_marker_width: usize,
+        four_space_rule: bool,
+        tab_width: usize,
     ) -> usize {
         let marker = Self::extract_list_marker(item_node).unwrap_or_default();
 
@@ -209,8 +211,16 @@ impl Formatter {
             }
         });
 
-        let indent = calculate_list_item_indent(&marker, max_marker_width, has_checkbox);
-        indent.content_offset()
+        let indent = calculate_list_item_indent(
+            &marker,
+            max_marker_width,
+            has_checkbox,
+            four_space_rule,
+            tab_width,
+        );
+        // Continuation/nested content goes at the hanging column, which under
+        // the four-space rule is decoupled from the marker-relative offset.
+        indent.continuation_offset()
     }
 
     /// Format a paragraph that is a continuation of a list item.
@@ -386,8 +396,13 @@ impl Formatter {
                 item_count += 1;
 
                 // Calculate content indent for this list item (marker + space)
-                last_item_content_indent =
-                    indent + Self::calculate_list_item_content_indent(&child, max_marker_width);
+                last_item_content_indent = indent
+                    + Self::calculate_list_item_content_indent(
+                        &child,
+                        max_marker_width,
+                        self.config.parser_extensions.four_space_rule,
+                        self.config.tab_width,
+                    );
 
                 self.format_node_sync(&child, indent);
 
@@ -550,11 +565,25 @@ impl Formatter {
         let max_marker_width = self.max_marker_widths.last().copied().unwrap_or(0);
 
         // Calculate indentation using the utility
-        let list_indent = calculate_list_item_indent(&marker, max_marker_width, checkbox.is_some());
+        let list_indent = calculate_list_item_indent(
+            &marker,
+            max_marker_width,
+            checkbox.is_some(),
+            self.config.parser_extensions.four_space_rule,
+            self.config.tab_width,
+        );
 
         let total_indent = indent;
+        // `hanging` is the column for nested blocks (nested lists, continuation
+        // paragraphs after a blank line, code blocks) — under `four_space_rule`
+        // these must sit at a flat tab stop. `content_indent` is the column for
+        // the item's *own* wrapped paragraph text, which is lazy continuation and
+        // just lines up with the first-line content after the marker. The two
+        // are equal except under `four_space_rule`, where the marker is left
+        // unpadded (content at e.g. col 2) while nesting moves to col 4.
         let hanging = list_indent.hanging_indent(total_indent);
-        let available_width = self.config.line_width.saturating_sub(hanging);
+        let content_indent = total_indent + list_indent.content_offset();
+        let available_width = self.config.line_width.saturating_sub(content_indent);
 
         let first_non_blank_child = node
             .children()
@@ -846,7 +875,7 @@ impl Formatter {
                         self.output.push(' ');
                     }
                 } else {
-                    self.output.push_str(&" ".repeat(hanging));
+                    self.output.push_str(&" ".repeat(content_indent));
                 }
                 self.output.push_str(line.trim_start());
                 if !has_only_empty_nested_list {
@@ -870,8 +899,9 @@ impl Formatter {
                         self.output.push(' ');
                     }
                 } else {
-                    // Hanging indent includes all leading whitespace
-                    self.output.push_str(&" ".repeat(hanging));
+                    // Lazy continuation of the item's paragraph aligns with the
+                    // first-line content, not the nested-block hanging column.
+                    self.output.push_str(&" ".repeat(content_indent));
                 }
                 if i > 0 {
                     self.output.push_str(text.trim_start());
@@ -902,8 +932,9 @@ impl Formatter {
                         self.output.push(' ');
                     }
                 } else {
-                    // Hanging indent includes all leading whitespace
-                    self.output.push_str(&" ".repeat(hanging));
+                    // Lazy continuation of the item's paragraph aligns with the
+                    // first-line content, not the nested-block hanging column.
+                    self.output.push_str(&" ".repeat(content_indent));
                 }
                 let mut rendered_line = if i > 0 {
                     line.trim_start().to_string()
@@ -926,7 +957,7 @@ impl Formatter {
                             let trimmed = segment.trim_start();
                             if !trimmed.is_empty() {
                                 self.output.push('\n');
-                                self.output.push_str(&" ".repeat(hanging));
+                                self.output.push_str(&" ".repeat(content_indent));
                                 self.output.push_str(trimmed);
                             }
                         }
