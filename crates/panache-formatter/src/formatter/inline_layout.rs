@@ -644,20 +644,7 @@ fn append_span_closing(node: &SyntaxNode, out: &mut String) {
             NodeOrToken::Node(span_child) => match span_child.kind() {
                 SyntaxKind::SPAN_CONTENT => past_content = true,
                 SyntaxKind::SPAN_ATTRIBUTES if past_content => {
-                    out.push('{');
-                    let mut attr_parts = Vec::new();
-                    for elem in span_child.children_with_tokens() {
-                        if let NodeOrToken::Token(t) = elem
-                            && t.kind() == SyntaxKind::TEXT
-                        {
-                            let text = t.text();
-                            if text != "{" && text != "}" {
-                                attr_parts.push(text.to_string());
-                            }
-                        }
-                    }
-                    out.push_str(&attr_parts.join(" "));
-                    out.push('}');
+                    out.push_str(&super::core::normalize_span_attributes(&span_child));
                 }
                 _ => {}
             },

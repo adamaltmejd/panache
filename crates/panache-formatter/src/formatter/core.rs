@@ -2668,3 +2668,18 @@ pub(super) fn normalize_attribute_text(attr_text: &str) -> String {
     out.push('}');
     out
 }
+
+/// Render a `SPAN_ATTRIBUTES` node, collapsing interior whitespace runs to a
+/// single space. Reads the node's `.text()` rather than its children, so it is
+/// independent of whether the body is structured into `ATTR_*` tokens. This
+/// reproduces the historical span normalization (preserve token order, single-
+/// space separation) byte-for-byte.
+pub(super) fn normalize_span_attributes(node: &SyntaxNode) -> String {
+    let text = node.text().to_string();
+    let inner = text
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .unwrap_or(text.as_str());
+    let joined = inner.split_whitespace().collect::<Vec<_>>().join(" ");
+    format!("{{{joined}}}")
+}

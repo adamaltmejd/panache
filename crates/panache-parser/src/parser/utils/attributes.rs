@@ -452,6 +452,19 @@ pub fn emit_div_info_node(builder: &mut GreenNodeBuilder, raw_attr_text: &str) {
     );
 }
 
+/// Emit a bracketed-span `SPAN_ATTRIBUTES` node, structuring the Pandoc `{...}`
+/// body the same way [`emit_attribute_node`] does. Malformed/empty bodies fall
+/// back to a single opaque `TEXT` token, preserving the prior
+/// `SPAN_ATTRIBUTES { TEXT(...) }` shape.
+pub fn emit_span_attributes_node(builder: &mut GreenNodeBuilder, raw_attr_text: &str) {
+    emit_attribute_node_with_kinds(
+        builder,
+        SyntaxKind::SPAN_ATTRIBUTES,
+        SyntaxKind::TEXT,
+        raw_attr_text,
+    );
+}
+
 /// Shared structuring core for attribute-bearing nodes. `node_kind` is the outer
 /// wrapper (`ATTRIBUTE`, `DIV_INFO`, …); `opaque_token_kind` is the single token
 /// the non-`{...}`/unrecognized fallback emits (so each caller keeps its prior

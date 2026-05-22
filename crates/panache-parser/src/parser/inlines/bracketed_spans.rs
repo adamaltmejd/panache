@@ -4,6 +4,7 @@
 
 use super::core::parse_inline_text;
 use crate::options::ParserOptions;
+use crate::parser::utils::attributes::emit_span_attributes_node;
 use crate::syntax::SyntaxKind;
 use rowan::GreenNodeBuilder;
 
@@ -109,33 +110,10 @@ pub(crate) fn emit_bracketed_span(
     // Closing bracket
     builder.token(SyntaxKind::SPAN_BRACKET_CLOSE.into(), "]");
 
-    // Attributes (preserve all whitespace - formatter will normalize)
-    builder.start_node(SyntaxKind::SPAN_ATTRIBUTES.into());
-    builder.token(SyntaxKind::TEXT.into(), "{");
-
-    // Parse attributes byte-by-byte to preserve whitespace
-    let mut pos = 0;
-    let bytes = attributes.as_bytes();
-    while pos < bytes.len() {
-        if bytes[pos].is_ascii_whitespace() {
-            // Emit whitespace run
-            let start = pos;
-            while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-                pos += 1;
-            }
-            builder.token(SyntaxKind::WHITESPACE.into(), &attributes[start..pos]);
-        } else {
-            // Emit non-whitespace run
-            let start = pos;
-            while pos < bytes.len() && !bytes[pos].is_ascii_whitespace() {
-                pos += 1;
-            }
-            builder.token(SyntaxKind::TEXT.into(), &attributes[start..pos]);
-        }
-    }
-
-    builder.token(SyntaxKind::TEXT.into(), "}");
-    builder.finish_node(); // SpanAttributes
+    // Attributes: structure the Pandoc `{...}` body into ATTR_* children,
+    // wrapping the original source bytes (formatter normalizes on output).
+    // `attributes` is the inner content; reconstruct the full `{...}` slice.
+    emit_span_attributes_node(builder, &format!("{{{attributes}}}"));
 
     builder.finish_node(); // BracketedSpan
 }

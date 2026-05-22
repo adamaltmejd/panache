@@ -2265,28 +2265,28 @@ fn bracketed_span_inline(node: &SyntaxNode) -> Inline {
     let is_html = node
         .children_with_tokens()
         .any(|el| matches!(&el, NodeOrToken::Token(t) if t.kind() == SyntaxKind::SPAN_BRACKET_OPEN && t.text().starts_with('<')));
-    let attr_text = node.children_with_tokens().find_map(|el| match el {
-        NodeOrToken::Token(t) if t.kind() == SyntaxKind::SPAN_ATTRIBUTES => {
-            Some(t.text().to_string())
-        }
-        NodeOrToken::Node(n) if n.kind() == SyntaxKind::SPAN_ATTRIBUTES => {
-            Some(n.text().to_string())
-        }
-        _ => None,
-    });
-    let attr = attr_text
-        .map(|raw| {
-            let trimmed = raw.trim();
-            if is_html {
-                parse_html_attrs(trimmed)
-            } else if let Some(inner) = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
-            {
-                parse_attr_block(inner)
-            } else {
-                Attr::default()
-            }
-        })
-        .unwrap_or_default();
+    let attr = if is_html {
+        // Legacy native-span path: `SPAN_ATTRIBUTES` carries HTML `class="..."`
+        // syntax as an opaque token (structured in a later step).
+        node.children_with_tokens()
+            .find(|el| el.kind() == SyntaxKind::SPAN_ATTRIBUTES)
+            .map(|el| {
+                let raw = match el {
+                    NodeOrToken::Node(n) => n.text().to_string(),
+                    NodeOrToken::Token(t) => t.text().to_string(),
+                };
+                parse_html_attrs(raw.trim())
+            })
+            .unwrap_or_default()
+    } else {
+        // Pandoc bracketed span: `SPAN_ATTRIBUTES` is structured into ATTR_*
+        // children; `attr_from_attribute_node` reads them (and reparses an
+        // opaque/empty body via its own fallback).
+        node.children()
+            .find(|n| n.kind() == SyntaxKind::SPAN_ATTRIBUTES)
+            .map(|n| attr_from_attribute_node(&n))
+            .unwrap_or_default()
+    };
     let content = node
         .children()
         .find(|c| c.kind() == SyntaxKind::SPAN_CONTENT)

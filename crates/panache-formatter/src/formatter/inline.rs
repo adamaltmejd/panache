@@ -1,5 +1,5 @@
 use crate::config::{Config, MathDelimiterStyle};
-use crate::formatter::core::normalize_attribute_text;
+use crate::formatter::core::{normalize_attribute_text, normalize_span_attributes};
 use crate::formatter::shortcodes::format_shortcode;
 use crate::formatter::smart::normalize_smart_punctuation;
 use crate::syntax::{DisplayMath, SyntaxKind, SyntaxNode};
@@ -369,25 +369,9 @@ pub(super) fn format_inline_node(node: &SyntaxNode, config: &Config) -> String {
                                 }
                             }
                         } else if n.kind() == SyntaxKind::SPAN_ATTRIBUTES {
-                            // Normalize attributes: skip WHITESPACE, join with single space
-                            result.push('{');
-                            let mut attr_parts = Vec::new();
-                            for elem in n.children_with_tokens() {
-                                match elem {
-                                    NodeOrToken::Token(t) => {
-                                        // Skip braces and whitespace
-                                        if t.kind() == SyntaxKind::TEXT {
-                                            let text = t.text();
-                                            if text != "{" && text != "}" {
-                                                attr_parts.push(text.to_string());
-                                            }
-                                        }
-                                    }
-                                    NodeOrToken::Node(_) => {} // Shouldn't happen
-                                }
-                            }
-                            result.push_str(&attr_parts.join(" "));
-                            result.push('}');
+                            // Normalize attributes: collapse interior whitespace
+                            // runs to a single space (structure-independent).
+                            result.push_str(&normalize_span_attributes(&n));
                         } else {
                             result.push_str(&n.text().to_string());
                         }

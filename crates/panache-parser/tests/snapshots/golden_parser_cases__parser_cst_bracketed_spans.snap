@@ -1,6 +1,5 @@
 ---
 source: crates/panache-parser/tests/golden_parser_cases.rs
-assertion_line: 97
 expression: cst_output
 ---
 DOCUMENT@0..338
@@ -22,7 +21,7 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@49..50 "]"
       SPAN_ATTRIBUTES@50..62
         TEXT@50..51 "{"
-        TEXT@51..61 ".highlight"
+        ATTR_CLASS@51..61 ".highlight"
         TEXT@61..62 "}"
     NEWLINE@62..63 "\n"
   BLANK_LINE@63..64
@@ -46,7 +45,7 @@ DOCUMENT@0..338
       SPAN_ATTRIBUTES@110..120
         TEXT@110..111 "{"
         WHITESPACE@111..112 " "
-        TEXT@112..119 ".styled"
+        ATTR_CLASS@112..119 ".styled"
         TEXT@119..120 "}"
     NEWLINE@120..121 "\n"
   BLANK_LINE@121..122
@@ -65,7 +64,7 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@155..156 "]"
       SPAN_ATTRIBUTES@156..168
         TEXT@156..157 "{"
-        TEXT@157..166 ".code-ref"
+        ATTR_CLASS@157..166 ".code-ref"
         WHITESPACE@166..167 " "
         TEXT@167..168 "}"
     NEWLINE@168..169 "\n"
@@ -80,7 +79,7 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@192..193 "]"
       SPAN_ATTRIBUTES@193..197
         TEXT@193..194 "{"
-        TEXT@194..196 ".a"
+        ATTR_CLASS@194..196 ".a"
         TEXT@196..197 "}"
     TEXT@197..202 " and "
     BRACKETED_SPAN@202..214
@@ -90,7 +89,7 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@209..210 "]"
       SPAN_ATTRIBUTES@210..214
         TEXT@210..211 "{"
-        TEXT@211..213 ".b"
+        ATTR_CLASS@211..213 ".b"
         TEXT@213..214 "}"
     TEXT@214..224 " together."
     NEWLINE@224..225 "\n"
@@ -110,7 +109,7 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@262..263 "]"
       SPAN_ATTRIBUTES@263..273
         TEXT@263..264 "{"
-        TEXT@264..272 ".example"
+        ATTR_CLASS@264..272 ".example"
         TEXT@272..273 "}"
     NEWLINE@273..274 "\n"
   BLANK_LINE@274..275
@@ -124,12 +123,15 @@ DOCUMENT@0..338
       SPAN_BRACKET_CLOSE@300..301 "]"
       SPAN_ATTRIBUTES@301..337
         TEXT@301..302 "{"
-        TEXT@302..307 "#myid"
+        ATTR_ID@302..307 "#myid"
         WHITESPACE@307..309 "  "
-        TEXT@309..316 ".class1"
+        ATTR_CLASS@309..316 ".class1"
         WHITESPACE@316..317 " "
-        TEXT@317..324 ".class2"
+        ATTR_CLASS@317..324 ".class2"
         WHITESPACE@324..325 " "
-        TEXT@325..336 "key=\"value\""
+        ATTR_KEY_VALUE@325..336
+          ATTR_KEY@325..328 "key"
+          TEXT@328..329 "="
+          ATTR_VALUE@329..336 "\"value\""
         TEXT@336..337 "}"
     NEWLINE@337..338 "\n"
