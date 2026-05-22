@@ -26,7 +26,9 @@ DOCUMENT@0..81
       TEXT@25..33 "<section"
       WHITESPACE@33..34 " "
       HTML_ATTRS@34..44
-        TEXT@34..44 "id=\"intro\""
+        TEXT@34..38 "id=\""
+        ATTR_ID@38..43 "intro"
+        TEXT@43..44 "\""
       TEXT@44..45 ">"
       NEWLINE@45..46 "\n"
     HEADING@46..56

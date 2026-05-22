@@ -9,7 +9,9 @@ DOCUMENT@0..24
       NEWLINE@4..5 "\n"
       WHITESPACE@5..7 "  "
       HTML_ATTRS@7..13
-        TEXT@7..13 "id=\"x\""
+        TEXT@7..11 "id=\""
+        ATTR_ID@11..12 "x"
+        TEXT@12..13 "\""
       TEXT@13..14 ">"
     PLAIN@14..17
       TEXT@14..17 "foo"

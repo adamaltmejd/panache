@@ -101,13 +101,17 @@ impl AttributeNode {
 
     pub fn id_value_range(&self) -> Option<rowan::TextRange> {
         if self.has_structured_children() {
-            // Precise inner-value range: the ATTR_ID token minus its `#`.
+            // Precise inner-value range: the ATTR_ID token, minus its leading
+            // `#` for Pandoc `{...}` attributes. HTML_ATTRS ids are bare (no
+            // marker), so the whole token range is the value.
             let tok = self.structured_id_token()?;
             let r = tok.text_range();
-            return Some(rowan::TextRange::new(
-                r.start() + rowan::TextSize::from(1),
-                r.end(),
-            ));
+            let lead = if tok.text().starts_with('#') {
+                rowan::TextSize::from(1)
+            } else {
+                rowan::TextSize::from(0)
+            };
+            return Some(rowan::TextRange::new(r.start() + lead, r.end()));
         }
 
         let id = self.id()?;

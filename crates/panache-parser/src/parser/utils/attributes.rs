@@ -346,12 +346,114 @@ pub fn parse_html_tag_attributes(tag_text: &str) -> Option<AttributeBlock> {
 /// `AttributeNode::id` for the structural `HTML_ATTRS` CST node, whose
 /// text holds JUST the attribute region.
 pub fn parse_html_attribute_list(attrs_text: &str) -> Option<AttributeBlock> {
+    let comps = html_attribute_spans(attrs_text);
+    if comps.is_empty() {
+        return None;
+    }
     let mut identifier: Option<String> = None;
     let mut classes: Vec<String> = Vec::new();
     let mut key_values: Vec<(String, String)> = Vec::new();
+    for comp in &comps {
+        match comp {
+            HtmlAttrComponent::Id(r) => {
+                if identifier.is_none() {
+                    identifier = Some(attrs_text[r.clone()].to_string());
+                }
+            }
+            HtmlAttrComponent::Class(r) => classes.push(attrs_text[r.clone()].to_string()),
+            HtmlAttrComponent::KeyValue { key, value, .. } => {
+                key_values.push((
+                    attrs_text[key.clone()].to_string(),
+                    attr_value_string(&attrs_text[value.clone()]),
+                ));
+            }
+            HtmlAttrComponent::Flag(r) => {
+                key_values.push((attrs_text[r.clone()].to_string(), String::new()));
+            }
+        }
+    }
+    if identifier.is_none() && classes.is_empty() && key_values.is_empty() {
+        return None;
+    }
+    Some(AttributeBlock {
+        identifier,
+        classes,
+        key_values,
+    })
+}
 
-    let bytes = attrs_text.as_bytes();
+/// One recognized HTML attribute, as byte ranges relative to the attribute
+/// body passed to [`html_attribute_spans`] (the bytes between a tag name and
+/// the closing `>`, exclusive). Range semantics match the `ATTR_*` token each
+/// becomes: `Id`/`Class` wrap the bare value (quotes excluded — the reader uses
+/// the text verbatim, since HTML has no `#`/`.` marker), while `KeyValue` keeps
+/// the value's quotes (the reader strips them), mirroring the Pandoc
+/// convention. The single source of truth shared by [`parse_html_attribute_list`]
+/// (string derivation) and [`emit_html_attrs_node`] (CST emission).
+#[derive(Debug, Clone, PartialEq)]
+enum HtmlAttrComponent {
+    /// `id="x"` → range covers the bare id value (`x`); only the first counts.
+    Id(std::ops::Range<usize>),
+    /// One whitespace-separated word of a `class="a b"` value.
+    Class(std::ops::Range<usize>),
+    /// `key="v"` / `key=v` → key range, `=` byte index, value range (value
+    /// includes surrounding quotes when present).
+    KeyValue {
+        key: std::ops::Range<usize>,
+        eq: usize,
+        value: std::ops::Range<usize>,
+    },
+    /// A valueless attribute (`hidden`) → key range only (projects to `(key,"")`).
+    Flag(std::ops::Range<usize>),
+}
+
+/// Strip a matching surrounding quote pair from `[start, end)` of `content`,
+/// returning the inner range. An unterminated opening quote drops just the
+/// opening; unquoted ranges are returned unchanged. Mirrors the quote handling
+/// in [`attr_value_string`].
+fn html_value_inner_range(content: &str, start: usize, end: usize) -> std::ops::Range<usize> {
+    let b = content.as_bytes();
+    if end > start && (b[start] == b'"' || b[start] == b'\'') {
+        let q = b[start];
+        if end > start + 1 && b[end - 1] == q {
+            return (start + 1)..(end - 1);
+        }
+        return (start + 1)..end;
+    }
+    start..end
+}
+
+/// Whitespace-separated word ranges within `[start, end)` of `content`.
+fn html_word_ranges(content: &str, start: usize, end: usize) -> Vec<std::ops::Range<usize>> {
+    let b = content.as_bytes();
+    let mut out = Vec::new();
+    let mut i = start;
+    while i < end {
+        while i < end && b[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= end {
+            break;
+        }
+        let ws = i;
+        while i < end && !b[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        out.push(ws..i);
+    }
+    out
+}
+
+/// Scan an HTML attribute body into [`HtmlAttrComponent`]s in source order.
+/// Recognizes `id="x"`, `class="a b"` (split per word), `key="v"`/`key=v`, and
+/// valueless flags. Bytes that aren't part of a component (attribute names,
+/// `=`, quotes, whitespace, `/`) are recovered by the emitter from the gaps.
+fn html_attribute_spans(content: &str) -> Vec<HtmlAttrComponent> {
+    let bytes = content.as_bytes();
     let mut i = 0usize;
+    let mut comps: Vec<HtmlAttrComponent> = Vec::new();
+    let mut have_id = false;
+
     while i < bytes.len() {
         match bytes[i] {
             b' ' | b'\t' | b'\n' | b'\r' | b'/' => {
@@ -364,61 +466,124 @@ pub fn parse_html_attribute_list(attrs_text: &str) -> Option<AttributeBlock> {
                 {
                     i += 1;
                 }
-                let key = &attrs_text[key_start..i];
-                let value = if i < bytes.len() && bytes[i] == b'=' {
-                    i += 1;
+                let key_end = i;
+                let key = &content[key_start..key_end];
+
+                if i < bytes.len() && bytes[i] == b'=' {
+                    let eq = i;
+                    i += 1; // skip '='
+                    let value_start = i;
                     if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
                         let quote = bytes[i];
-                        i += 1;
-                        let v_start = i;
+                        i += 1; // opening quote
                         while i < bytes.len() && bytes[i] != quote {
                             i += 1;
                         }
-                        let v = attrs_text[v_start..i].to_string();
                         if i < bytes.len() {
-                            i += 1;
+                            i += 1; // closing quote
                         }
-                        v
                     } else {
-                        let v_start = i;
                         while i < bytes.len()
                             && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'/')
                         {
                             i += 1;
                         }
-                        attrs_text[v_start..i].to_string()
                     }
-                } else {
-                    String::new()
-                };
-                if key.is_empty() {
-                    continue;
-                }
-                match key {
-                    "id" => {
-                        if identifier.is_none() && !value.is_empty() {
-                            identifier = Some(value);
+                    let value_end = i;
+                    match key {
+                        "id" => {
+                            if !have_id {
+                                let inner = html_value_inner_range(content, value_start, value_end);
+                                if inner.end > inner.start {
+                                    comps.push(HtmlAttrComponent::Id(inner));
+                                    have_id = true;
+                                }
+                            }
                         }
-                    }
-                    "class" => {
-                        for c in value.split_ascii_whitespace() {
-                            classes.push(c.to_string());
+                        "class" => {
+                            let inner = html_value_inner_range(content, value_start, value_end);
+                            for w in html_word_ranges(content, inner.start, inner.end) {
+                                comps.push(HtmlAttrComponent::Class(w));
+                            }
                         }
+                        _ => comps.push(HtmlAttrComponent::KeyValue {
+                            key: key_start..key_end,
+                            eq,
+                            value: value_start..value_end,
+                        }),
                     }
-                    _ => key_values.push((key.to_string(), value)),
+                } else if key_end > key_start {
+                    comps.push(HtmlAttrComponent::Flag(key_start..key_end));
                 }
             }
         }
     }
 
-    if identifier.is_none() && classes.is_empty() && key_values.is_empty() {
-        return None;
+    comps
+}
+
+/// Emit a structural `HTML_ATTRS` node, wrapping the source bytes of each
+/// recognized HTML attribute in `ATTR_ID` / `ATTR_CLASS` / `ATTR_KEY_VALUE`
+/// children (bare values — HTML has no `#`/`.` marker). Bytes between/around
+/// components (names, `=`, quotes, whitespace, `/`) become gap tokens, so
+/// `node.text()` is exactly `attrs_text`. An unrecognized/empty body falls back
+/// to a single opaque `TEXT` token.
+pub fn emit_html_attrs_node(builder: &mut GreenNodeBuilder, attrs_text: &str) {
+    emit_html_attrs_with_kind(builder, SyntaxKind::HTML_ATTRS, attrs_text);
+}
+
+/// As [`emit_html_attrs_node`] but for the legacy native-span `SPAN_ATTRIBUTES`
+/// node, which carries HTML `class="..."` syntax (not Pandoc `{...}`).
+pub fn emit_html_span_attributes_node(builder: &mut GreenNodeBuilder, attrs_text: &str) {
+    emit_html_attrs_with_kind(builder, SyntaxKind::SPAN_ATTRIBUTES, attrs_text);
+}
+
+fn emit_html_attrs_with_kind(
+    builder: &mut GreenNodeBuilder,
+    node_kind: SyntaxKind,
+    attrs_text: &str,
+) {
+    builder.start_node(node_kind.into());
+    let comps = html_attribute_spans(attrs_text);
+    if comps.is_empty() {
+        builder.token(SyntaxKind::TEXT.into(), attrs_text);
+    } else {
+        let mut cursor = 0usize;
+        for comp in &comps {
+            let (start, end) = match comp {
+                HtmlAttrComponent::Id(r)
+                | HtmlAttrComponent::Class(r)
+                | HtmlAttrComponent::Flag(r) => (r.start, r.end),
+                HtmlAttrComponent::KeyValue { key, value, .. } => (key.start, value.end),
+            };
+            emit_attribute_gap(builder, &attrs_text[cursor..start]);
+            match comp {
+                HtmlAttrComponent::Id(r) => {
+                    builder.token(SyntaxKind::ATTR_ID.into(), &attrs_text[r.clone()]);
+                }
+                HtmlAttrComponent::Class(r) => {
+                    builder.token(SyntaxKind::ATTR_CLASS.into(), &attrs_text[r.clone()]);
+                }
+                HtmlAttrComponent::Flag(r) => {
+                    builder.start_node(SyntaxKind::ATTR_KEY_VALUE.into());
+                    builder.token(SyntaxKind::ATTR_KEY.into(), &attrs_text[r.clone()]);
+                    builder.finish_node();
+                }
+                HtmlAttrComponent::KeyValue { key, eq, value } => {
+                    builder.start_node(SyntaxKind::ATTR_KEY_VALUE.into());
+                    builder.token(SyntaxKind::ATTR_KEY.into(), &attrs_text[key.clone()]);
+                    builder.token(SyntaxKind::TEXT.into(), &attrs_text[*eq..value.start]);
+                    if value.end > value.start {
+                        builder.token(SyntaxKind::ATTR_VALUE.into(), &attrs_text[value.clone()]);
+                    }
+                    builder.finish_node();
+                }
+            }
+            cursor = end;
+        }
+        emit_attribute_gap(builder, &attrs_text[cursor..]);
     }
-    Some(AttributeBlock {
-        identifier,
-        classes,
-        key_values,
-    })
+    builder.finish_node();
 }
 
 /// Emit a Pandoc `{...}` ATTRIBUTE node by STRUCTURING the raw source slice
@@ -797,6 +962,75 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    fn structured_html_attrs(raw: &str) -> crate::syntax::SyntaxNode {
+        let mut builder = GreenNodeBuilder::new();
+        emit_html_attrs_node(&mut builder, raw);
+        crate::syntax::SyntaxNode::new_root(builder.finish())
+    }
+
+    #[test]
+    fn emit_html_attrs_node_is_lossless_over_shapes() {
+        for raw in [
+            r#"id="x""#,
+            r#"id="x" class="a b" data-key="v""#,
+            r#"class='a  b'"#,
+            r#"id=bare class=one"#,
+            "hidden",
+            r#"id="x" hidden data-n="1""#,
+            r#"  id="x"  /"#,
+            r#"id="""#,
+            "",
+            "   ",
+        ] {
+            let node = structured_html_attrs(raw);
+            assert_eq!(node.text().to_string(), raw, "lossless emit for {raw:?}");
+            assert_eq!(node.kind(), SyntaxKind::HTML_ATTRS);
+        }
+    }
+
+    #[test]
+    fn emit_html_attrs_node_structures_children() {
+        let node = structured_html_attrs(r#"id="x" class="a b" data-key="v" hidden"#);
+        let kinds: Vec<_> = node.children_with_tokens().map(|c| c.kind()).collect();
+        assert_eq!(
+            kinds.iter().filter(|k| **k == SyntaxKind::ATTR_ID).count(),
+            1
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| **k == SyntaxKind::ATTR_CLASS)
+                .count(),
+            2,
+            "class=\"a b\" splits into two ATTR_CLASS tokens"
+        );
+        // `data-key="v"` and the `hidden` flag are both ATTR_KEY_VALUE nodes.
+        assert_eq!(
+            node.children()
+                .filter(|n| n.kind() == SyntaxKind::ATTR_KEY_VALUE)
+                .count(),
+            2
+        );
+    }
+
+    /// The structured walker and the string-deriving parser must agree.
+    #[test]
+    fn html_attribute_list_parse_parity() {
+        let attrs =
+            parse_html_attribute_list(r#"id="x" class="a b" data-key='v w' hidden"#).unwrap();
+        assert_eq!(attrs.identifier.as_deref(), Some("x"));
+        assert_eq!(attrs.classes, vec!["a", "b"]);
+        assert_eq!(
+            attrs.key_values,
+            vec![
+                ("data-key".to_string(), "v w".to_string()),
+                ("hidden".to_string(), String::new()),
+            ]
+        );
+        assert!(parse_html_attribute_list("   ").is_none());
+        assert!(parse_html_attribute_list(r#"id="""#).is_none());
     }
 
     fn structured_div_info(raw: &str) -> crate::syntax::SyntaxNode {

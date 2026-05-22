@@ -31,7 +31,9 @@ DOCUMENT@0..66
         TEXT@29..37 "<section"
         WHITESPACE@37..38 " "
         HTML_ATTRS@38..44
-          TEXT@38..44 "id=\"x\""
+          TEXT@38..42 "id=\""
+          ATTR_ID@42..43 "x"
+          TEXT@43..44 "\""
         TEXT@44..45 ">"
         NEWLINE@45..46 "\n"
       PLAIN@46..53

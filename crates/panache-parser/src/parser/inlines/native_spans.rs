@@ -6,6 +6,7 @@
 //! treated as native Pandoc Span elements instead of raw HTML.
 
 use crate::options::{Dialect, ParserOptions};
+use crate::parser::utils::attributes::{emit_html_attrs_node, emit_html_span_attributes_node};
 use crate::syntax::SyntaxKind;
 use rowan::GreenNodeBuilder;
 
@@ -162,7 +163,7 @@ pub(crate) fn emit_native_span(
     builder.token(SyntaxKind::SPAN_BRACKET_OPEN.into(), "<span");
     if !attrs_text.is_empty() {
         builder.token(SyntaxKind::WHITESPACE.into(), " ");
-        builder.token(SyntaxKind::SPAN_ATTRIBUTES.into(), attrs_text);
+        emit_html_span_attributes_node(builder, attrs_text);
     }
     builder.token(SyntaxKind::SPAN_BRACKET_OPEN.into(), ">");
     builder.start_node(SyntaxKind::SPAN_CONTENT.into());
@@ -212,9 +213,7 @@ fn emit_span_open_tag_tokens(builder: &mut GreenNodeBuilder<'_>, open_tag: &str)
         builder.token(SyntaxKind::WHITESPACE.into(), leading_ws);
     }
     if !attrs_text.is_empty() {
-        builder.start_node(SyntaxKind::HTML_ATTRS.into());
-        builder.token(SyntaxKind::TEXT.into(), attrs_text);
-        builder.finish_node();
+        emit_html_attrs_node(builder, attrs_text);
     }
     if !trailing_ws.is_empty() {
         builder.token(SyntaxKind::WHITESPACE.into(), trailing_ws);

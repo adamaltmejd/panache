@@ -9,7 +9,9 @@ DOCUMENT@0..99
       TEXT@10..15 "<span"
       WHITESPACE@15..16 " "
       HTML_ATTRS@16..27
-        TEXT@16..27 "id=\"marker\""
+        TEXT@16..20 "id=\""
+        ATTR_ID@20..26 "marker"
+        TEXT@26..27 "\""
       TEXT@27..28 ">"
       SPAN_CONTENT@28..35
         TEXT@28..35 "flagged"
@@ -24,7 +26,15 @@ DOCUMENT@0..99
       TEXT@52..57 "<span"
       WHITESPACE@57..58 " "
       HTML_ATTRS@58..76
-        TEXT@58..76 "id=\"x\" class=\"c k\""
+        TEXT@58..62 "id=\""
+        ATTR_ID@62..63 "x"
+        TEXT@63..64 "\""
+        WHITESPACE@64..65 " "
+        TEXT@65..72 "class=\""
+        ATTR_CLASS@72..73 "c"
+        WHITESPACE@73..74 " "
+        ATTR_CLASS@74..75 "k"
+        TEXT@75..76 "\""
       TEXT@76..77 ">"
       SPAN_CONTENT@77..83
         TEXT@77..83 "tagged"

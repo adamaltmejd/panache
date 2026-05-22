@@ -11,7 +11,9 @@ DOCUMENT@0..34
         TEXT@2..8 "<video"
         WHITESPACE@8..9 " "
         HTML_ATTRS@9..15
-          TEXT@9..15 "id=\"x\""
+          TEXT@9..13 "id=\""
+          ATTR_ID@13..14 "x"
+          TEXT@14..15 "\""
         TEXT@15..16 ">"
       PLAIN@16..25
         TEXT@16..20 "foo "

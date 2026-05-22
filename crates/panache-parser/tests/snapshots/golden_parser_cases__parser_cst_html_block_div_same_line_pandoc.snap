@@ -8,7 +8,9 @@ DOCUMENT@0..64
       TEXT@0..4 "<div"
       WHITESPACE@4..5 " "
       HTML_ATTRS@5..11
-        TEXT@5..11 "id=\"x\""
+        TEXT@5..9 "id=\""
+        ATTR_ID@9..10 "x"
+        TEXT@10..11 "\""
       TEXT@11..12 ">"
     PLAIN@12..21
       TEXT@12..16 "foo "
@@ -37,7 +39,9 @@ DOCUMENT@0..64
       TEXT@45..49 "<div"
       WHITESPACE@49..50 " "
       HTML_ATTRS@50..56
-        TEXT@50..56 "id=\"y\""
+        TEXT@50..54 "id=\""
+        ATTR_ID@54..55 "y"
+        TEXT@55..56 "\""
       TEXT@56..57 ">"
     HTML_BLOCK_TAG@57..64
       TEXT@57..63 "</div>"

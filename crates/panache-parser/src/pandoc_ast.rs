@@ -1229,16 +1229,22 @@ fn cst_div_open_tag_attr(node: &SyntaxNode) -> Attr {
     else {
         return Attr::default();
     };
-    let mut parts: Vec<String> = Vec::new();
-    for child in open_tag.children() {
-        if child.kind() == SyntaxKind::HTML_ATTRS {
-            parts.push(child.text().to_string());
+    // A multi-line `<div>` open tag emits one `HTML_ATTRS` region per line;
+    // merge the structured attrs from each (first non-empty id wins, classes
+    // and key-values concatenated in source order).
+    let mut attr = Attr::default();
+    for region in open_tag
+        .children()
+        .filter(|c| c.kind() == SyntaxKind::HTML_ATTRS)
+    {
+        let part = attr_from_html_attrs_node(&region);
+        if attr.id.is_empty() && !part.id.is_empty() {
+            attr.id = part.id;
         }
+        attr.classes.extend(part.classes);
+        attr.kvs.extend(part.kvs);
     }
-    if parts.is_empty() {
-        return Attr::default();
-    }
-    parse_html_attrs(parts.join(" ").trim())
+    attr
 }
 
 /// Project an `HTML_BLOCK` node into one or more `Block`s.
@@ -1966,6 +1972,56 @@ fn strip_attr_value_quotes(raw: &str) -> String {
     }
 }
 
+/// Strip a matching surrounding pair of `"` or `'` from an HTML attribute
+/// value. HTML uses either quote style, both of which are part of the syntax.
+fn strip_any_quotes(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2 {
+        let q = bytes[0];
+        if (q == b'"' || q == b'\'') && bytes[bytes.len() - 1] == q {
+            return raw[1..raw.len() - 1].to_string();
+        }
+    }
+    raw.to_string()
+}
+
+/// Build an `Attr` from a structural `HTML_ATTRS` node (or the legacy
+/// native-span `SPAN_ATTRIBUTES` node, which carries the same HTML syntax),
+/// reading the bare `ATTR_*` children the parser emits. HTML ids/classes carry
+/// no `#`/`.` marker, and values may use either quote style (both stripped). An
+/// opaque node (no recognized attributes) yields `Attr::default()`.
+fn attr_from_html_attrs_node(node: &SyntaxNode) -> Attr {
+    let mut attr = Attr::default();
+    for el in node.children_with_tokens() {
+        match el.kind() {
+            SyntaxKind::ATTR_ID => {
+                if attr.id.is_empty()
+                    && let Some(t) = el.as_token()
+                {
+                    attr.id = t.text().to_string();
+                }
+            }
+            SyntaxKind::ATTR_CLASS => {
+                if let Some(t) = el.as_token() {
+                    attr.classes.push(t.text().to_string());
+                }
+            }
+            SyntaxKind::ATTR_KEY_VALUE => {
+                if let Some(kv) = el.as_node() {
+                    let key = attr_kv_child_text(kv, SyntaxKind::ATTR_KEY);
+                    if !key.is_empty() {
+                        let value =
+                            strip_any_quotes(&attr_kv_child_text(kv, SyntaxKind::ATTR_VALUE));
+                        attr.kvs.push((key, value));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    attr
+}
+
 /// Read a child `ATTRIBUTE` (node or token) on `parent` into an `Attr`. Returns
 /// `Attr::default()` if no attribute is attached or the body isn't
 /// `{...}`-shaped.
@@ -2049,67 +2105,6 @@ fn parse_attr_block(s: &str) -> Attr {
                 } else if !key.is_empty() {
                     // Bare token (legacy class form).
                     classes.push(key);
-                }
-            }
-        }
-    }
-    Attr { id, classes, kvs }
-}
-
-/// Parse HTML-style attributes `class="x" id="y" key="z"` into `Attr`,
-/// mapping `class` (whitespace-split) → classes, `id` → id, others → kvs.
-fn parse_html_attrs(s: &str) -> Attr {
-    let mut id = String::new();
-    let mut classes: Vec<String> = Vec::new();
-    let mut kvs: Vec<(String, String)> = Vec::new();
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        match bytes[i] {
-            b' ' | b'\t' | b'\n' | b'\r' => {
-                i += 1;
-            }
-            _ => {
-                let key_start = i;
-                while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'=') {
-                    i += 1;
-                }
-                let key = s[key_start..i].to_string();
-                let value = if i < bytes.len() && bytes[i] == b'=' {
-                    i += 1;
-                    if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
-                        let quote = bytes[i];
-                        i += 1;
-                        let v_start = i;
-                        while i < bytes.len() && bytes[i] != quote {
-                            i += 1;
-                        }
-                        let v = s[v_start..i].to_string();
-                        if i < bytes.len() {
-                            i += 1;
-                        }
-                        v
-                    } else {
-                        let v_start = i;
-                        while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-                            i += 1;
-                        }
-                        s[v_start..i].to_string()
-                    }
-                } else {
-                    String::new()
-                };
-                if key.is_empty() {
-                    continue;
-                }
-                match key.as_str() {
-                    "class" => {
-                        for c in value.split_ascii_whitespace() {
-                            classes.push(c.to_string());
-                        }
-                    }
-                    "id" => id = value,
-                    _ => kvs.push((key, value)),
                 }
             }
         }
@@ -2265,28 +2260,22 @@ fn bracketed_span_inline(node: &SyntaxNode) -> Inline {
     let is_html = node
         .children_with_tokens()
         .any(|el| matches!(&el, NodeOrToken::Token(t) if t.kind() == SyntaxKind::SPAN_BRACKET_OPEN && t.text().starts_with('<')));
-    let attr = if is_html {
-        // Legacy native-span path: `SPAN_ATTRIBUTES` carries HTML `class="..."`
-        // syntax as an opaque token (structured in a later step).
-        node.children_with_tokens()
-            .find(|el| el.kind() == SyntaxKind::SPAN_ATTRIBUTES)
-            .map(|el| {
-                let raw = match el {
-                    NodeOrToken::Node(n) => n.text().to_string(),
-                    NodeOrToken::Token(t) => t.text().to_string(),
-                };
-                parse_html_attrs(raw.trim())
-            })
-            .unwrap_or_default()
-    } else {
-        // Pandoc bracketed span: `SPAN_ATTRIBUTES` is structured into ATTR_*
-        // children; `attr_from_attribute_node` reads them (and reparses an
-        // opaque/empty body via its own fallback).
-        node.children()
-            .find(|n| n.kind() == SyntaxKind::SPAN_ATTRIBUTES)
-            .map(|n| attr_from_attribute_node(&n))
-            .unwrap_or_default()
-    };
+    let attr = node
+        .children()
+        .find(|n| n.kind() == SyntaxKind::SPAN_ATTRIBUTES)
+        .map(|n| {
+            if is_html {
+                // Legacy native-span path: `SPAN_ATTRIBUTES` carries HTML
+                // `class="..."` syntax, structured into bare ATTR_* children.
+                attr_from_html_attrs_node(&n)
+            } else {
+                // Pandoc bracketed span: `SPAN_ATTRIBUTES` is structured into
+                // ATTR_* children; `attr_from_attribute_node` reads them (and
+                // reparses an opaque/empty body via its own fallback).
+                attr_from_attribute_node(&n)
+            }
+        })
+        .unwrap_or_default();
     let content = node
         .children()
         .find(|c| c.kind() == SyntaxKind::SPAN_CONTENT)
@@ -2296,12 +2285,10 @@ fn bracketed_span_inline(node: &SyntaxNode) -> Inline {
 }
 
 fn inline_html_span_inline(node: &SyntaxNode) -> Inline {
-    let attr_text = node
+    let attr = node
         .children()
         .find(|c| c.kind() == SyntaxKind::HTML_ATTRS)
-        .map(|n| n.text().to_string());
-    let attr = attr_text
-        .map(|raw| parse_html_attrs(raw.trim()))
+        .map(|n| attr_from_html_attrs_node(&n))
         .unwrap_or_default();
     let content = node
         .children()

@@ -9,11 +9,15 @@ DOCUMENT@0..48
       NEWLINE@4..5 "\n"
       WHITESPACE@5..7 "  "
       HTML_ATTRS@7..17
-        TEXT@7..17 "id=\"multi\""
+        TEXT@7..11 "id=\""
+        ATTR_ID@11..16 "multi"
+        TEXT@16..17 "\""
       NEWLINE@17..18 "\n"
       WHITESPACE@18..20 "  "
       HTML_ATTRS@20..29
-        TEXT@20..29 "class=\"x\""
+        TEXT@20..27 "class=\""
+        ATTR_CLASS@27..28 "x"
+        TEXT@28..29 "\""
       NEWLINE@29..30 "\n"
       TEXT@30..31 ">"
       NEWLINE@31..32 "\n"

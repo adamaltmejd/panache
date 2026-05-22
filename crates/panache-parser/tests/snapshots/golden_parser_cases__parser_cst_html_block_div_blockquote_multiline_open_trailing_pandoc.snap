@@ -14,7 +14,9 @@ DOCUMENT@0..43
         WHITESPACE@8..9 " "
         WHITESPACE@9..11 "  "
         HTML_ATTRS@11..17
-          TEXT@11..17 "id=\"x\""
+          TEXT@11..15 "id=\""
+          ATTR_ID@15..16 "x"
+          TEXT@16..17 "\""
         TEXT@17..18 ">"
       PARAGRAPH@18..34
         TEXT@18..26 "trailing"

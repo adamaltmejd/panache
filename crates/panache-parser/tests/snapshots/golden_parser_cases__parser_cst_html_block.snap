@@ -33,7 +33,9 @@ DOCUMENT@0..342
       TEXT@109..113 "<div"
       WHITESPACE@113..114 " "
       HTML_ATTRS@114..131
-        TEXT@114..131 "class=\"container\""
+        TEXT@114..121 "class=\""
+        ATTR_CLASS@121..130 "container"
+        TEXT@130..131 "\""
       TEXT@131..132 ">"
       NEWLINE@132..133 "\n"
     PARAGRAPH@133..152

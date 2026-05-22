@@ -513,6 +513,7 @@ golden_test_cases!(
     mmd_title_block,
     mmd_link_attributes,
     mmd_link_attributes_disabled,
+    native_span_html_attrs_commonmark,
     nested_headings_in_containers,
     nested_list_blank_between_outer_items_commonmark,
     multiline_table_single_row,

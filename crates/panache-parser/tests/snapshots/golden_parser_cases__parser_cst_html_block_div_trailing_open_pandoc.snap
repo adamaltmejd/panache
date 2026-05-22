@@ -8,7 +8,9 @@ DOCUMENT@0..23
       TEXT@0..4 "<div"
       WHITESPACE@4..5 " "
       HTML_ATTRS@5..11
-        TEXT@5..11 "id=\"x\""
+        TEXT@5..9 "id=\""
+        ATTR_ID@9..10 "x"
+        TEXT@10..11 "\""
       TEXT@11..12 ">"
     PARAGRAPH@12..16
       TEXT@12..15 "foo"

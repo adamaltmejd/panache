@@ -11,7 +11,9 @@ DOCUMENT@0..30
         TEXT@2..6 "<div"
         WHITESPACE@6..7 " "
         HTML_ATTRS@7..13
-          TEXT@7..13 "id=\"x\""
+          TEXT@7..11 "id=\""
+          ATTR_ID@11..12 "x"
+          TEXT@12..13 "\""
         TEXT@13..14 ">"
       PLAIN@14..23
         TEXT@14..18 "foo "

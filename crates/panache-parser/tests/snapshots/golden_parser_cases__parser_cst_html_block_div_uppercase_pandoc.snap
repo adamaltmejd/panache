@@ -8,7 +8,9 @@ DOCUMENT@0..86
       TEXT@0..4 "<DIV"
       WHITESPACE@4..5 " "
       HTML_ATTRS@5..11
-        TEXT@5..11 "id=\"x\""
+        TEXT@5..9 "id=\""
+        ATTR_ID@9..10 "x"
+        TEXT@10..11 "\""
       TEXT@11..12 ">"
     PLAIN@12..15
       TEXT@12..15 "foo"
@@ -36,7 +38,9 @@ DOCUMENT@0..86
       NEWLINE@49..50 "\n"
       WHITESPACE@50..52 "  "
       HTML_ATTRS@52..58
-        TEXT@52..58 "id=\"m\""
+        TEXT@52..56 "id=\""
+        ATTR_ID@56..57 "m"
+        TEXT@57..58 "\""
       NEWLINE@58..59 "\n"
       TEXT@59..60 ">"
       NEWLINE@60..61 "\n"

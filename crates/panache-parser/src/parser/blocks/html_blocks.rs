@@ -9,6 +9,7 @@ use super::blockquotes::{count_blockquote_markers, strip_n_blockquote_markers};
 use super::container_prefix::{
     ContainerPrefix, ContainerPrefixLine, ContainerPrefixState, emit_container_prefix_tokens,
 };
+use crate::parser::utils::attributes::emit_html_attrs_node;
 use crate::parser::utils::helpers::{strip_leading_spaces, strip_newline};
 
 /// HTML block-level tags as defined by CommonMark spec.
@@ -2765,9 +2766,7 @@ fn emit_open_tag_tokens<'a>(
         builder.token(SyntaxKind::WHITESPACE.into(), leading_ws);
     }
     if !attrs_text.is_empty() {
-        builder.start_node(SyntaxKind::HTML_ATTRS.into());
-        builder.token(SyntaxKind::TEXT.into(), attrs_text);
-        builder.finish_node();
+        emit_html_attrs_node(builder, attrs_text);
     }
     if !trailing_text.is_empty() {
         builder.token(SyntaxKind::WHITESPACE.into(), trailing_text);
@@ -2981,9 +2980,7 @@ fn emit_multiline_open_tag_with_attrs(
             }
             let attrs_text = &line_no_nl[indent_end..];
             if !attrs_text.is_empty() {
-                builder.start_node(SyntaxKind::HTML_ATTRS.into());
-                builder.token(SyntaxKind::TEXT.into(), attrs_text);
-                builder.finish_node();
+                emit_html_attrs_node(builder, attrs_text);
             }
         } else {
             // Last line: indent + attrs + ">" + trailing.
@@ -3032,9 +3029,7 @@ fn emit_multiline_open_tag_with_attrs(
             let attrs_text = &attrs_region[..attr_end];
             let trailing_ws = &attrs_region[attr_end..];
             if !attrs_text.is_empty() {
-                builder.start_node(SyntaxKind::HTML_ATTRS.into());
-                builder.token(SyntaxKind::TEXT.into(), attrs_text);
-                builder.finish_node();
+                emit_html_attrs_node(builder, attrs_text);
             }
             if !trailing_ws.is_empty() {
                 builder.token(SyntaxKind::WHITESPACE.into(), trailing_ws);
@@ -3122,9 +3117,7 @@ fn emit_attr_region(builder: &mut GreenNodeBuilder<'static>, region: &str) {
     }
     let attrs_text = &region[ws_end..];
     if !attrs_text.is_empty() {
-        builder.start_node(SyntaxKind::HTML_ATTRS.into());
-        builder.token(SyntaxKind::TEXT.into(), attrs_text);
-        builder.finish_node();
+        emit_html_attrs_node(builder, attrs_text);
     }
 }
 

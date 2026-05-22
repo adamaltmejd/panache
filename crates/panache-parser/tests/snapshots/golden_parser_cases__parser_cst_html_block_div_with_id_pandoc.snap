@@ -8,7 +8,9 @@ DOCUMENT@0..121
       TEXT@0..4 "<div"
       WHITESPACE@4..5 " "
       HTML_ATTRS@5..18
-        TEXT@5..18 "id=\"anchor-c\""
+        TEXT@5..9 "id=\""
+        ATTR_ID@9..17 "anchor-c"
+        TEXT@17..18 "\""
       TEXT@18..19 ">"
     PLAIN@19..44
       TEXT@19..44 "Content in a div with ..."
@@ -38,7 +40,9 @@ DOCUMENT@0..121
       TEXT@76..80 "<div"
       WHITESPACE@80..81 " "
       HTML_ATTRS@81..91
-        TEXT@81..91 "id=\"multi\""
+        TEXT@81..85 "id=\""
+        ATTR_ID@85..90 "multi"
+        TEXT@90..91 "\""
       TEXT@91..92 ">"
       NEWLINE@92..93 "\n"
     BLANK_LINE@93..94
