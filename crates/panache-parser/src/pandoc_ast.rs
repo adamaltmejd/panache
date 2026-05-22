@@ -1849,13 +1849,15 @@ fn fenced_div(node: &SyntaxNode) -> Block {
     let attr = node
         .children()
         .find(|c| c.kind() == SyntaxKind::DIV_FENCE_OPEN)
-        .map(|open| {
-            let info = open
-                .children()
-                .find(|c| c.kind() == SyntaxKind::DIV_INFO)
-                .map(|n| n.text().to_string())
-                .unwrap_or_default();
-            parse_div_info(info.trim())
+        .and_then(|open| open.children().find(|c| c.kind() == SyntaxKind::DIV_INFO))
+        .map(|info| {
+            // Structured `{...}` bodies are read straight from the CST; bare-word
+            // shorthand and opaque/empty bodies still go through `parse_div_info`.
+            if attr_node_is_structured(&info) {
+                attr_from_attribute_node(&info)
+            } else {
+                parse_div_info(info.text().to_string().trim())
+            }
         })
         .unwrap_or_default();
     let mut blocks = Vec::new();
@@ -1884,19 +1886,26 @@ fn parse_div_info(info: &str) -> Attr {
     Attr::default()
 }
 
+/// Whether an attribute-bearing node (`ATTRIBUTE`, `DIV_INFO`, …) carries the
+/// structured `ATTR_*` children the parser emits for a Pandoc `{...}` body. When
+/// false the node is an opaque single token (bare-word, raw-inline `{=format}`,
+/// MMD `[#id]`, malformed/empty body) and callers fall back to reparsing.
+fn attr_node_is_structured(node: &SyntaxNode) -> bool {
+    node.children_with_tokens().any(|el| {
+        matches!(
+            el.kind(),
+            SyntaxKind::ATTR_ID | SyntaxKind::ATTR_CLASS | SyntaxKind::ATTR_KEY_VALUE
+        )
+    })
+}
+
 /// Build an `Attr` from an `ATTRIBUTE` node, reading structured `ATTR_*`
 /// children when the parser emitted them and otherwise reparsing the opaque
 /// `{...}` body. The structured path mirrors [`parse_attr_block`] semantics
 /// (only `.`-prefixed tokens are classes; values strip a `"` pair) so projector
 /// output is unchanged.
 fn attr_from_attribute_node(attr_node: &SyntaxNode) -> Attr {
-    let has_structured = attr_node.children_with_tokens().any(|el| {
-        matches!(
-            el.kind(),
-            SyntaxKind::ATTR_ID | SyntaxKind::ATTR_CLASS | SyntaxKind::ATTR_KEY_VALUE
-        )
-    });
-    if !has_structured {
+    if !attr_node_is_structured(attr_node) {
         let raw = attr_node.text().to_string();
         return raw
             .trim()

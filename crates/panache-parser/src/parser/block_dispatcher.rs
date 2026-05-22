@@ -58,7 +58,7 @@ use super::blocks::tables::{
     try_parse_pipe_table, try_parse_simple_table,
 };
 use super::inlines::links::{LinkScanContext, try_parse_inline_image};
-use super::utils::attributes::parse_html_tag_attributes;
+use super::utils::attributes::{emit_div_info_node, parse_html_tag_attributes};
 use super::utils::container_stack::{byte_index_at_column, leading_indent};
 use super::utils::helpers::{strip_newline, trim_end_newlines};
 use super::utils::marker_utils::parse_blockquote_marker_info;
@@ -2405,10 +2405,9 @@ impl BlockParser for FencedDivOpenParser {
                 content_before_newline
             };
 
-            // Attributes
-            builder.start_node(SyntaxKind::DIV_INFO.into());
-            builder.token(SyntaxKind::TEXT.into(), &div_fence.attributes);
-            builder.finish_node();
+            // Attributes — structure the Pandoc `{...}` body into ATTR_*
+            // children (bare-word/empty bodies stay one opaque TEXT token).
+            emit_div_info_node(builder, &div_fence.attributes);
 
             // Preserve any suffix after attributes (e.g., trailing spaces, optional symmetric colons).
             let after_attrs = if div_fence.attributes.starts_with('{') {

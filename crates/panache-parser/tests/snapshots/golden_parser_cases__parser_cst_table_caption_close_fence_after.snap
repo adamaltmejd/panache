@@ -8,7 +8,9 @@ DOCUMENT@0..90
       TEXT@0..3 ":::"
       WHITESPACE@3..4 " "
       DIV_INFO@4..18
-        TEXT@4..18 "{.column-page}"
+        TEXT@4..5 "{"
+        ATTR_CLASS@5..17 ".column-page"
+        TEXT@17..18 "}"
       NEWLINE@18..19 "\n"
     PIPE_TABLE@19..86
       TABLE_HEADER@19..35

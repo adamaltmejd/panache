@@ -7,7 +7,9 @@ DOCUMENT@0..834
     DIV_FENCE_OPEN@0..19
       TEXT@0..3 ":::"
       DIV_INFO@3..18
-        TEXT@3..18 "{.callout-note}"
+        TEXT@3..4 "{"
+        ATTR_CLASS@4..17 ".callout-note"
+        TEXT@17..18 "}"
       NEWLINE@18..19 "\n"
     PARAGRAPH@19..68
       TEXT@19..67 "This is a simple fenc ..."
@@ -22,7 +24,11 @@ DOCUMENT@0..834
       TEXT@73..78 ":::::"
       WHITESPACE@78..79 " "
       DIV_INFO@79..98
-        TEXT@79..98 "{#special .sidebar}"
+        TEXT@79..80 "{"
+        ATTR_ID@80..88 "#special"
+        WHITESPACE@88..89 " "
+        ATTR_CLASS@89..97 ".sidebar"
+        TEXT@97..98 "}"
       NEWLINE@98..99 "\n"
     PARAGRAPH@99..131
       TEXT@99..130 "This div has an ID an ..."

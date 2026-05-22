@@ -1,0 +1,64 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..155
+  FENCED_DIV@0..66
+    DIV_FENCE_OPEN@0..35
+      TEXT@0..3 ":::"
+      WHITESPACE@3..4 " "
+      DIV_INFO@4..34
+        TEXT@4..5 "{"
+        ATTR_ID@5..8 "#id"
+        WHITESPACE@8..9 " "
+        ATTR_CLASS@9..11 ".a"
+        WHITESPACE@11..12 " "
+        ATTR_CLASS@12..14 ".b"
+        WHITESPACE@14..15 " "
+        ATTR_KEY_VALUE@15..22
+          ATTR_KEY@15..18 "key"
+          TEXT@18..19 "="
+          ATTR_VALUE@19..22 "val"
+        WHITESPACE@22..23 " "
+        ATTR_KEY_VALUE@23..33
+          ATTR_KEY@23..27 "key2"
+          TEXT@27..28 "="
+          ATTR_VALUE@28..33 "\"v w\""
+        TEXT@33..34 "}"
+      NEWLINE@34..35 "\n"
+    PARAGRAPH@35..62
+      TEXT@35..61 "Structured attribute  ..."
+      NEWLINE@61..62 "\n"
+    DIV_FENCE_CLOSE@62..66
+      TEXT@62..65 ":::"
+      NEWLINE@65..66 "\n"
+  BLANK_LINE@66..67
+    BLANK_LINE@66..67 "\n"
+  FENCED_DIV@67..117
+    DIV_FENCE_OPEN@67..79
+      TEXT@67..70 ":::"
+      WHITESPACE@70..71 " "
+      DIV_INFO@71..78
+        TEXT@71..78 "Warning"
+      NEWLINE@78..79 "\n"
+    PARAGRAPH@79..113
+      TEXT@79..112 "Bare-word shorthand s ..."
+      NEWLINE@112..113 "\n"
+    DIV_FENCE_CLOSE@113..117
+      TEXT@113..116 ":::"
+      NEWLINE@116..117 "\n"
+  BLANK_LINE@117..118
+    BLANK_LINE@117..118 "\n"
+  FENCED_DIV@118..155
+    DIV_FENCE_OPEN@118..125
+      TEXT@118..121 ":::"
+      WHITESPACE@121..122 " "
+      DIV_INFO@122..124
+        TEXT@122..124 "{}"
+      NEWLINE@124..125 "\n"
+    PARAGRAPH@125..151
+      TEXT@125..150 "Empty braces stay opa ..."
+      NEWLINE@150..151 "\n"
+    DIV_FENCE_CLOSE@151..155
+      TEXT@151..154 ":::"
+      NEWLINE@154..155 "\n"

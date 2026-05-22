@@ -8,7 +8,14 @@ DOCUMENT@0..4373
       TEXT@0..3 ":::"
       WHITESPACE@3..4 " "
       DIV_INFO@4..53
-        TEXT@4..53 "{.content-visible whe ..."
+        TEXT@4..5 "{"
+        ATTR_CLASS@5..21 ".content-visible"
+        WHITESPACE@21..22 " "
+        ATTR_KEY_VALUE@22..52
+          ATTR_KEY@22..31 "when-meta"
+          TEXT@31..32 "="
+          ATTR_VALUE@32..52 "\"tool.is_jupyterlab\""
+        TEXT@52..53 "}"
       NEWLINE@53..54 "\n"
     PARAGRAPH@54..162
       TEXT@54..161 "To follow along, you' ..."
@@ -23,7 +30,14 @@ DOCUMENT@0..4373
       TEXT@167..170 ":::"
       WHITESPACE@170..171 " "
       DIV_INFO@171..217
-        TEXT@171..217 "{.content-visible whe ..."
+        TEXT@171..172 "{"
+        ATTR_CLASS@172..188 ".content-visible"
+        WHITESPACE@188..189 " "
+        ATTR_KEY_VALUE@189..216
+          ATTR_KEY@189..198 "when-meta"
+          TEXT@198..199 "="
+          ATTR_VALUE@199..216 "\"tool.is_rstudio\""
+        TEXT@216..217 "}"
       NEWLINE@217..218 "\n"
     PARAGRAPH@218..281
       TEXT@218..280 "To follow along, you' ..."
@@ -38,7 +52,14 @@ DOCUMENT@0..4373
       TEXT@286..289 ":::"
       WHITESPACE@289..290 " "
       DIV_INFO@290..335
-        TEXT@290..335 "{.content-visible whe ..."
+        TEXT@290..291 "{"
+        ATTR_CLASS@291..307 ".content-visible"
+        WHITESPACE@307..308 " "
+        ATTR_KEY_VALUE@308..334
+          ATTR_KEY@308..317 "when-meta"
+          TEXT@317..318 "="
+          ATTR_VALUE@318..334 "\"tool.is_vscode\""
+        TEXT@334..335 "}"
       NEWLINE@335..336 "\n"
     PARAGRAPH@336..471
       TEXT@336..470 "To follow along, you' ..."
@@ -88,7 +109,14 @@ DOCUMENT@0..4373
       TEXT@697..700 ":::"
       WHITESPACE@700..701 " "
       DIV_INFO@701..750
-        TEXT@701..750 "{.content-visible whe ..."
+        TEXT@701..702 "{"
+        ATTR_CLASS@702..718 ".content-visible"
+        WHITESPACE@718..719 " "
+        ATTR_KEY_VALUE@719..749
+          ATTR_KEY@719..728 "when-meta"
+          TEXT@728..729 "="
+          ATTR_VALUE@729..749 "\"tool.is_jupyterlab\""
+        TEXT@749..750 "}"
       NEWLINE@750..751 "\n"
     HEADING@751..796
       ATX_HEADING_MARKER@751..754
@@ -116,7 +144,14 @@ DOCUMENT@0..4373
       TEXT@865..868 ":::"
       WHITESPACE@868..869 " "
       DIV_INFO@869..914
-        TEXT@869..914 "{.content-visible whe ..."
+        TEXT@869..870 "{"
+        ATTR_CLASS@870..886 ".content-visible"
+        WHITESPACE@886..887 " "
+        ATTR_KEY_VALUE@887..913
+          ATTR_KEY@887..896 "when-meta"
+          TEXT@896..897 "="
+          ATTR_VALUE@897..913 "\"tool.is_vscode\""
+        TEXT@913..914 "}"
       NEWLINE@914..915 "\n"
     HEADING@915..956
       ATX_HEADING_MARKER@915..918
@@ -315,7 +350,14 @@ DOCUMENT@0..4373
           TEXT@2332..2335 ":::"
           WHITESPACE@2335..2336 " "
           DIV_INFO@2336..2384
-            TEXT@2336..2384 "{.content-visible unl ..."
+            TEXT@2336..2337 "{"
+            ATTR_CLASS@2337..2353 ".content-visible"
+            WHITESPACE@2353..2354 " "
+            ATTR_KEY_VALUE@2354..2383
+              ATTR_KEY@2354..2365 "unless-meta"
+              TEXT@2365..2366 "="
+              ATTR_VALUE@2366..2383 "\"tool.is_rstudio\""
+            TEXT@2383..2384 "}"
           NEWLINE@2384..2385 "\n"
         PARAGRAPH@2385..2484
           TEXT@2385..2483 "    You can do this a ..."
@@ -358,7 +400,14 @@ DOCUMENT@0..4373
           TEXT@2651..2654 ":::"
           WHITESPACE@2654..2655 " "
           DIV_INFO@2655..2701
-            TEXT@2655..2701 "{.content-visible whe ..."
+            TEXT@2655..2656 "{"
+            ATTR_CLASS@2656..2672 ".content-visible"
+            WHITESPACE@2672..2673 " "
+            ATTR_KEY_VALUE@2673..2700
+              ATTR_KEY@2673..2682 "when-meta"
+              TEXT@2682..2683 "="
+              ATTR_VALUE@2683..2700 "\"tool.is_rstudio\""
+            TEXT@2700..2701 "}"
           NEWLINE@2701..2702 "\n"
         PARAGRAPH@2702..2929
           TEXT@2702..2778 "    You can do this a ..."
@@ -399,7 +448,14 @@ DOCUMENT@0..4373
       TEXT@2938..2941 ":::"
       WHITESPACE@2941..2942 " "
       DIV_INFO@2942..2988
-        TEXT@2942..2988 "{.content-visible whe ..."
+        TEXT@2942..2943 "{"
+        ATTR_CLASS@2943..2959 ".content-visible"
+        WHITESPACE@2959..2960 " "
+        ATTR_KEY_VALUE@2960..2987
+          ATTR_KEY@2960..2969 "when-meta"
+          TEXT@2969..2970 "="
+          ATTR_VALUE@2970..2987 "\"tool.is_rstudio\""
+        TEXT@2987..2988 "}"
       NEWLINE@2988..2989 "\n"
     FIGURE@2989..3325
       IMAGE_LINK@2989..3324
@@ -430,7 +486,14 @@ DOCUMENT@0..4373
       TEXT@3330..3333 ":::"
       WHITESPACE@3333..3334 " "
       DIV_INFO@3334..3383
-        TEXT@3334..3383 "{.content-visible whe ..."
+        TEXT@3334..3335 "{"
+        ATTR_CLASS@3335..3351 ".content-visible"
+        WHITESPACE@3351..3352 " "
+        ATTR_KEY_VALUE@3352..3382
+          ATTR_KEY@3352..3361 "when-meta"
+          TEXT@3361..3362 "="
+          ATTR_VALUE@3362..3382 "\"tool.is_jupyterlab\""
+        TEXT@3382..3383 "}"
       NEWLINE@3383..3384 "\n"
     LIST@3384..3638
       LIST_ITEM@3384..3638
@@ -496,7 +559,14 @@ DOCUMENT@0..4373
       TEXT@3915..3918 ":::"
       WHITESPACE@3918..3919 " "
       DIV_INFO@3919..3964
-        TEXT@3919..3964 "{.content-visible whe ..."
+        TEXT@3919..3920 "{"
+        ATTR_CLASS@3920..3936 ".content-visible"
+        WHITESPACE@3936..3937 " "
+        ATTR_KEY_VALUE@3937..3963
+          ATTR_KEY@3937..3946 "when-meta"
+          TEXT@3946..3947 "="
+          ATTR_VALUE@3947..3963 "\"tool.is_vscode\""
+        TEXT@3963..3964 "}"
       NEWLINE@3964..3965 "\n"
     LIST@3965..4097
       LIST_ITEM@3965..4097

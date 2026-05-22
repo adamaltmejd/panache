@@ -8,7 +8,14 @@ DOCUMENT@0..356
       TEXT@0..3 ":::"
       WHITESPACE@3..4 " "
       DIV_INFO@4..32
-        TEXT@4..32 "{#tbl:panel layout.nr ..."
+        TEXT@4..5 "{"
+        ATTR_ID@5..15 "#tbl:panel"
+        WHITESPACE@15..16 " "
+        ATTR_KEY_VALUE@16..31
+          ATTR_KEY@16..27 "layout.nrow"
+          TEXT@27..28 "="
+          ATTR_VALUE@28..31 "\"1\""
+        TEXT@31..32 "}"
       NEWLINE@32..33 "\n"
     PIPE_TABLE@33..187
       TABLE_CAPTION@33..61

@@ -173,13 +173,20 @@ mod tests {
             flavor: crate::options::Flavor::RMarkdown,
             ..Default::default()
         };
-        let tree = crate::parse("::: {#mu .exercise}\ntext\n:::\n", Some(config));
+        // The `{...}` div body is now structured into ATTR_* children, so the
+        // wrapper reads id/classes/key-values straight from the CST.
+        let tree = crate::parse("::: {#mu .exercise k=v}\ntext\n:::\n", Some(config));
         let node = tree
             .descendants()
             .find_map(AttributeNode::cast)
             .expect("attribute node");
+        assert_eq!(node.syntax().kind(), SyntaxKind::DIV_INFO);
+        assert!(node.has_structured_children());
         assert_eq!(node.id().as_deref(), Some("mu"));
+        assert_eq!(node.classes(), vec!["exercise".to_string()]);
+        assert_eq!(node.key_values(), vec![("k".to_string(), "v".to_string())]);
 
+        // The id range points at the inner `mu`, derived from the ATTR_ID token.
         let range = node.id_value_range().expect("id range");
         let start: usize = range.start().into();
         let end: usize = range.end().into();

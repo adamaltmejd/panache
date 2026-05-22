@@ -16,7 +16,9 @@ DOCUMENT@0..51
     DIV_FENCE_OPEN@10..22
       TEXT@10..13 ":::"
       DIV_INFO@13..20
-        TEXT@13..20 "{.note}"
+        TEXT@13..14 "{"
+        ATTR_CLASS@14..19 ".note"
+        TEXT@19..20 "}"
       NEWLINE@20..22 "\r\n"
     PARAGRAPH@22..37
       TEXT@22..35 "Content here."

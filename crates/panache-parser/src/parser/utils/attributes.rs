@@ -430,7 +430,39 @@ pub fn parse_html_attribute_list(attrs_text: &str) -> Option<AttributeBlock> {
 /// brackets, raw-inline `{=format}`, empty `{}`) falls back to a single opaque
 /// ATTRIBUTE token, preserving the prior shape.
 pub fn emit_attribute_node(builder: &mut GreenNodeBuilder, raw_attr_text: &str) {
-    builder.start_node(SyntaxKind::ATTRIBUTE.into());
+    emit_attribute_node_with_kinds(
+        builder,
+        SyntaxKind::ATTRIBUTE,
+        SyntaxKind::ATTRIBUTE,
+        raw_attr_text,
+    );
+}
+
+/// Emit a fenced-div `DIV_INFO` node, structuring the Pandoc `{...}` body the
+/// same way [`emit_attribute_node`] does. Bare-word shorthand (`::: Warning`)
+/// and malformed/empty bodies fall back to a single opaque `TEXT` token,
+/// preserving the prior `DIV_INFO { TEXT(...) }` shape (and the bare-word
+/// class semantics the projector reads via `parse_div_info`).
+pub fn emit_div_info_node(builder: &mut GreenNodeBuilder, raw_attr_text: &str) {
+    emit_attribute_node_with_kinds(
+        builder,
+        SyntaxKind::DIV_INFO,
+        SyntaxKind::TEXT,
+        raw_attr_text,
+    );
+}
+
+/// Shared structuring core for attribute-bearing nodes. `node_kind` is the outer
+/// wrapper (`ATTRIBUTE`, `DIV_INFO`, …); `opaque_token_kind` is the single token
+/// the non-`{...}`/unrecognized fallback emits (so each caller keeps its prior
+/// opaque shape). The structured `{...}` path is identical across callers.
+fn emit_attribute_node_with_kinds(
+    builder: &mut GreenNodeBuilder,
+    node_kind: SyntaxKind,
+    opaque_token_kind: SyntaxKind,
+    raw_attr_text: &str,
+) {
+    builder.start_node(node_kind.into());
 
     let body = raw_attr_text
         .strip_prefix('{')
@@ -470,8 +502,9 @@ pub fn emit_attribute_node(builder: &mut GreenNodeBuilder, raw_attr_text: &str) 
             builder.token(SyntaxKind::TEXT.into(), "}");
         }
         _ => {
-            // Opaque fallback: keep the whole slice as one ATTRIBUTE token.
-            builder.token(SyntaxKind::ATTRIBUTE.into(), raw_attr_text);
+            // Opaque fallback: keep the whole slice as one token of the
+            // caller's chosen kind, preserving the prior shape.
+            builder.token(opaque_token_kind.into(), raw_attr_text);
         }
     }
 
@@ -751,5 +784,51 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    fn structured_div_info(raw: &str) -> crate::syntax::SyntaxNode {
+        let mut builder = GreenNodeBuilder::new();
+        emit_div_info_node(&mut builder, raw);
+        crate::syntax::SyntaxNode::new_root(builder.finish())
+    }
+
+    #[test]
+    fn emit_div_info_node_is_lossless_and_structures_brace_body() {
+        // `{...}` bodies structure into ATTR_* children; bare-word shorthand
+        // and malformed/empty bodies stay one opaque TEXT token. All round-trip.
+        for raw in ["{#id .a .b key=val key2=\"v w\"}", "Warning", "{}", "{   }"] {
+            let node = structured_div_info(raw);
+            assert_eq!(node.text().to_string(), raw, "lossless emit for {raw:?}");
+            assert_eq!(node.kind(), SyntaxKind::DIV_INFO);
+        }
+
+        let structured = structured_div_info("{#id .a .b key=val key2=\"v w\"}");
+        let kinds: Vec<_> = structured
+            .children_with_tokens()
+            .map(|c| c.kind())
+            .collect();
+        assert_eq!(
+            kinds.iter().filter(|k| **k == SyntaxKind::ATTR_ID).count(),
+            1
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| **k == SyntaxKind::ATTR_CLASS)
+                .count(),
+            2
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| **k == SyntaxKind::ATTR_KEY_VALUE)
+                .count(),
+            2
+        );
+
+        // Bare-word fallback: a single opaque TEXT token, no ATTR_* children.
+        let bare = structured_div_info("Warning");
+        let bare_kinds: Vec<_> = bare.children_with_tokens().map(|c| c.kind()).collect();
+        assert_eq!(bare_kinds, vec![SyntaxKind::TEXT]);
     }
 }

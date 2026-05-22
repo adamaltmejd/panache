@@ -245,6 +245,7 @@ golden_test_cases!(
     fenced_code_unclosed_commonmark,
     fenced_code_unclosed_pandoc,
     fenced_divs,
+    fenced_div_attributes_structured,
     fenced_math_in_list_blockquote,
     fenced_div_list_idempotency_setup,
     fenced_div_close_grid_table,
