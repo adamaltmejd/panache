@@ -538,11 +538,31 @@ intentionally excluded.
             drift). Projector reads the nodes; `parse_ref_url` deleted,
             `parse_reference_def` is a pure CST read. `ReferenceDefinition`
             gained `url()`/`title()`.
-      - [ ] **Attributes.** Structure the `ATTRIBUTE` node into `id` / `class` /
-            `kv` children at parse time, killing the `parse_attr_block` /
-            `parse_html_attrs` reparse. Broadest blast radius --- shared by
-            headings, spans, divs, and code blocks; touch one consumer at a
-            time.
+      - [x] **Attributes --- the `ATTRIBUTE` node.** The Pandoc `{...}`
+            `ATTRIBUTE` node now emits `ATTR_ID` / `ATTR_CLASS` /
+            `ATTR_KEY_VALUE` (`ATTR_KEY` + `ATTR_VALUE`) children via a shared
+            `attribute_content_spans` walker that backs both detection
+            (`parse_attribute_content`) and emission (`emit_attribute_node`) ---
+            no detect/emit drift. All `ATTRIBUTE` emitters (headings, links,
+            images, table captions, inline code, display math) route through it;
+            the lossy `emit_attributes` reconstructor is gone. This fixed a live
+            losslessness bug: inline-code / display-math attrs were reordered +
+            re-quoted in the parser (`` `code`{.r #x key=v} `` →
+            `` `code`{#x .r key="v"} ``); they now round-trip byte-for-byte and
+            the formatter applies the normalization (via
+            `normalize_attribute_text`, as headings already did).
+            `AttributeNode` gained `classes()` / `key_values()` and reads
+            structured children (precise `id_value_range` from the `ATTR_ID`
+            token); the projector reads via `attr_from_attribute_node`.
+      - [ ] **Attributes --- remaining node kinds.** Apply the same structuring
+            to the other attribute-bearing nodes so `parse_attr_block` /
+            `parse_html_attrs` can finally be deleted: `DIV_INFO` (fenced divs),
+            `SPAN_ATTRIBUTES` (bracketed spans), `CODE_INFO` (code-block info
+            strings, language-first semantics) all still feed
+            `parse_attr_block`; `HTML_ATTRS` (HTML `<div>`/`<span>`, distinct
+            `class=""`/`id=""` syntax) feeds `parse_html_attrs`; and raw-inline
+            `{=format}` still synthesizes its token (`raw_inline.rs`) rather
+            than wrapping the source slice. Touch one node kind at a time.
       - [ ] **HTML opaque-block split.** Continue the HTML lift (Phase 6): lift
             the remaining *opaque* HTML splitting (comments, PI, verbatim, void
             / unmatched tags) into the parser so `split_html_block_by_tags` and
