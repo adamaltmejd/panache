@@ -479,38 +479,26 @@ fn parse_reference_def(node: &SyntaxNode) -> Option<(String, String, String)> {
         .find(|c| c.kind() == SyntaxKind::LINK_TEXT)?;
     let label = label_node.text().to_string();
 
-    let mut tail = String::new();
-    let mut after_link = false;
-    for el in node.children_with_tokens() {
-        if after_link {
-            match el {
-                NodeOrToken::Token(t) => tail.push_str(t.text()),
-                NodeOrToken::Node(n) => tail.push_str(&n.text().to_string()),
-            }
-        } else if let NodeOrToken::Node(n) = &el
-            && n.kind() == SyntaxKind::LINK
-        {
-            after_link = true;
-        }
-    }
+    // Read the structured destination/title nodes the parser emits — no
+    // re-parsing of the post-`]` tail. Angle brackets, when present, are
+    // delimiter tokens inside REFERENCE_URL.
+    let url_node = node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::REFERENCE_URL)?;
+    let url_raw = url_node.text().to_string();
+    let url = url_raw
+        .strip_prefix('<')
+        .and_then(|r| r.strip_suffix('>'))
+        .unwrap_or(&url_raw)
+        .to_string();
 
-    let trimmed = tail.trim_start();
-    let rest = trimmed.strip_prefix(':')?;
-    let after_colon = rest.trim_start();
-    let (url, after_url) = parse_ref_url(after_colon);
-    let title = parse_dest_title(after_url.trim());
+    let title = node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::REFERENCE_TITLE)
+        .map(|t| parse_dest_title(&t.text().to_string()))
+        .unwrap_or_default();
+
     Some((unescape_label(&label), url, title))
-}
-
-fn parse_ref_url(s: &str) -> (String, &str) {
-    let s = s.trim_start();
-    if let Some(rest) = s.strip_prefix('<')
-        && let Some(end) = rest.find('>')
-    {
-        return (rest[..end].to_string(), &rest[end + 1..]);
-    }
-    let end = s.find(|c: char| c.is_whitespace()).unwrap_or(s.len());
-    (s[..end].to_string(), &s[end..])
 }
 
 fn unescape_label(label: &str) -> String {

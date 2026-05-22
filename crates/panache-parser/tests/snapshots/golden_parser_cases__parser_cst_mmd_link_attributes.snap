@@ -27,7 +27,14 @@ DOCUMENT@0..173
       LINK_TEXT@67..70
         TEXT@67..70 "ref"
       TEXT@70..71 "]"
-    TEXT@71..131 ": https://path.to/ima ..."
+    TEXT@71..72 ":"
+    WHITESPACE@72..73 " "
+    REFERENCE_URL@73..94
+      TEXT@73..94 "https://path.to/image"
+    WHITESPACE@94..95 " "
+    REFERENCE_TITLE@95..108
+      TEXT@95..108 "\"Image title\""
+    TEXT@108..131 " width=20px height=30px"
     NEWLINE@131..132 "\n"
     TEXT@132..172 "       id=myId class= ..."
     NEWLINE@172..173 "\n"

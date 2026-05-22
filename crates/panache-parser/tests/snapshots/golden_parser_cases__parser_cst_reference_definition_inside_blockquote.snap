@@ -23,5 +23,8 @@ DOCUMENT@0..21
         LINK_TEXT@10..13
           TEXT@10..13 "foo"
         TEXT@13..14 "]"
-      TEXT@14..20 ": /url"
+      TEXT@14..15 ":"
+      WHITESPACE@15..16 " "
+      REFERENCE_URL@16..20
+        TEXT@16..20 "/url"
       NEWLINE@20..21 "\n"

@@ -20,5 +20,8 @@ DOCUMENT@0..26
       LINK_TEXT@15..18
         TEXT@15..18 "ref"
       TEXT@18..19 "]"
-    TEXT@19..25 ": /uri"
+    TEXT@19..20 ":"
+    WHITESPACE@20..21 " "
+    REFERENCE_URL@21..25
+      TEXT@21..25 "/uri"
     NEWLINE@25..26 "\n"

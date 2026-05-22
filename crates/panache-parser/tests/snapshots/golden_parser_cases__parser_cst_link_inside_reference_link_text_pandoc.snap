@@ -25,5 +25,8 @@ DOCUMENT@0..40
       LINK_TEXT@26..29
         TEXT@26..29 "bar"
       TEXT@29..30 "]"
-    TEXT@30..39 ": /barurl"
+    TEXT@30..31 ":"
+    WHITESPACE@31..32 " "
+    REFERENCE_URL@32..39
+      TEXT@32..39 "/barurl"
     NEWLINE@39..40 "\n"

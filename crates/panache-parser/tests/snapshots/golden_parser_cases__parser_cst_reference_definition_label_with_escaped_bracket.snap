@@ -10,7 +10,12 @@ DOCUMENT@0..56
       LINK_TEXT@1..10
         TEXT@1..10 "Foo*bar\\]"
       TEXT@10..11 "]"
-    TEXT@11..42 ":my_(url) 'title (wit ..."
+    TEXT@11..12 ":"
+    REFERENCE_URL@12..20
+      TEXT@12..20 "my_(url)"
+    WHITESPACE@20..21 " "
+    REFERENCE_TITLE@21..42
+      TEXT@21..42 "'title (with parens)'"
     NEWLINE@42..43 "\n"
   BLANK_LINE@43..44
     BLANK_LINE@43..44 "\n"

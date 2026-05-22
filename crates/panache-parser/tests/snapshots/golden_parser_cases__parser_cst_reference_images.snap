@@ -146,7 +146,13 @@ DOCUMENT@0..520
       LINK_TEXT@390..394
         TEXT@390..394 "img1"
       TEXT@394..395 "]"
-    TEXT@395..429 ": /path/to/image.png  ..."
+    TEXT@395..396 ":"
+    WHITESPACE@396..397 " "
+    REFERENCE_URL@397..415
+      TEXT@397..415 "/path/to/image.png"
+    WHITESPACE@415..416 " "
+    REFERENCE_TITLE@416..429
+      TEXT@416..429 "\"Image Title\""
     NEWLINE@429..430 "\n"
   REFERENCE_DEFINITION@430..448
     LINK@430..436
@@ -155,7 +161,10 @@ DOCUMENT@0..520
       LINK_TEXT@431..435
         TEXT@431..435 "logo"
       TEXT@435..436 "]"
-    TEXT@436..447 ": /logo.svg"
+    TEXT@436..437 ":"
+    WHITESPACE@437..438 " "
+    REFERENCE_URL@438..447
+      TEXT@438..447 "/logo.svg"
     NEWLINE@447..448 "\n"
   REFERENCE_DEFINITION@448..466
     LINK@448..454
@@ -164,7 +173,10 @@ DOCUMENT@0..520
       LINK_TEXT@449..453
         TEXT@449..453 "Icon"
       TEXT@453..454 "]"
-    TEXT@454..465 ": /icon.png"
+    TEXT@454..455 ":"
+    WHITESPACE@455..456 " "
+    REFERENCE_URL@456..465
+      TEXT@456..465 "/icon.png"
     NEWLINE@465..466 "\n"
   REFERENCE_DEFINITION@466..482
     LINK@466..470
@@ -173,7 +185,10 @@ DOCUMENT@0..520
       LINK_TEXT@467..469
         TEXT@467..469 "i1"
       TEXT@469..470 "]"
-    TEXT@470..481 ": /img1.jpg"
+    TEXT@470..471 ":"
+    WHITESPACE@471..472 " "
+    REFERENCE_URL@472..481
+      TEXT@472..481 "/img1.jpg"
     NEWLINE@481..482 "\n"
   REFERENCE_DEFINITION@482..498
     LINK@482..486
@@ -182,7 +197,10 @@ DOCUMENT@0..520
       LINK_TEXT@483..485
         TEXT@483..485 "i2"
       TEXT@485..486 "]"
-    TEXT@486..497 ": /img2.jpg"
+    TEXT@486..487 ":"
+    WHITESPACE@487..488 " "
+    REFERENCE_URL@488..497
+      TEXT@488..497 "/img2.jpg"
     NEWLINE@497..498 "\n"
   REFERENCE_DEFINITION@498..520
     LINK@498..505
@@ -191,5 +209,8 @@ DOCUMENT@0..520
       LINK_TEXT@499..504
         TEXT@499..504 "myimg"
       TEXT@504..505 "]"
-    TEXT@505..519 ": /matched.png"
+    TEXT@505..506 ":"
+    WHITESPACE@506..507 " "
+    REFERENCE_URL@507..519
+      TEXT@507..519 "/matched.png"
     NEWLINE@519..520 "\n"

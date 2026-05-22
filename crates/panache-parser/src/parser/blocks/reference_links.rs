@@ -58,6 +58,57 @@ fn try_parse_reference_definition_with_mode(
     strict_eol: bool,
     dialect: crate::options::Dialect,
 ) -> Option<(usize, String, String, Option<String>)> {
+    let spans = reference_definition_spans(text, strict_eol, dialect)?;
+    let label = text[spans.indent + 1..spans.label_close].to_string();
+    let url = if spans.url_is_angle {
+        text[spans.url.start + 1..spans.url.end - 1].to_string()
+    } else {
+        text[spans.url.clone()].to_string()
+    };
+    let title = spans
+        .title
+        .as_ref()
+        .map(|r| text[r.start + 1..r.end - 1].to_string());
+    Some((spans.consumed, label, url, title))
+}
+
+/// Byte spans of a recognized reference definition, all relative to the `text`
+/// passed to [`reference_definition_spans`].
+///
+/// This is the single source of truth shared by *detection*
+/// (`try_parse_reference_definition`, which extracts the component strings)
+/// and *emission* (`emit_reference_definition_lines`, which wraps the same
+/// byte ranges in `REFERENCE_URL` / `REFERENCE_TITLE` CST nodes). Keeping both
+/// phases on one walker is what prevents the detect/emit drift the dispatcher's
+/// doc comment warns about.
+#[derive(Debug, Clone)]
+pub(crate) struct ReferenceSpans {
+    /// Leading-space count before `[` (0..=3); also the byte index of `[`.
+    pub indent: usize,
+    /// Byte index of the label-closing `]`.
+    pub label_close: usize,
+    /// Byte index of the `:` after the label.
+    pub colon: usize,
+    /// Destination byte range, *including* `<>` when angle-bracketed.
+    pub url: std::ops::Range<usize>,
+    /// Whether the destination is `<…>` angle-bracketed.
+    pub url_is_angle: bool,
+    /// Title byte range, *including* its quote/paren delimiters, when present.
+    pub title: Option<std::ops::Range<usize>>,
+    /// Total bytes consumed (matches the legacy `bytes_consumed`).
+    pub consumed: usize,
+}
+
+/// Scan a reference definition and record the byte spans of its components.
+///
+/// The walk is identical to the legacy string-returning parser — it just
+/// records offsets instead of allocating component strings, so detection and
+/// emission stay byte-for-byte consistent. See [`ReferenceSpans`].
+pub(crate) fn reference_definition_spans(
+    text: &str,
+    strict_eol: bool,
+    dialect: crate::options::Dialect,
+) -> Option<ReferenceSpans> {
     let leading_spaces = text.chars().take_while(|&c| c == ' ').count();
     if leading_spaces > 3 {
         return None;
@@ -129,6 +180,7 @@ fn try_parse_reference_definition_with_mode(
     if label.trim().is_empty() {
         return None;
     }
+    let label_close = leading_spaces + pos;
 
     pos += 1; // Skip ]
 
@@ -136,6 +188,7 @@ fn try_parse_reference_definition_with_mode(
     if pos >= bytes.len() || bytes[pos] != b':' {
         return None;
     }
+    let colon = leading_spaces + pos;
     pos += 1;
 
     // Skip ws + at most one newline + ws to the URL.
@@ -143,10 +196,10 @@ fn try_parse_reference_definition_with_mode(
 
     // Parse URL
     let url_start = pos;
+    let url_is_angle = pos < bytes.len() && bytes[pos] == b'<';
 
-    let url = if pos < bytes.len() && bytes[pos] == b'<' {
+    if url_is_angle {
         pos += 1;
-        let url_content_start = pos;
         while pos < bytes.len() && bytes[pos] != b'>' && bytes[pos] != b'\n' && bytes[pos] != b'\r'
         {
             pos += 1;
@@ -154,9 +207,7 @@ fn try_parse_reference_definition_with_mode(
         if pos >= bytes.len() || bytes[pos] != b'>' {
             return None;
         }
-        let url = inner[url_content_start..pos].to_string();
         pos += 1; // Skip >
-        url
     } else {
         while pos < bytes.len() && !matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r') {
             pos += 1;
@@ -164,8 +215,8 @@ fn try_parse_reference_definition_with_mode(
         if pos == url_start {
             return None;
         }
-        inner[url_start..pos].to_string()
-    };
+    }
+    let url = (leading_spaces + url_start)..(leading_spaces + pos);
 
     // After URL, try optional title. If a title attempt is malformed but we
     // had to cross a newline to reach it, fall back to "no title, end of URL
@@ -180,7 +231,7 @@ fn try_parse_reference_definition_with_mode(
         Some(consume_to_eol_lax(bytes, after_url))
     };
 
-    let mut title: Option<String> = None;
+    let mut title: Option<std::ops::Range<usize>> = None;
     let mut end_pos: Option<usize> = None;
 
     if let Some(title_start) = skip_ws_one_newline(bytes, after_url) {
@@ -195,23 +246,26 @@ fn try_parse_reference_definition_with_mode(
             && !crossed_newline
             && title_start == after_url;
         if cmark_requires_separator {
-            return Some((
-                leading_spaces + url_line_end_lax?,
-                label.to_string(),
+            return Some(ReferenceSpans {
+                indent: leading_spaces,
+                label_close,
+                colon,
                 url,
-                None,
-            ));
+                url_is_angle,
+                title: None,
+                consumed: leading_spaces + url_line_end_lax?,
+            });
         }
         let mut title_pos = title_start;
-        match parse_title(inner, bytes, &mut title_pos) {
-            Some(Some(t)) => {
+        match parse_title(bytes, &mut title_pos) {
+            Some(Some(range)) => {
                 let line_end = if strict_eol {
                     consume_to_eol(bytes, title_pos)
                 } else {
                     Some(consume_to_eol_lax(bytes, title_pos))
                 };
                 if let Some(end) = line_end {
-                    title = Some(t);
+                    title = Some((leading_spaces + range.start)..(leading_spaces + range.end));
                     end_pos = Some(end);
                 } else if !crossed_newline {
                     return None;
@@ -231,7 +285,15 @@ fn try_parse_reference_definition_with_mode(
         None => url_line_end_lax?,
     };
 
-    Some((leading_spaces + end, label.to_string(), url, title))
+    Some(ReferenceSpans {
+        indent: leading_spaces,
+        label_close,
+        colon,
+        url,
+        url_is_angle,
+        title,
+        consumed: leading_spaces + end,
+    })
 }
 
 /// Like `consume_to_eol` but returns the end-of-line position regardless of
@@ -363,8 +425,12 @@ pub fn line_is_mmd_link_attribute_continuation(line: &str) -> bool {
 
 /// Parse an optional title after the URL.
 /// Titles can be in double quotes, single quotes, or parentheses.
-/// Returns Some(Some(title)) if title found, Some(None) if no title, None if malformed.
-fn parse_title(text: &str, bytes: &[u8], pos: &mut usize) -> Option<Option<String>> {
+///
+/// Returns `Some(Some(range))` with the title's *outer* byte range (delimiters
+/// included, relative to `bytes`) when a title is found, `Some(None)` if there
+/// is no title, and `None` if a title is started but malformed. On success
+/// `*pos` is advanced past the closing delimiter and any trailing space/tab.
+fn parse_title(bytes: &[u8], pos: &mut usize) -> Option<Option<std::ops::Range<usize>>> {
     let base_pos = *pos;
 
     // Skip whitespace (including newlines for multi-line titles)
@@ -386,8 +452,8 @@ fn parse_title(text: &str, bytes: &[u8], pos: &mut usize) -> Option<Option<Strin
 
     let closing_char = if quote_char == b'(' { b')' } else { quote_char };
 
+    let open = *pos;
     *pos += 1; // Skip opening quote
-    let title_start = *pos;
 
     // Find closing quote
     let mut escape_next = false;
@@ -404,17 +470,15 @@ fn parse_title(text: &str, bytes: &[u8], pos: &mut usize) -> Option<Option<Strin
                 *pos += 1;
             }
             c if c == closing_char => {
-                let title_end = *pos;
                 *pos += 1; // Skip closing quote
+                let close_end = *pos;
 
                 // Skip trailing whitespace to end of line
                 while *pos < bytes.len() && matches!(bytes[*pos], b' ' | b'\t') {
                     *pos += 1;
                 }
 
-                // Extract title from the original text using correct indices
-                let title = text[title_start..title_end].to_string();
-                return Some(Some(title));
+                return Some(Some(open..close_end));
             }
             b'\n' if quote_char == b'(' => {
                 // Parenthetical titles can span lines
@@ -573,6 +637,62 @@ mod tests {
                 .as_ref()
                 .map(|(_, _, url, title)| (url.as_str(), title.as_deref())),
             Some(("bar", Some("baz")))
+        );
+    }
+
+    #[test]
+    fn test_reference_definition_emits_structured_url_and_title() {
+        let input = "[ref]: <https://example.com> \"The Title\"\n";
+        let tree = crate::parse(input, Some(crate::ParserOptions::default()));
+        assert_eq!(tree.text().to_string(), input, "must stay lossless");
+
+        let def = tree
+            .descendants()
+            .find(|n| n.kind() == SyntaxKind::REFERENCE_DEFINITION)
+            .expect("reference definition");
+
+        let url = def
+            .children()
+            .find(|n| n.kind() == SyntaxKind::REFERENCE_URL)
+            .expect("REFERENCE_URL node");
+        assert_eq!(url.text().to_string(), "<https://example.com>");
+        // Angle brackets are kept inside the node as their own delimiter tokens.
+        assert!(
+            url.children_with_tokens()
+                .any(|e| e.kind() == SyntaxKind::LINK_DEST_START)
+        );
+        assert!(
+            url.children_with_tokens()
+                .any(|e| e.kind() == SyntaxKind::LINK_DEST_END)
+        );
+
+        let title = def
+            .children()
+            .find(|n| n.kind() == SyntaxKind::REFERENCE_TITLE)
+            .expect("REFERENCE_TITLE node");
+        assert_eq!(title.text().to_string(), "\"The Title\"");
+    }
+
+    #[test]
+    fn test_reference_definition_without_title_omits_title_node() {
+        let input = "[ref]: /url\n";
+        let tree = crate::parse(input, Some(crate::ParserOptions::default()));
+        assert_eq!(tree.text().to_string(), input, "must stay lossless");
+
+        let def = tree
+            .descendants()
+            .find(|n| n.kind() == SyntaxKind::REFERENCE_DEFINITION)
+            .expect("reference definition");
+
+        let url = def
+            .children()
+            .find(|n| n.kind() == SyntaxKind::REFERENCE_URL)
+            .expect("REFERENCE_URL node");
+        assert_eq!(url.text().to_string(), "/url");
+        assert!(
+            !def.children()
+                .any(|n| n.kind() == SyntaxKind::REFERENCE_TITLE),
+            "no title => no REFERENCE_TITLE node"
         );
     }
 

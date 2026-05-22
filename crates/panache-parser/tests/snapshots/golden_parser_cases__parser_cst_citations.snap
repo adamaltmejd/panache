@@ -238,7 +238,10 @@ DOCUMENT@0..1707
       LINK_TEXT@1548..1554
         TEXT@1548..1554 "Google"
       TEXT@1554..1555 "]"
-    TEXT@1555..1574 ": http://google.com"
+    TEXT@1555..1556 ":"
+    WHITESPACE@1556..1557 " "
+    REFERENCE_URL@1557..1574
+      TEXT@1557..1574 "http://google.com"
     NEWLINE@1574..1575 "\n"
   BLANK_LINE@1575..1576
     BLANK_LINE@1575..1576 "\n"

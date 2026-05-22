@@ -538,6 +538,7 @@ golden_test_cases!(
     reference_definition_multiline_destination,
     reference_definition_multiline_label,
     reference_definition_no_interrupt_paragraph,
+    reference_definition_structured_url_title,
     setext_vs_reference_definition_commonmark,
     setext_vs_reference_definition_pandoc,
     reference_footnotes,

@@ -157,7 +157,13 @@ DOCUMENT@0..1126
       LINK_TEXT@428..432
         TEXT@428..432 "ref1"
       TEXT@432..433 "]"
-    TEXT@433..469 ": https://example.com ..."
+    TEXT@433..434 ":"
+    WHITESPACE@434..435 " "
+    REFERENCE_URL@435..454
+      TEXT@435..454 "https://example.com"
+    WHITESPACE@454..455 " "
+    REFERENCE_TITLE@455..469
+      TEXT@455..469 "\"Example Site\""
     NEWLINE@469..470 "\n"
   REFERENCE_DEFINITION@470..499
     LINK@470..478
@@ -166,7 +172,10 @@ DOCUMENT@0..1126
       LINK_TEXT@471..477
         TEXT@471..477 "github"
       TEXT@477..478 "]"
-    TEXT@478..498 ": https://github.com"
+    TEXT@478..479 ":"
+    WHITESPACE@479..480 " "
+    REFERENCE_URL@480..498
+      TEXT@480..498 "https://github.com"
     NEWLINE@498..499 "\n"
   REFERENCE_DEFINITION@499..534
     LINK@499..510
@@ -175,7 +184,10 @@ DOCUMENT@0..1126
       LINK_TEXT@500..509
         TEXT@500..509 "Wikipedia"
       TEXT@509..510 "]"
-    TEXT@510..533 ": https://wikipedia.org"
+    TEXT@510..511 ":"
+    WHITESPACE@511..512 " "
+    REFERENCE_URL@512..533
+      TEXT@512..533 "https://wikipedia.org"
     NEWLINE@533..534 "\n"
   REFERENCE_DEFINITION@534..557
     LINK@534..537
@@ -184,7 +196,10 @@ DOCUMENT@0..1126
       LINK_TEXT@535..536
         TEXT@535..536 "1"
       TEXT@536..537 "]"
-    TEXT@537..556 ": https://first.com"
+    TEXT@537..538 ":"
+    WHITESPACE@538..539 " "
+    REFERENCE_URL@539..556
+      TEXT@539..556 "https://first.com"
     NEWLINE@556..557 "\n"
   REFERENCE_DEFINITION@557..581
     LINK@557..560
@@ -193,7 +208,10 @@ DOCUMENT@0..1126
       LINK_TEXT@558..559
         TEXT@558..559 "2"
       TEXT@559..560 "]"
-    TEXT@560..580 ": https://second.com"
+    TEXT@560..561 ":"
+    WHITESPACE@561..562 " "
+    REFERENCE_URL@562..580
+      TEXT@562..580 "https://second.com"
     NEWLINE@580..581 "\n"
   REFERENCE_DEFINITION@581..610
     LINK@581..588
@@ -202,7 +220,10 @@ DOCUMENT@0..1126
       LINK_TEXT@582..587
         TEXT@582..587 "myref"
       TEXT@587..588 "]"
-    TEXT@588..609 ": https://matched.com"
+    TEXT@588..589 ":"
+    WHITESPACE@589..590 " "
+    REFERENCE_URL@590..609
+      TEXT@590..609 "https://matched.com"
     NEWLINE@609..610 "\n"
   BLANK_LINE@610..611
     BLANK_LINE@610..611 "\n"
@@ -322,7 +343,10 @@ DOCUMENT@0..1126
       LINK_TEXT@1105..1108
         TEXT@1105..1108 "foo"
       TEXT@1108..1109 "]"
-    TEXT@1109..1114 ": bar"
+    TEXT@1109..1110 ":"
+    WHITESPACE@1110..1111 " "
+    REFERENCE_URL@1111..1114
+      TEXT@1111..1114 "bar"
     NEWLINE@1114..1115 "\n"
   BLANK_LINE@1115..1116
     BLANK_LINE@1115..1116 "\n"

@@ -42,41 +42,44 @@ fn collect_references(tree: &SyntaxNode) -> HashMap<String, RefDef> {
 
 fn parse_reference_definition(node: &SyntaxNode) -> Option<(String, RefDef)> {
     let mut label = String::new();
+    let mut url_raw: Option<String> = None;
+    let mut title_raw: Option<String> = None;
     for child in node.children() {
-        if child.kind() == SyntaxKind::LINK {
-            for grand in child.children() {
-                if grand.kind() == SyntaxKind::LINK_TEXT {
-                    label = collect_label_text(&grand);
+        match child.kind() {
+            SyntaxKind::LINK => {
+                for grand in child.children() {
+                    if grand.kind() == SyntaxKind::LINK_TEXT {
+                        label = collect_label_text(&grand);
+                    }
                 }
             }
+            // The parser now emits the destination and title as structured
+            // nodes (REFERENCE_URL keeps any `<>` delimiters; REFERENCE_TITLE
+            // keeps its quote/paren delimiters), so read them directly instead
+            // of re-splitting the raw tail tokens.
+            SyntaxKind::REFERENCE_URL => url_raw = Some(child.text().to_string()),
+            SyntaxKind::REFERENCE_TITLE => title_raw = Some(child.text().to_string()),
+            _ => {}
         }
     }
     if label.is_empty() {
         return None;
     }
 
-    let mut tail = String::new();
-    for el in node.children_with_tokens() {
-        if let NodeOrToken::Token(t) = el {
-            match t.kind() {
-                SyntaxKind::TEXT | SyntaxKind::NEWLINE | SyntaxKind::WHITESPACE => {
-                    tail.push_str(t.text())
-                }
-                _ => {}
-            }
-        }
-    }
-    let tail = tail.trim_start().trim_start_matches(':').trim();
-    let (url, title) = split_dest_and_title(tail);
+    let url = strip_angle_brackets(&url_raw.unwrap_or_default());
+    let title = title_raw.as_deref().and_then(parse_title);
     Some((
         label,
         RefDef {
-            url: decode_entities(&decode_backslash_escapes(&strip_angle_brackets(&url))),
+            url: decode_entities(&decode_backslash_escapes(&url)),
             title: title.map(|t| decode_entities(&decode_backslash_escapes(&t))),
         },
     ))
 }
 
+/// Split an inline link's destination region (`<url> "title"` or
+/// `url "title"`) into `(url, title)`. Still used for inline links, whose
+/// destination tokens are not yet structured the way reference definitions are.
 fn split_dest_and_title(text: &str) -> (String, Option<String>) {
     let text = text.trim();
     if let Some(rest) = text.strip_prefix('<')

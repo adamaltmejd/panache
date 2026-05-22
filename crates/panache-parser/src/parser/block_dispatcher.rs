@@ -50,8 +50,8 @@ use super::blocks::metadata::{
 use super::blocks::raw_blocks;
 use super::blocks::raw_blocks::extract_environment_name;
 use super::blocks::reference_links::{
-    line_is_mmd_link_attribute_continuation, try_parse_footnote_marker,
-    try_parse_reference_definition, try_parse_reference_definition_lax,
+    ReferenceSpans, line_is_mmd_link_attribute_continuation, reference_definition_spans,
+    try_parse_footnote_marker, try_parse_reference_definition, try_parse_reference_definition_lax,
 };
 use super::blocks::tables::{
     is_caption_followed_by_table, try_parse_grid_table, try_parse_multiline_table,
@@ -1134,6 +1134,12 @@ impl BlockParser for ReferenceDefinitionParser {
             .map(|p| p.consumed_lines)
             .unwrap_or(1);
 
+        // The destination/title byte spans come from the same walker detection
+        // used, so the structured `REFERENCE_URL` / `REFERENCE_TITLE` nodes wrap
+        // exactly the bytes detection recognized (no detect/emit drift).
+        let strict_eol = !ctx.config.extensions.mmd_link_attributes;
+        let dialect = ctx.config.dialect;
+
         // Inside a blockquote, BLOCK_QUOTE_MARKER + WHITESPACE were already
         // emitted by the dispatcher; using lines[line_pos] would duplicate the
         // `>` marker (CST losslessness violation). detect_prepared restricts
@@ -1141,7 +1147,8 @@ impl BlockParser for ReferenceDefinitionParser {
         // the bq-stripped first line here.
         if ctx.blockquote_depth > 0 {
             let single = [content];
-            emit_reference_definition_lines(builder, &single);
+            let spans = reference_definition_spans(content, strict_eol, dialect);
+            emit_reference_definition_lines(builder, &single, spans);
         } else {
             let target_lines: Vec<&str> = lines
                 .iter()
@@ -1149,7 +1156,9 @@ impl BlockParser for ReferenceDefinitionParser {
                 .take(consumed_lines)
                 .copied()
                 .collect();
-            emit_reference_definition_lines(builder, &target_lines);
+            let joined: String = target_lines.concat();
+            let spans = reference_definition_spans(&joined, strict_eol, dialect);
+            emit_reference_definition_lines(builder, &target_lines, spans);
         }
 
         builder.finish_node();
@@ -1494,85 +1503,119 @@ impl BlockParser for TableParser {
 }
 
 /// Emit a (possibly multi-line) reference definition's content tokens with
-/// the appropriate inline structure: `WHITESPACE? LINK<LINK_START "[",
-/// LINK_TEXT, "]"> TEXT NEWLINE? ...`. The LINK_TEXT may span multiple
-/// lines via interleaved TEXT/NEWLINE tokens when the spec example uses a
-/// multi-line label (e.g. `[Foo\n  bar]: /url`, CommonMark example #541).
+/// full inline structure:
+/// `WHITESPACE? LINK<LINK_START "[", LINK_TEXT, "]"> TEXT(":") sep
+///  REFERENCE_URL sep REFERENCE_TITLE? trailing`.
 ///
-/// The walker mirrors the escape-and-bracket logic in
-/// `try_parse_reference_definition_with_mode` so the emit shape stays
-/// consistent with detection.
+/// The destination/title byte ranges come from `spans` —
+/// [`reference_definition_spans`], the same walker detection uses — so the
+/// `REFERENCE_URL` / `REFERENCE_TITLE` nodes wrap exactly the bytes detection
+/// recognized and the two phases never drift. The LINK_TEXT may span multiple
+/// lines via interleaved TEXT/NEWLINE tokens when the label wraps
+/// (e.g. `[Foo\n  bar]: /url`, CommonMark example #541).
 ///
-/// On any structural mismatch (label > 3 spaces of indent, missing `[`,
-/// no closing `]`, missing `:` after `]`), each input line is emitted
-/// verbatim via `emit_line_tokens` to preserve CST losslessness.
-fn emit_reference_definition_lines(builder: &mut GreenNodeBuilder<'static>, lines: &[&str]) {
-    use crate::parser::utils::helpers::{emit_line_tokens, strip_newline};
+/// When `spans` is `None` (the dispatcher only calls this after a successful
+/// detection, so this is defensive), each input line is emitted verbatim via
+/// `emit_line_tokens` to preserve CST losslessness.
+fn emit_reference_definition_lines(
+    builder: &mut GreenNodeBuilder<'static>,
+    lines: &[&str],
+    spans: Option<ReferenceSpans>,
+) {
+    use crate::parser::utils::helpers::emit_line_tokens;
     use crate::syntax::SyntaxKind;
-
-    let fallback = |b: &mut GreenNodeBuilder<'static>| {
-        for line in lines {
-            emit_line_tokens(b, line);
-        }
-    };
 
     if lines.is_empty() {
         return;
     }
 
-    let first = lines[0];
-    let leading = first.chars().take_while(|&c| c == ' ').count();
-    if leading > 3 || !first[leading..].starts_with('[') {
-        fallback(builder);
+    let Some(spans) = spans else {
+        for line in lines {
+            emit_line_tokens(builder, line);
+        }
         return;
-    }
+    };
 
-    let mut line_idx = 0usize;
-    let mut col = leading + 1; // skip past `[`
-    let mut escape_next = false;
-    let close: Option<(usize, usize)> = 'outer: loop {
-        let bytes = lines[line_idx].as_bytes();
-        while col < bytes.len() {
-            let b = bytes[col];
-            if escape_next {
-                escape_next = false;
-                col += 1;
-                continue;
-            }
-            match b {
-                b'\\' => {
-                    escape_next = true;
-                    col += 1;
+    // Emit a whitespace/newline-only separator run as standalone WHITESPACE and
+    // NEWLINE tokens (the bytes between `:`→url and url→title are guaranteed
+    // whitespace + at most one line ending by `skip_ws_one_newline`).
+    fn emit_separator(builder: &mut GreenNodeBuilder<'static>, seg: &str) {
+        let bytes = seg.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'\n' => {
+                    builder.token(SyntaxKind::NEWLINE.into(), "\n");
+                    i += 1;
                 }
-                b']' => break 'outer Some((line_idx, col)),
-                b'[' => break 'outer None,
-                b'\r' | b'\n' => break,
-                _ => col += 1,
+                b'\r' => {
+                    let n = if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                        2
+                    } else {
+                        1
+                    };
+                    builder.token(SyntaxKind::NEWLINE.into(), &seg[i..i + n]);
+                    i += n;
+                }
+                _ => {
+                    let start = i;
+                    while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
+                        i += 1;
+                    }
+                    builder.token(SyntaxKind::WHITESPACE.into(), &seg[start..i]);
+                }
             }
         }
-        line_idx += 1;
-        if line_idx >= lines.len() {
-            break 'outer None;
+    }
+
+    // Emit a text region, splitting line endings into NEWLINE tokens and
+    // everything else into TEXT runs (no empty TEXT tokens). Used for a
+    // multi-line label and for the trailing remainder (EOL + any MMD
+    // attribute-continuation lines).
+    fn emit_text_lines(builder: &mut GreenNodeBuilder<'static>, seg: &str) {
+        let bytes = seg.as_bytes();
+        let mut i = 0;
+        let mut start = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'\n' => {
+                    if i > start {
+                        builder.token(SyntaxKind::TEXT.into(), &seg[start..i]);
+                    }
+                    builder.token(SyntaxKind::NEWLINE.into(), "\n");
+                    i += 1;
+                    start = i;
+                }
+                b'\r' => {
+                    if i > start {
+                        builder.token(SyntaxKind::TEXT.into(), &seg[start..i]);
+                    }
+                    let n = if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                        2
+                    } else {
+                        1
+                    };
+                    builder.token(SyntaxKind::NEWLINE.into(), &seg[i..i + n]);
+                    i += n;
+                    start = i;
+                }
+                _ => i += 1,
+            }
         }
-        col = 0;
-    };
-
-    let Some((close_line, close_col)) = close else {
-        fallback(builder);
-        return;
-    };
-
-    let after_close_col = close_col + 1;
-    let close_bytes = lines[close_line].as_bytes();
-    if after_close_col >= close_bytes.len() || close_bytes[after_close_col] != b':' {
-        fallback(builder);
-        return;
+        if start < bytes.len() {
+            builder.token(SyntaxKind::TEXT.into(), &seg[start..]);
+        }
     }
 
-    if leading > 0 {
-        builder.token(SyntaxKind::WHITESPACE.into(), &first[..leading]);
+    let joined: String = lines.concat();
+    let s = &joined[..];
+
+    // Leading indent (0..=3 spaces).
+    if spans.indent > 0 {
+        builder.token(SyntaxKind::WHITESPACE.into(), &s[..spans.indent]);
     }
 
+    // LINK<LINK_START "[", LINK_TEXT, "]">
     builder.start_node(SyntaxKind::LINK.into());
 
     builder.start_node(SyntaxKind::LINK_START.into());
@@ -1580,50 +1623,42 @@ fn emit_reference_definition_lines(builder: &mut GreenNodeBuilder<'static>, line
     builder.finish_node();
 
     builder.start_node(SyntaxKind::LINK_TEXT.into());
-    if close_line == 0 {
-        let label = &first[leading + 1..close_col];
-        if !label.is_empty() {
-            builder.token(SyntaxKind::TEXT.into(), label);
-        }
-    } else {
-        let (content0, nl0) = strip_newline(first);
-        let part0 = &content0[leading + 1..];
-        if !part0.is_empty() {
-            builder.token(SyntaxKind::TEXT.into(), part0);
-        }
-        if !nl0.is_empty() {
-            builder.token(SyntaxKind::NEWLINE.into(), nl0);
-        }
-        for line in &lines[1..close_line] {
-            let (content, nl) = strip_newline(line);
-            if !content.is_empty() {
-                builder.token(SyntaxKind::TEXT.into(), content);
-            }
-            if !nl.is_empty() {
-                builder.token(SyntaxKind::NEWLINE.into(), nl);
-            }
-        }
-        let part_close = &lines[close_line][..close_col];
-        if !part_close.is_empty() {
-            builder.token(SyntaxKind::TEXT.into(), part_close);
-        }
-    }
-    builder.finish_node(); // LINK_TEXT
+    emit_text_lines(builder, &s[spans.indent + 1..spans.label_close]);
+    builder.finish_node();
 
     builder.token(SyntaxKind::TEXT.into(), "]");
     builder.finish_node(); // LINK
 
-    let after_close_text = &lines[close_line][after_close_col..];
-    let (after_content, after_nl) = strip_newline(after_close_text);
-    if !after_content.is_empty() {
-        builder.token(SyntaxKind::TEXT.into(), after_content);
+    // Colon, then separator up to the destination.
+    builder.token(SyntaxKind::TEXT.into(), ":");
+    emit_separator(builder, &s[spans.colon + 1..spans.url.start]);
+
+    // REFERENCE_URL — angle brackets kept inside as their own delimiter tokens.
+    builder.start_node(SyntaxKind::REFERENCE_URL.into());
+    if spans.url_is_angle {
+        builder.token(SyntaxKind::LINK_DEST_START.into(), "<");
+        let inner = &s[spans.url.start + 1..spans.url.end - 1];
+        if !inner.is_empty() {
+            builder.token(SyntaxKind::TEXT.into(), inner);
+        }
+        builder.token(SyntaxKind::LINK_DEST_END.into(), ">");
+    } else {
+        builder.token(SyntaxKind::TEXT.into(), &s[spans.url.clone()]);
     }
-    if !after_nl.is_empty() {
-        builder.token(SyntaxKind::NEWLINE.into(), after_nl);
-    }
-    for line in &lines[close_line + 1..] {
-        emit_line_tokens(builder, line);
-    }
+    builder.finish_node(); // REFERENCE_URL
+
+    let last_end = if let Some(title) = spans.title.clone() {
+        emit_separator(builder, &s[spans.url.end..title.start]);
+        builder.start_node(SyntaxKind::REFERENCE_TITLE.into());
+        builder.token(SyntaxKind::TEXT.into(), &s[title.clone()]);
+        builder.finish_node(); // REFERENCE_TITLE
+        title.end
+    } else {
+        spans.url.end
+    };
+
+    // Trailing EOL plus any MMD attribute-continuation lines, verbatim.
+    emit_text_lines(builder, &s[last_end..]);
 }
 
 /// Fenced code block parser (``` or ~~~)

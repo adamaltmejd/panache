@@ -35,7 +35,10 @@ DOCUMENT@0..217
       LINK_TEXT@116..119
         TEXT@116..119 "ref"
       TEXT@119..120 "]"
-    TEXT@120..141 ": https://example.com"
+    TEXT@120..121 ":"
+    WHITESPACE@121..122 " "
+    REFERENCE_URL@122..141
+      TEXT@122..141 "https://example.com"
     NEWLINE@141..143 "\r\n"
   BLANK_LINE@143..145
     BLANK_LINE@143..145 "\r\n"
