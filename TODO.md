@@ -525,9 +525,47 @@ intentionally excluded.
       and the refs/heading-id reparse helpers) re-tokenize source the CST should
       already encode. This violates the single-pass invariant in `AGENTS.md` and
       hides structural decisions from downstream consumers (linter, salsa, LSP,
-      formatter) which all walk the CST, not the projector. Phase 6 of the HTML
-      lift is the ongoing migration; the goal is for `pandoc_ast.rs` to be a
-      pure CST → native projection with no byte reparse.
+      formatter) which all walk the CST, not the projector. The guiding
+      principle: when the parser computes a structural fact during its single
+      pass, it must emit that fact into the CST (wrapping existing source bytes,
+      `HTML_ATTRS`-style --- never synthetic tokens) instead of forcing the
+      projector to recompute it. Each bucket below is its own bounded step,
+      verified against pandoc-native + CommonMark (both must stay byte-identical
+      or improve). Roadmap:
+      - [x] **References.** `[label]: url "title"` now emits `REFERENCE_URL` /
+            `REFERENCE_TITLE` nodes via a shared `reference_definition_spans`
+            walker that backs both detection and emission (no detect/emit
+            drift). Projector reads the nodes; `parse_ref_url` deleted,
+            `parse_reference_def` is a pure CST read. `ReferenceDefinition`
+            gained `url()`/`title()`.
+      - [ ] **Attributes.** Structure the `ATTRIBUTE` node into `id` / `class` /
+            `kv` children at parse time, killing the `parse_attr_block` /
+            `parse_html_attrs` reparse. Broadest blast radius --- shared by
+            headings, spans, divs, and code blocks; touch one consumer at a
+            time.
+      - [ ] **HTML opaque-block split.** Continue the HTML lift (Phase 6): lift
+            the remaining *opaque* HTML splitting (comments, PI, verbatim, void
+            / unmatched tags) into the parser so `split_html_block_by_tags` and
+            the recursive `parse_pandoc_blocks` become vestigial. Largest
+            bucket; coordinate with the `html-conformance` skill.
+      - [ ] **Table separator tokenization.** The separator row is currently a
+            coalesced `TEXT` blob (e.g. `TEXT "|:--|--:|"`), so
+            `simple_table_aligns`, `grid_dash_widths`, and
+            `pipe_separator_aligns` re-tokenize it. Split the markers (`|` /
+            `+`, dash runs, colons) into distinct CST tokens so those
+            derivations read structure instead of re-scanning a string. Note:
+            this only structures the *syntax* --- the derived geometry (widths,
+            alignment values) does NOT move into the CST; see below.
+      - Legitimately stays in the projector (derived values with no source-byte
+        form, not unencoded syntax): column **widths** (a normalized fraction of
+        dash counts --- there is no byte that spells `0.33`); table
+        **alignment** (the `AlignLeft`/... enum is computed --- from colons for
+        pipe/grid tables, from content-vs-dash flushness for simple/multiline
+        --- so even though its *evidence* is in the source, the value isn't a
+        substring); implicit heading-id slugification (needs whole-document
+        dedup); and smart-typography substitution (an output transform). Storing
+        any of these as tokens would require synthetic tokens and break CST
+        losslessness.
 - [x] Centralize position advancement. `parse_line`, `parse_inner_content`, and
       the dispatch helpers (`dispatch_bq_after_list_item`,
       `maybe_open_fenced_code_in_new_list_item`, the three `handle_*_effect`
