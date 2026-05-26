@@ -1,11 +1,17 @@
 The largest change in this release is likely a new wrap mode, `semantic`, which
 is a hybrid between `sentence` and `preserve` modes based on [Semantic Line
 Breaks](https://sembr.org/). You configure it by setting
-`[format]\nwrap = semantic` in the config. It will break lines at sentence
-boundaries, like the `sentence` mode, but also preserve existing break points.
-In the future, I expect to tailor some lint rules to the mode according to the
-sembr spec, but for now it is just a new wrap mode. Thanks to @BoltonBailey for
-the suggestion ([#313](https://github.com/jolars/panache/issues/313)).
+
+```toml
+[format]
+wrap = "semantic"
+```
+
+in the config. It will break lines at sentence boundaries, like the `sentence`
+mode, but also preserve existing break points. In the future, I expect to tailor
+some lint rules to the mode according to the sembr spec, but for now it is just
+a new wrap mode. Thanks to @BoltonBailey for the suggestion
+([#313](https://github.com/jolars/panache/issues/313)).
 
 This release also comes with support for a new extension, `four-space-rule`,
 which is a standard Pandoc extension (off by default) that enforces a four-space
