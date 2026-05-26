@@ -650,12 +650,6 @@
       "tree": false
     },
     {
-      "case_id": "M5DY",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "M7A3",
       "diagnostic_codes": [
         "YAML_PARSE_DIRECTIVE_AFTER_CONTENT"
@@ -694,12 +688,6 @@
       "tree": true
     },
     {
-      "case_id": "RZP5",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "S3PD",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -728,12 +716,6 @@
       "tree": false
     },
     {
-      "case_id": "V9D5",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "W4TN",
       "diagnostic_codes": [
         "YAML_PARSE_DIRECTIVE_AFTER_CONTENT"
@@ -743,12 +725,6 @@
     },
     {
       "case_id": "X38W",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "XW4D",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -916,6 +892,7 @@
     "LX3P",
     "M29M",
     "M5C3",
+    "M5DY",
     "M6YH",
     "M7NX",
     "M9B4",
@@ -943,6 +920,7 @@
     "RLU9",
     "RR7F",
     "RTP8",
+    "RZP5",
     "RZT7",
     "S4JQ",
     "S4T7",
@@ -964,12 +942,14 @@
     "UT92",
     "UV7Q",
     "V55R",
+    "V9D5",
     "W42U",
     "W5VH",
     "WZ62",
     "X8DW",
     "XLQ9",
     "XV9V",
+    "XW4D",
     "Y2GN",
     "YD5X",
     "Z67P",
@@ -982,8 +962,8 @@
   "summary": {
     "error_contract_ok_count": 53,
     "fails_needs_error_path_count": 25,
-    "fails_needs_feature_count": 32,
-    "passes_now_count": 223,
+    "fails_needs_feature_count": 28,
+    "passes_now_count": 227,
     "total_cases": 352
   }
 }

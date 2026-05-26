@@ -1,0 +1,10 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 250
+expression: snapshot
+---
+case_id: V9D5
+input: "- sun: yellow\n- ? earth: blue\n  : moon: white\n"
+has_error_contract: false
+parsed_mapping_tree: true
+diagnostics: []

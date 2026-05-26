@@ -480,3 +480,16 @@ BU8L
 # (the URI carries commas/colons) and resolve_long_tag passes the inner URI
 # through verbatim, bypassing handle resolution per YAML 1.2 §6.8.1.
 7FWL
+# Explicit-key (`?`) block-map entry whose KEY is itself a nested collection —
+# a block/flow sequence (M5DY: `? - a\n  - b\n: ...` and `? [x, y]`) or a nested
+# block map (V9D5: `? earth: blue\n: moon: white`). The collection lives as a
+# child node of YAML_BLOCK_MAP_KEY; project_block_map_key_collection now projects
+# it in the key position instead of emitting an empty `=VAL :`.
+M5DY
+V9D5
+# Unlocked by the same explicit-key-collection projection: comment-heavy maps
+# mixing double-quoted folding, plain multi-line values, and an explicit
+# `? # comment\n - seq1\n: # comment\n - seq2` whose key/value are block
+# sequences (plus a `&node` block-seq value and a folded `>` block scalar).
+RZP5
+XW4D

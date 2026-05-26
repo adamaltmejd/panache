@@ -2423,6 +2423,48 @@ fn project_block_map_entries(map_node: &SyntaxNode, handles: &TagHandles, out: &
     }
 }
 
+/// Project a YAML_BLOCK_MAP_KEY whose content is a nested collection — the
+/// explicit-key `? <seq-or-map>` shape — into the key position. Mirrors the
+/// nested-collection branches of [`project_block_map_entry_value`]. Returns
+/// `true` when a collection child was found and projected, `false` when the
+/// key is a plain scalar the caller should handle with its token-join logic.
+fn project_block_map_key_collection(
+    key_node: &SyntaxNode,
+    handles: &TagHandles,
+    out: &mut Vec<String>,
+) -> bool {
+    for child in key_node.children() {
+        match child.kind() {
+            SyntaxKind::YAML_BLOCK_SEQUENCE => {
+                out.push(seq_open_event(&child, handles));
+                project_block_sequence_items(&child, handles, out);
+                out.push("-SEQ".to_string());
+                return true;
+            }
+            SyntaxKind::YAML_FLOW_SEQUENCE => {
+                out.push("+SEQ []".to_string());
+                project_flow_sequence_items_cst(&child, handles, out);
+                out.push("-SEQ".to_string());
+                return true;
+            }
+            SyntaxKind::YAML_BLOCK_MAP => {
+                out.push("+MAP".to_string());
+                project_block_map_entries(&child, handles, out);
+                out.push("-MAP".to_string());
+                return true;
+            }
+            SyntaxKind::YAML_FLOW_MAP => {
+                out.push("+MAP {}".to_string());
+                project_flow_map_entries(&child, handles, out);
+                out.push("-MAP".to_string());
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn project_block_map_entry(entry: &SyntaxNode, handles: &TagHandles, out: &mut Vec<String>) {
     let key_node = entry
         .children()
@@ -2432,6 +2474,17 @@ fn project_block_map_entry(entry: &SyntaxNode, handles: &TagHandles, out: &mut V
         .children()
         .find(|n| n.kind() == SyntaxKind::YAML_BLOCK_MAP_VALUE)
         .expect("value node");
+
+    // Explicit-key (`?`) entry whose key content is a nested collection (block
+    // or flow sequence/map) rather than a scalar. The collection lives as a
+    // child NODE of YAML_BLOCK_MAP_KEY, so the token-join key-text logic below
+    // sees only the `?` indicator and would emit an empty `=VAL :`. Project the
+    // collection in the key position instead. M5DY: block/flow seq keys; V9D5:
+    // nested block-map key.
+    if project_block_map_key_collection(&key_node, handles, out) {
+        project_block_map_entry_value(&value_node, handles, out);
+        return;
+    }
 
     let key_tag = key_node
         .children_with_tokens()
