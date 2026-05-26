@@ -532,3 +532,11 @@ H7TQ
 # scalars (W5VH/26DV); rejected with YAML_PARSE_INVALID_KEY_TOKEN.
 ZCZ6
 ZL4Z
+# Multi-line double-quoted scalar with a §7.5 escaped line break (`\` at end of
+# line) folding two lines with no separating space (spec example 7.5). The
+# validator's `is_valid_dq_escape` table omitted `\n`/`\r` (and `\t`), so a bare
+# `"…"` scalar with an escaped break was falsely rejected with
+# LEX_INVALID_DOUBLE_QUOTED_ESCAPE — 565N only escaped this via its `!!binary`
+# tag prefix shielding the token from the `starts_with('"')` check.
+NP9H
+Q8AD

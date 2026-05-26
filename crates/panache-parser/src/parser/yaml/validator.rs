@@ -1522,6 +1522,12 @@ fn is_valid_dq_escape(ch: char) -> bool {
         '0' | 'a'
             | 'b'
             | 't'
+            // `\<TAB>` is accepted by the scanner's escape table (§5.7).
+            | '\t'
+            // `\<line-break>` is the escaped line break / line continuation
+            // (§7.5); the multi-line scalar token carries a literal break here.
+            | '\n'
+            | '\r'
             | 'n'
             | 'v'
             | 'f'
@@ -2175,5 +2181,43 @@ mod tests {
         // `text: >\n  body` — no content on header line.
         let input = "text: >\n  body\n";
         assert!(run(input).is_none());
+    }
+
+    // ---- Cluster L: double-quoted escapes ----
+
+    #[test]
+    fn dq_escaped_line_break_passes_np9h() {
+        // NP9H (spec 7.5): a `\` at end of line is the escaped line break
+        // (line continuation), not an invalid escape. The validator's
+        // escape table previously omitted `\n`/`\r` and falsely rejected it.
+        let input = "\"folded \nto a space,\t\n \nto a line feed, or \t\\\n \\ \tnon-content\"\n";
+        assert!(run(input).is_none());
+    }
+
+    #[test]
+    fn dq_escaped_line_break_with_marker_passes_q8ad() {
+        // Q8AD: same escaped-line-break scalar behind a `---` marker.
+        let input =
+            "---\n\"folded \nto a space,\n \nto a line feed, or \t\\\n \\ \tnon-content\"\n";
+        assert!(run(input).is_none());
+    }
+
+    #[test]
+    fn dq_escaped_tab_passes() {
+        // `\<TAB>` is accepted by the scanner's escape table; the
+        // validator must agree so the two paths don't diverge.
+        let input = "key: \"a\\\tb\"\n";
+        assert!(run(input).is_none());
+    }
+
+    #[test]
+    fn dq_truly_invalid_escape_still_rejected() {
+        // Contract guard: a genuinely unknown escape (`\q`) is still flagged.
+        let input = "key: \"a\\qb\"\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(
+            diag.code,
+            diagnostic_codes::LEX_INVALID_DOUBLE_QUOTED_ESCAPE
+        );
     }
 }

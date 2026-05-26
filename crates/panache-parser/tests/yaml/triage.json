@@ -648,22 +648,6 @@
       "tree": false
     },
     {
-      "case_id": "NP9H",
-      "diagnostic_codes": [
-        "YAML_LEX_INVALID_DOUBLE_QUOTED_ESCAPE"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
-      "case_id": "Q8AD",
-      "diagnostic_codes": [
-        "YAML_LEX_INVALID_DOUBLE_QUOTED_ESCAPE"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
       "case_id": "Q9WF",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -884,6 +868,7 @@
     "NB6Z",
     "NHX8",
     "NJ66",
+    "NP9H",
     "P2AD",
     "P76L",
     "P94K",
@@ -893,6 +878,7 @@
     "PW8X",
     "Q5MG",
     "Q88A",
+    "Q8AD",
     "QF4Y",
     "QT73",
     "R4YG",
@@ -943,8 +929,8 @@
   "summary": {
     "error_contract_ok_count": 57,
     "fails_needs_error_path_count": 21,
-    "fails_needs_feature_count": 23,
-    "passes_now_count": 232,
+    "fails_needs_feature_count": 21,
+    "passes_now_count": 234,
     "total_cases": 352
   }
 }
