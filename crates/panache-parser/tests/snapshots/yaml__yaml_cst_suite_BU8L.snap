@@ -1,0 +1,30 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
+expression: snapshot
+---
+case_id: BU8L
+input: "key: &anchor\n !!map\n  a: b\n"
+diagnostics:
+
+cst:
+DOCUMENT@0..27
+  YAML_METADATA_CONTENT@0..27
+    YAML_STREAM@0..27
+      YAML_DOCUMENT@0..27
+        YAML_BLOCK_MAP@0..27
+          YAML_BLOCK_MAP_ENTRY@0..27
+            YAML_BLOCK_MAP_KEY@0..4
+              YAML_SCALAR@0..3 "key"
+              YAML_COLON@3..4 ":"
+            YAML_BLOCK_MAP_VALUE@4..27
+              WHITESPACE@4..5 " "
+              YAML_SCALAR@5..23 "&anchor\n !!map\n  a"
+              YAML_BLOCK_MAP@23..27
+                YAML_BLOCK_MAP_ENTRY@23..27
+                  YAML_BLOCK_MAP_KEY@23..24
+                    YAML_COLON@23..24 ":"
+                  YAML_BLOCK_MAP_VALUE@24..27
+                    WHITESPACE@24..25 " "
+                    YAML_SCALAR@25..26 "b"
+                    NEWLINE@26..27 "\n"

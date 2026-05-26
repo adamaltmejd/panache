@@ -576,12 +576,6 @@
       "tree": false
     },
     {
-      "case_id": "6JWB",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "6M2F",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
@@ -625,12 +619,6 @@
     },
     {
       "case_id": "AB8U",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "BU8L",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -818,6 +806,7 @@
     "6H3V",
     "6HB6",
     "6JQW",
+    "6JWB",
     "6KGN",
     "6LVF",
     "6SLA",
@@ -867,6 +856,7 @@
     "AZW3",
     "B3HG",
     "BEC7",
+    "BU8L",
     "C2DT",
     "CC74",
     "CFD4",
@@ -997,8 +987,8 @@
   "summary": {
     "error_contract_ok_count": 53,
     "fails_needs_error_path_count": 25,
-    "fails_needs_feature_count": 35,
-    "passes_now_count": 220,
+    "fails_needs_feature_count": 33,
+    "passes_now_count": 222,
     "total_cases": 352
   }
 }

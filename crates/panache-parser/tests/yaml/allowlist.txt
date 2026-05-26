@@ -465,3 +465,13 @@ Z67P
 # Same `<tag> <block-scalar>` shape with the tag and indicator on separate
 # lines (`folded:\n   !foo\n  >1\n value`); peeling skips intervening newlines.
 M5C3
+# Node properties (anchor and/or tag) preceding a nested block map whose first
+# entry has an empty key (`key: &anchor\n !!map\n  a: b`): the scanner fuses the
+# props + fused first key into one scalar before the map, so
+# extract_leading_node_properties now peels the embedded tag (not just the
+# anchor) and the props hoist onto `+MAP &anchor <tag>` (anchor-first order).
+BU8L
+# Same hoist-onto-+MAP shape for a block-sequence item (`- !!map\n  key: value`),
+# where the fused `!!map\n  key` scalar precedes a nested map with an empty
+# first key; the sequence-item path now reuses the shared splice helper.
+6JWB
