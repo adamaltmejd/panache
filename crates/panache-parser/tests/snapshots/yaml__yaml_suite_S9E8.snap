@@ -1,0 +1,10 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 246
+expression: snapshot
+---
+case_id: S9E8
+input: "sequence:\n- one\n- two\nmapping:\n  ? sky\n  : blue\n  sea : green\n"
+has_error_contract: false
+parsed_mapping_tree: true
+diagnostics: []

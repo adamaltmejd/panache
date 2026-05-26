@@ -47,7 +47,22 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
     // sub-wrapper is still open and waiting to be closed (by the next
     // `Key` / `BlockEntry` peer or by `BlockEnd`).
     let mut block_stack: Vec<BlockFrame> = Vec::new();
+    // Kind of the last non-trivia, non-stream-marker token emitted.
+    // An indentless block sequence is only valid when its `-` directly
+    // follows the map entry's `:` (the value is otherwise empty), so the
+    // `BlockEntry` handler consults this to tell RLU9 (`foo:\n- 42`,
+    // value is purely the sequence) apart from G9HC (`seq:\n&anchor\n-
+    // a`, value already holds a scalar — an error the validator must
+    // still catch on the unwrapped shape).
+    let mut prev_significant: Option<TokenKind> = None;
     while let Some(tok) = scanner.next_token() {
+        let last_significant = prev_significant;
+        if !matches!(
+            tok.kind,
+            TokenKind::Trivia(_) | TokenKind::StreamStart | TokenKind::StreamEnd
+        ) {
+            prev_significant = Some(tok.kind);
+        }
         match tok.kind {
             TokenKind::StreamStart | TokenKind::StreamEnd => continue,
             TokenKind::BlockMappingStart => {
@@ -66,10 +81,18 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
                 doc_only_has_directives = false;
                 ensure_flow_seq_item_open(&mut builder, &mut block_stack);
                 builder.start_node(SyntaxKind::YAML_BLOCK_SEQUENCE.into());
-                block_stack.push(BlockFrame::BlockSequence { item_open: false });
+                block_stack.push(BlockFrame::BlockSequence {
+                    item_open: false,
+                    indentless: false,
+                });
                 continue;
             }
             TokenKind::BlockEnd => {
+                // Indentless sequences have no scanner BlockEnd of their
+                // own, so a BlockEnd arriving while one is on top is meant
+                // for the real container beneath it. Close the indentless
+                // frame(s) first, then consume the BlockEnd normally.
+                close_indentless_sequences(&mut builder, &mut block_stack);
                 close_open_sub_wrapper(&mut builder, &mut block_stack);
                 // Defensive: only close if the scanner gave us an open
                 // container. A stray BlockEnd would otherwise pop the
@@ -139,6 +162,10 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
                 continue;
             }
             TokenKind::Key => {
+                // A `Key` at the parent map's level terminates any
+                // open indentless sequence value first, revealing the
+                // map frame below.
+                close_indentless_sequences(&mut builder, &mut block_stack);
                 // Both the synthetic 0-width splice and the source-backed
                 // `?` indicator open a new map entry. Close the previous
                 // entry first if still open. After this, the current
@@ -159,6 +186,9 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
                 // current scope if not in a Map frame).
             }
             TokenKind::Value => {
+                // An empty-key `:` at the parent map's level likewise
+                // terminates an open indentless sequence value first.
+                close_indentless_sequences(&mut builder, &mut block_stack);
                 let map_state = match block_stack.last().copied() {
                     Some(BlockFrame::BlockMap {
                         entry_open,
@@ -208,10 +238,34 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
                 ensure_flow_seq_item_open(&mut builder, &mut block_stack);
             }
             TokenKind::BlockEntry => {
+                // An indentless sequence opens when a `-` lands directly
+                // in a block-map VALUE: the scanner pushed no indent
+                // level (the `-` is at the parent key's column), so no
+                // `BlockSequenceStart` arrived. Synthesize the
+                // `YAML_BLOCK_SEQUENCE` frame inside the open VALUE so the
+                // tree matches the indented form (spec 8.2.1). Only when
+                // the `:` is the last significant token — i.e. the value
+                // is otherwise empty; a `-` after scalar content in the
+                // value is a structural error left unwrapped for the
+                // validator to reject.
+                if last_significant == Some(TokenKind::Value)
+                    && matches!(
+                        block_stack.last(),
+                        Some(BlockFrame::BlockMap { in_value: true, .. })
+                    )
+                {
+                    builder.start_node(SyntaxKind::YAML_BLOCK_SEQUENCE.into());
+                    block_stack.push(BlockFrame::BlockSequence {
+                        item_open: false,
+                        indentless: true,
+                    });
+                }
                 if matches!(block_stack.last(), Some(BlockFrame::BlockSequence { .. })) {
                     close_open_sub_wrapper(&mut builder, &mut block_stack);
                     builder.start_node(SyntaxKind::YAML_BLOCK_SEQUENCE_ITEM.into());
-                    if let Some(BlockFrame::BlockSequence { item_open }) = block_stack.last_mut() {
+                    if let Some(BlockFrame::BlockSequence { item_open, .. }) =
+                        block_stack.last_mut()
+                    {
                         *item_open = true;
                     }
                 }
@@ -330,10 +384,27 @@ pub fn parse_v2(input: &str) -> SyntaxNode {
 /// item sub-wrapper is still open.
 #[derive(Debug, Clone, Copy)]
 enum BlockFrame {
-    BlockMap { entry_open: bool, in_value: bool },
-    BlockSequence { item_open: bool },
-    FlowMap { entry_open: bool, in_value: bool },
-    FlowSequence { item_open: bool },
+    BlockMap {
+        entry_open: bool,
+        in_value: bool,
+    },
+    /// `indentless` marks a sequence opened as a block-map value whose
+    /// `-` entries sit at the same column as the parent key (YAML's
+    /// "indentless sequence", spec 8.2.1). The scanner never pushes an
+    /// indent level for it, so it emits no matching `BlockEnd`; v2 must
+    /// close the frame itself when the parent map's next `Key` / `Value`
+    /// / `BlockEnd` arrives.
+    BlockSequence {
+        item_open: bool,
+        indentless: bool,
+    },
+    FlowMap {
+        entry_open: bool,
+        in_value: bool,
+    },
+    FlowSequence {
+        item_open: bool,
+    },
 }
 
 fn ensure_doc_open(builder: &mut GreenNodeBuilder<'_>, doc_open: &mut bool) {
@@ -390,6 +461,25 @@ fn open_map_entry_with_key(builder: &mut GreenNodeBuilder<'_>, stack: &mut [Bloc
     }
 }
 
+/// Close any indentless `YAML_BLOCK_SEQUENCE` frames on top of the
+/// stack. These have no matching scanner `BlockEnd`, so they're closed
+/// here when the parent map's next `Key` / `Value` / `BlockEnd` arrives.
+/// Closing the open ITEM, finishing the SEQUENCE node, and popping the
+/// frame reveals the parent map for the incoming token. Loops because
+/// the next token may close several levels, though in practice
+/// indentless frames never stack directly (they're always separated by
+/// a map frame).
+fn close_indentless_sequences(builder: &mut GreenNodeBuilder<'_>, stack: &mut Vec<BlockFrame>) {
+    while let Some(BlockFrame::BlockSequence {
+        indentless: true, ..
+    }) = stack.last()
+    {
+        close_open_sub_wrapper(builder, stack);
+        stack.pop();
+        builder.finish_node(); // close YAML_BLOCK_SEQUENCE
+    }
+}
+
 /// Close the top-of-stack frame's entry/item sub-wrapper if still open
 /// and clear the flag. For maps, this closes the inner KEY/VALUE
 /// node and the surrounding ENTRY. If we're closing while the entry
@@ -438,9 +528,16 @@ fn close_open_sub_wrapper(builder: &mut GreenNodeBuilder<'_>, stack: &mut [Block
                 in_value: false,
             };
         }
-        BlockFrame::BlockSequence { item_open: true } => {
+        BlockFrame::BlockSequence {
+            item_open: true,
+            indentless,
+        } => {
+            let indentless = *indentless;
             builder.finish_node();
-            *frame = BlockFrame::BlockSequence { item_open: false };
+            *frame = BlockFrame::BlockSequence {
+                item_open: false,
+                indentless,
+            };
         }
         BlockFrame::FlowSequence { item_open: true } => {
             builder.finish_node();
@@ -479,7 +576,9 @@ fn close_block_containers(builder: &mut GreenNodeBuilder<'_>, stack: &mut Vec<Bl
                 }
                 builder.finish_node();
             }
-            BlockFrame::BlockSequence { item_open: true }
+            BlockFrame::BlockSequence {
+                item_open: true, ..
+            }
             | BlockFrame::FlowSequence { item_open: true } => {
                 builder.finish_node();
             }

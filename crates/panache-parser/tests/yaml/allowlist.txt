@@ -431,3 +431,24 @@ R4YG
 FUP4
 # Multi-line plain scalars on block-sequence items (`- x\n  \tx`) now fold to a single space before scalar_event; project_block_sequence_items applies fold_plain_scalar when the body contains a newline.
 UV7Q
+
+# Indentless block sequence as a block-map value (`foo:\n- 42`): the `-`
+# sits at the parent key's column, so the scanner pushes no indent and
+# emits no BlockSequenceStart; parser_v2 now synthesizes the
+# YAML_BLOCK_SEQUENCE frame inside the open VALUE (closed on the parent
+# map's next Key/Value/BlockEnd) so the tree matches the indented form
+# (spec 8.2.1). Guarded to the value's first significant token so a `-`
+# after scalar content stays unwrapped for the validator to reject.
+RLU9
+# Indentless block sequence followed by a plain scalar entry in the same
+# map (`one:\n- 2\n- 3\nfour: 5`); previously a false-positive
+# UNEXPECTED_DEDENT because the unwrapped bare entries inflated the
+# validator's scalar count.
+AZ63
+# Indentless block sequence then an indented explicit-key block map in
+# the next entry (`sequence:\n- one\n- two\nmapping:\n  ? sky\n  : blue`).
+S9E8
+# Nested indentless sequences mixed with empty flow collections
+# (`nested sequences:\n- - - []\n- - - {}`) plus trailing flow-collection
+# map values; exercises indentless wrapping under deep `- - -` nesting.
+7ZZ5
