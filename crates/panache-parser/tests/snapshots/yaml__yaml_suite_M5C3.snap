@@ -1,0 +1,10 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 250
+expression: snapshot
+---
+case_id: M5C3
+input: "literal: |2\n  value\nfolded:\n   !foo\n  >1\n value\n"
+has_error_contract: false
+parsed_mapping_tree: true
+diagnostics: []

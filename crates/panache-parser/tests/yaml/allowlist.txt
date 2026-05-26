@@ -457,3 +457,11 @@ S9E8
 # so fold_quoted_inner now flushes the trailing all-blank run (1 break -> space,
 # n breaks -> n-1 newlines) instead of dropping it.
 NAT4
+# Block-map value shaped `<tag> <block-scalar>` where the scanner embeds the
+# tag inside the leading scalar token (`folded: !foo >1\n value`), so the bare
+# block-scalar detector misses the indicator; events.rs now peels the leading
+# anchor/tag and folds the remainder via the shared fold_block_scalar_raw.
+Z67P
+# Same `<tag> <block-scalar>` shape with the tag and indicator on separate
+# lines (`folded:\n   !foo\n  >1\n value`); peeling skips intervening newlines.
+M5C3

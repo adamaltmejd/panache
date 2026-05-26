@@ -668,12 +668,6 @@
       "tree": false
     },
     {
-      "case_id": "M5C3",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "M5DY",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -773,12 +767,6 @@
     },
     {
       "case_id": "XW4D",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "Z67P",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -942,6 +930,7 @@
     "LQZ7",
     "LX3P",
     "M29M",
+    "M5C3",
     "M6YH",
     "M7NX",
     "M9B4",
@@ -998,6 +987,7 @@
     "XV9V",
     "Y2GN",
     "YD5X",
+    "Z67P",
     "Z9M4",
     "ZF4X",
     "ZH7C",
@@ -1007,8 +997,8 @@
   "summary": {
     "error_contract_ok_count": 53,
     "fails_needs_error_path_count": 25,
-    "fails_needs_feature_count": 37,
-    "passes_now_count": 218,
+    "fails_needs_feature_count": 35,
+    "passes_now_count": 220,
     "total_cases": 352
   }
 }
