@@ -452,3 +452,8 @@ S9E8
 # (`nested sequences:\n- - - []\n- - - {}`) plus trailing flow-collection
 # map values; exercises indentless wrapping under deep `- - -` nesting.
 7ZZ5
+# Multi-line quoted scalars whose every line is empty/whitespace-only
+# (`a: '\n  '`, `e: '\n\n  '`): the scalar folds to nothing but line breaks,
+# so fold_quoted_inner now flushes the trailing all-blank run (1 break -> space,
+# n breaks -> n-1 newlines) instead of dropping it.
+NAT4

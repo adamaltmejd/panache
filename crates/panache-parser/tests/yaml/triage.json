@@ -688,12 +688,6 @@
       "tree": false
     },
     {
-      "case_id": "NAT4",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "NKF9",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
@@ -955,6 +949,7 @@
     "MXS3",
     "MYW6",
     "MZX3",
+    "NAT4",
     "NB6Z",
     "NHX8",
     "NJ66",
@@ -1012,8 +1007,8 @@
   "summary": {
     "error_contract_ok_count": 53,
     "fails_needs_error_path_count": 25,
-    "fails_needs_feature_count": 38,
-    "passes_now_count": 217,
+    "fails_needs_feature_count": 37,
+    "passes_now_count": 218,
     "total_cases": 352
   }
 }

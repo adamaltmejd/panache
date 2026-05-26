@@ -84,9 +84,13 @@ fn fixture_case_events(case_path: &Path) -> Vec<String> {
     let event_path = case_path.join("test.event");
     let event_text = fs::read_to_string(&event_path)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", event_path.display()));
+    // Strip only the line ending, not trailing spaces: yaml-test-suite events
+    // can carry significant trailing whitespace (e.g. a folded scalar whose
+    // value ends in a space, `=VAL " ... non-empty `), and the projected event
+    // stream reproduces it. `lines()` already drops `\n`/`\r\n`; event lines
+    // never carry leading indentation, so no further trimming is needed.
     event_text
         .lines()
-        .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(ToOwned::to_owned)
         .collect()

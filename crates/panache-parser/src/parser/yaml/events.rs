@@ -704,8 +704,25 @@ fn fold_quoted_inner(inner: &str) -> String {
         blanks = 0;
         have_first = true;
     }
-    let trimmed_tail = out.trim_end_matches([' ', '\t']);
-    out.truncate(trimmed_tail.len());
+    if blanks > 0 {
+        // A trailing run of blank/whitespace-only lines ends the scalar. The
+        // accumulated content is followed by a fold, so strip its trailing
+        // whitespace, then append the folded breaks: a single break collapses
+        // to a space, a run of `n` breaks collapses to `n - 1` newlines. When
+        // every line is empty/whitespace-only the content is empty and this is
+        // the scalar's only contribution (yaml-test-suite NAT4).
+        let trimmed = out.trim_end_matches([' ', '\t']);
+        out.truncate(trimmed.len());
+        if blanks == 1 {
+            out.push(' ');
+        } else {
+            for _ in 0..blanks - 1 {
+                out.push('\n');
+            }
+        }
+    }
+    // No trailing blank run: the final line's trailing whitespace before the
+    // closing quote is content (yaml-test-suite 7A4E) and is preserved as-is.
     out
 }
 
