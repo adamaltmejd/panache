@@ -557,7 +557,12 @@ fn flow_kv_split(item: &str) -> Option<(usize, usize)> {
                 let next_off = idx + ch.len_utf8();
                 let after_is_break = next_off >= bytes.len()
                     || matches!(bytes[next_off], b' ' | b'\t' | b'\n' | b'\r');
-                if after_is_break {
+                // YAML 1.2 §7.4.2: a JSON-like key (here, a quoted scalar)
+                // permits an adjacent value colon with no following space
+                // (`"JSON like":adjacent`, 9MMW). Flow-collection keys are
+                // projected structurally before reaching this text path.
+                let key_is_json_like = item[..idx].trim_end().ends_with(['"', '\'']);
+                if after_is_break || key_is_json_like {
                     return Some((idx, next_off));
                 }
             }
@@ -2087,15 +2092,14 @@ fn project_block_sequence_items(
             .children()
             .find(|n| n.kind() == SyntaxKind::YAML_FLOW_SEQUENCE)
         {
-            let flow_text = flow_seq.text().to_string();
-            if let Some(flow_items) = simple_flow_sequence_items(&flow_text) {
-                out.push("+SEQ []".to_string());
-                for value in flow_items {
-                    project_flow_seq_item(&value, handles, out);
-                }
-                out.push("-SEQ".to_string());
-                continue;
-            }
+            // Walk the CST rather than re-splitting the flow text: only the
+            // CST walker structurally projects items whose key is itself a
+            // flow collection (`[ {JSON: like}:adjacent ]`, 9MMW) or a nested
+            // flow sequence; the text splitter mis-folds those into scalars.
+            out.push("+SEQ []".to_string());
+            project_flow_sequence_items_cst(&flow_seq, handles, out);
+            out.push("-SEQ".to_string());
+            continue;
         }
         if let Some(flow_map) = item
             .children()

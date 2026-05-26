@@ -586,12 +586,6 @@
       "tree": false
     },
     {
-      "case_id": "9MMW",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "A2M4",
       "diagnostic_codes": [
         "YAML_PARSE_INVALID_KEY_TOKEN"
@@ -798,6 +792,7 @@
     "9DXL",
     "9FMG",
     "9J7A",
+    "9MMW",
     "9SA2",
     "9SHH",
     "9TFX",
@@ -947,8 +942,8 @@
   "summary": {
     "error_contract_ok_count": 53,
     "fails_needs_error_path_count": 25,
-    "fails_needs_feature_count": 25,
-    "passes_now_count": 230,
+    "fails_needs_feature_count": 24,
+    "passes_now_count": 231,
     "total_cases": 352
   }
 }

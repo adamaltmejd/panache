@@ -505,3 +505,9 @@ SBG9
 # escapes the break, so it joins with no folded space. fold_quoted_inner is now
 # escaped-break-aware and the tag-decompose value path enables it for `"` bodies.
 565N
+# Flow-sequence single-pair implicit entries with a JSON-like key
+# (`[ "JSON like":adjacent ]`, `[ {JSON: like}:adjacent ]`): per §7.4.2 a quoted
+# or flow-collection key permits an adjacent value colon. Block-seq flow items
+# now project via the CST walker (structural flow-collection keys) and
+# flow_kv_split accepts the adjacent colon after a quoted key.
+9MMW
