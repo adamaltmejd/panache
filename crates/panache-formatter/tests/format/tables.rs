@@ -165,7 +165,7 @@ fn test_pipe_table_without_edge_pipes() {
 #[test]
 fn test_basic_grid_table() {
     let input = "+-------+--------+\n| Left  | Right  |\n+=======+========+\n| A     | B      |\n+-------+--------+\n| C     | D      |\n+-------+--------+";
-    let expected = "+------+-------+\n| Left | Right |\n+======+=======+\n| A    | B     |\n+------+-------+\n| C    | D     |\n+------+-------+\n";
+    let expected = "+-------+--------+\n| Left  | Right  |\n+=======+========+\n| A     | B      |\n+-------+--------+\n| C     | D      |\n+-------+--------+\n";
 
     let result = format(input, None, None);
     assert_eq!(result, expected);
@@ -174,7 +174,7 @@ fn test_basic_grid_table() {
 #[test]
 fn test_grid_table_with_alignments() {
     let input = "+:------+-------:+:------:+\n| Left  | Right  | Center |\n+=======+========+========+\n| A     | B      | C      |\n+-------+--------+--------+";
-    let expected = "+------+-------+--------+\n| Left | Right | Center |\n+:=====+======:+:======:+\n| A    |     B |   C    |\n+------+-------+--------+\n";
+    let expected = "+-------+--------+--------+\n| Left  | Right  | Center |\n+:======+=======:+:======:+\n| A     |      B |   C    |\n+-------+--------+--------+\n";
 
     let result = format(input, None, None);
     assert_eq!(result, expected);
@@ -192,7 +192,7 @@ fn test_grid_table_uneven_widths() {
 #[test]
 fn test_grid_table_with_inline_elements() {
     let input = "+------------+----------+\n| *emphasis* | `code`   |\n+============+==========+\n| X          | Y        |\n+------------+----------+";
-    let expected = "+------------+--------+\n| *emphasis* | `code` |\n+============+========+\n| X          | Y      |\n+------------+--------+\n";
+    let expected = "+------------+----------+\n| *emphasis* | `code`   |\n+============+==========+\n| X          | Y        |\n+------------+----------+\n";
 
     let result = format(input, None, None);
     assert_eq!(result, expected);
@@ -260,7 +260,7 @@ fn test_grid_table_with_spanning_style_caption_before_normalizes_after() {
 #[test]
 fn test_grid_table_with_caption_after() {
     let input = "+-----+-----+\n| A   | B   |\n+=====+=====+\n| C   | D   |\n+-----+-----+\n\nTable: Caption text";
-    let expected = "+---+---+\n| A | B |\n+===+===+\n| C | D |\n+---+---+\n\n: Caption text\n";
+    let expected = "+-----+-----+\n| A   | B   |\n+=====+=====+\n| C   | D   |\n+-----+-----+\n\n: Caption text\n";
 
     let result = format(input, None, None);
     assert_eq!(result, expected);
@@ -292,7 +292,7 @@ fn test_grid_table_multiline_header_and_footer_sections() {
 #[test]
 fn test_grid_table_empty_cells() {
     let input = "+-----+-----+\n| A   |     |\n+=====+=====+\n|     | D   |\n+-----+-----+";
-    let expected = "+---+---+\n| A |   |\n+===+===+\n|   | D |\n+---+---+\n";
+    let expected = "+-----+-----+\n| A   |     |\n+=====+=====+\n|     | D   |\n+-----+-----+\n";
 
     let result = format(input, None, None);
     assert_eq!(result, expected);
@@ -349,6 +349,21 @@ fn test_grid_table_in_list_item_keeps_container_indent() {
     assert!(
         first.contains("\n  +---+---+"),
         "grid border must keep the list container indent, got:\n{first}"
+    );
+}
+
+#[test]
+fn test_grid_table_preserves_wide_source_columns() {
+    // Grid column widths carry relative-width info pandoc propagates to HTML
+    // (<col style="width:X%">); the formatter must NOT shrink a wide column
+    // down to its short content. See issue #323.
+    let input = "+----------------+-----+\n| A              | B   |\n\
+                 +================+=====+\n| C              | D   |\n\
+                 +----------------+-----+\n";
+    let result = format(input, None, None);
+    assert!(
+        result.contains("+----------------+-----+"),
+        "expected source column widths to be preserved, got:\n{result}"
     );
 }
 

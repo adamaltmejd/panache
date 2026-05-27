@@ -800,6 +800,11 @@ struct GridTableData {
     row_groups: Vec<usize>,
     alignments: Vec<Alignment>,
     caption: Option<String>,
+    /// Per-column content widths derived from the source `+---+` separators.
+    /// Grid column widths are load-bearing (pandoc maps them to relative output
+    /// widths), so they are preserved as a floor rather than recomputed from
+    /// content. See `format_grid_table`.
+    column_widths: Vec<usize>,
 }
 
 /// Extract structured data from grid table AST node
@@ -810,6 +815,7 @@ fn extract_grid_table_data(node: &SyntaxNode, config: &Config) -> GridTableData 
     let mut alignments = Vec::new();
     let mut caption = None;
     let mut row_group_index = 0usize;
+    let mut separator_widths: Vec<usize> = Vec::new();
 
     for child in node.children() {
         match child.kind() {
@@ -821,6 +827,17 @@ fn extract_grid_table_data(node: &SyntaxNode, config: &Config) -> GridTableData 
             }
             SyntaxKind::TABLE_SEPARATOR => {
                 let separator_text = child.text().to_string();
+
+                // Grid column widths encode relative output widths (pandoc maps
+                // them to <col style="width:X%">), so take the per-column max
+                // across every separator to preserve the source widths later.
+                let widths = grid_separator_widths(&separator_text);
+                if separator_widths.len() < widths.len() {
+                    separator_widths.resize(widths.len(), 0);
+                }
+                for (col_idx, w) in widths.into_iter().enumerate() {
+                    separator_widths[col_idx] = separator_widths[col_idx].max(w);
+                }
 
                 // Extract alignments from separators that have them
                 // Grid tables have alignments in the first separator (headerless)
@@ -920,6 +937,7 @@ fn extract_grid_table_data(node: &SyntaxNode, config: &Config) -> GridTableData 
                 row.resize(target_cols, String::new());
             }
         }
+        separator_widths.resize(target_cols, 0);
     }
 
     GridTableData {
@@ -928,6 +946,7 @@ fn extract_grid_table_data(node: &SyntaxNode, config: &Config) -> GridTableData 
         row_groups,
         alignments,
         caption,
+        column_widths: separator_widths,
     }
 }
 
@@ -951,7 +970,15 @@ pub fn format_grid_table(node: &SyntaxNode, config: &Config, indent: usize) -> S
         return node.text().to_string();
     }
 
-    let widths = calculate_grid_column_widths(&table_data.rows);
+    // Use the source separator widths as a floor: grid column widths are
+    // load-bearing (pandoc maps them to relative output widths), so preserve
+    // them rather than shrinking to content. Only expand when formatted content
+    // genuinely exceeds the source column. This mirrors the spanning-grid path
+    // and stays idempotent (after one pass the source width is >= content).
+    let mut widths = calculate_grid_column_widths(&table_data.rows);
+    for (col_idx, width) in widths.iter_mut().enumerate() {
+        *width = (*width).max(table_data.column_widths.get(col_idx).copied().unwrap_or(0));
+    }
 
     // Helper to create separator line
     let make_separator = |fill_char: char, with_alignment_markers: bool| -> String {

@@ -573,7 +573,11 @@ Output
 
 Grid tables are normalized to have consistent spacing and alignment. They are
 kept at column 0 rather than indented, since Pandoc does not recognize an
-indented grid border.
+indented grid border. Unlike pipe and simple tables, their column widths are
+**preserved** rather than shrunk to fit the content: Pandoc derives relative
+column widths from the source border widths and propagates them to output
+formats (e.g. HTML `<col style="width:…">`), so resizing a column would change
+the rendered layout.
 
 Input
 
@@ -588,11 +592,11 @@ Input
 Output
 
 :   ```markdown
-    +-----+----------------+
-    | Var | Description    |
-    +=====+================+
-    | `A` | Example value. |
-    +-----+----------------+
+    +--------+----------------+
+    | Var    | Description    |
+    +========+================+
+    | `A`    | Example value. |
+    +--------+----------------+
     ```
 
 ### Simple Tables
