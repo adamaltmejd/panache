@@ -2683,6 +2683,18 @@ fn project_block_map_entry(entry: &SyntaxNode, handles: &TagHandles, out: &mut V
         out.push("-SEQ".to_string());
     } else if key_trimmed.starts_with('*') {
         out.push(format!("=ALI {key_trimmed}"));
+    } else if key_tag.is_none()
+        && let Some((indicator, body)) = extract_block_scalar_body(&key_node)
+    {
+        // Explicit-key whose key is itself a literal (`|`) or folded
+        // (`>`) block scalar (5WE3, KK5P complex4).
+        // `extract_block_scalar_body` ignores the `?` indicator (a
+        // `YAML_KEY` token) and the trailing `:` (`YAML_COLON`), folding
+        // only the scalar body — the same path as a block-scalar value.
+        out.push(format!(
+            "=VAL {indicator}{}",
+            escape_block_scalar_text(&body)
+        ));
     } else {
         let key_long_tag = key_tag
             .as_deref()

@@ -1044,11 +1044,20 @@ fn scalar_after_structural_in_block_map_value(value: &SyntaxNode) -> Option<Synt
 /// without an intervening `NEWLINE`. Flag at the start of the second
 /// `YAML_BLOCK_SEQUENCE_ITEM` (the dash that turned the inline shape
 /// into a multi-line one), matching the v1 contract.
+///
+/// Exempts explicit-key entries (`? key` / `: - a`): the YAML 1.2
+/// grammar's `ns-l-compact-sequence` permits a block sequence to begin
+/// on the explicit value-indicator line (5WE3, A2M4, KK5P). The
+/// prohibition is specific to implicit keys (`key: - a`), whose value
+/// production (`l-block-map-implicit-value`) has no compact form.
 fn check_inline_block_seq_in_value(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
     for value in tree
         .descendants()
         .filter(|n| n.kind() == SyntaxKind::YAML_BLOCK_MAP_VALUE)
     {
+        if block_map_entry_key_is_explicit(&value) {
+            continue;
+        }
         let mut seen_newline = false;
         for child in value.children_with_tokens() {
             match &child {
@@ -1079,6 +1088,23 @@ fn check_inline_block_seq_in_value(tree: &SyntaxNode) -> Option<YamlDiagnostic> 
         }
     }
     None
+}
+
+/// True when the `YAML_BLOCK_MAP_VALUE`'s owning entry uses an
+/// explicit key indicator (`?`) — i.e. its sibling
+/// `YAML_BLOCK_MAP_KEY` contains a `YAML_KEY` token. Explicit-key
+/// entries permit a compact block sequence on the value-indicator
+/// line, so the inline-block-sequence prohibition does not apply.
+fn block_map_entry_key_is_explicit(value: &SyntaxNode) -> bool {
+    value
+        .parent()
+        .into_iter()
+        .flat_map(|entry| entry.children())
+        .filter(|n| n.kind() == SyntaxKind::YAML_BLOCK_MAP_KEY)
+        .any(|key| {
+            key.children_with_tokens()
+                .any(|c| matches!(&c, NodeOrToken::Token(t) if t.kind() == SyntaxKind::YAML_KEY))
+        })
 }
 
 /// Detects a `WHITESPACE` token that begins with a tab, used as

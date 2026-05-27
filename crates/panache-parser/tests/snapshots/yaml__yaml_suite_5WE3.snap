@@ -1,0 +1,10 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 250
+expression: snapshot
+---
+case_id: 5WE3
+input: "? explicit key # Empty value\n? |\n  block key\n: - one # Explicit compact\n  - two # block value\n"
+has_error_contract: false
+parsed_mapping_tree: true
+diagnostics: []

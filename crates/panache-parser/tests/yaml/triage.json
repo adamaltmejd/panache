@@ -546,14 +546,6 @@
       "tree": false
     },
     {
-      "case_id": "5WE3",
-      "diagnostic_codes": [
-        "YAML_PARSE_INVALID_KEY_TOKEN"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
       "case_id": "6BFJ",
       "diagnostic_codes": [
         "YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START"
@@ -565,14 +557,6 @@
       "case_id": "9KAX",
       "diagnostic_codes": [
         "YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
-      "case_id": "A2M4",
-      "diagnostic_codes": [
-        "YAML_PARSE_INVALID_KEY_TOKEN"
       ],
       "event_parity": false,
       "tree": false
@@ -603,14 +587,6 @@
       "case_id": "EHF6",
       "diagnostic_codes": [
         "YAML_PARSE_TRAILING_CONTENT_AFTER_FLOW_END"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
-      "case_id": "KK5P",
-      "diagnostic_codes": [
-        "YAML_PARSE_INVALID_KEY_TOKEN"
       ],
       "event_parity": false,
       "tree": false
@@ -700,6 +676,7 @@
     "5NYZ",
     "5T43",
     "5TYM",
+    "5WE3",
     "652Z",
     "65WH",
     "6BCT",
@@ -756,6 +733,7 @@
     "9U5K",
     "9WXW",
     "9YRD",
+    "A2M4",
     "A6F9",
     "A984",
     "AVM7",
@@ -817,6 +795,7 @@
     "K527",
     "K54U",
     "K858",
+    "KK5P",
     "KMK3",
     "KSS4",
     "L383",
@@ -903,8 +882,8 @@
   "summary": {
     "error_contract_ok_count": 57,
     "fails_needs_error_path_count": 21,
-    "fails_needs_feature_count": 17,
-    "passes_now_count": 238,
+    "fails_needs_feature_count": 14,
+    "passes_now_count": 241,
     "total_cases": 352
   }
 }

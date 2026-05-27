@@ -564,3 +564,16 @@ NKF9
 # (`=VAL &a :a`, `=ALI *a`) were already projected; the `: *a` line was the
 # piece getting absorbed into the previous value before the empty-key fix.
 6M2F
+# Compact block sequence on the value-indicator line of an explicit-key
+# entry (`? a\n: - b\n  - c`, A2M4). YAML 1.2 `ns-l-compact-sequence` permits
+# this after the explicit `:`; only implicit keys (`key: - a`, 5U3A) forbid it.
+# check_inline_block_seq_in_value now exempts entries whose YAML_BLOCK_MAP_KEY
+# carries a `?` (YAML_KEY) indicator.
+A2M4
+# Same explicit-key compact-sequence exemption, plus an explicit key that is
+# itself a literal block scalar (`? |\n  block key\n: - one\n  - two`, 5WE3) and
+# a folded block scalar (`complex4:\n  ? >\n    a\n  :`, KK5P). The block-map
+# key projection now folds a `|`/`>` block-scalar key through
+# extract_block_scalar_body instead of emitting it as a plain scalar.
+5WE3
+KK5P
