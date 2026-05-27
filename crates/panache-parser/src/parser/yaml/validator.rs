@@ -186,6 +186,9 @@ pub(crate) fn validate_yaml(input: &str) -> Option<YamlDiagnostic> {
     if let Some(diag) = check_invalid_dq_escapes(&tree) {
         return Some(diag);
     }
+    if let Some(diag) = check_comment_not_preceded_by_space(&tree, input) {
+        return Some(diag);
+    }
     None
 }
 
@@ -1636,6 +1639,44 @@ fn check_invalid_dq_escapes(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
     None
 }
 
+/// Lex-level cluster — comment not preceded by whitespace.
+///
+/// YAML 1.2 §6.6: a comment (`c-nb-comment-text`) must follow
+/// `s-separate-in-line` — at least one space/tab — or begin at the start
+/// of a line. A `#` immediately abutting a non-space character is neither
+/// a valid comment nor (since `#` is a `c-indicator`) a valid plain-scalar
+/// start, so the document is in error.
+///
+/// The streaming scanner tokenizes such a `#…` run as a `YAML_COMMENT`
+/// (preserving the bytes), so we walk every comment token and reject the
+/// first whose preceding character is not a space, tab, or line break.
+///
+/// Covers fixtures SU5Z (`key: "value"# invalid comment`) and CVW2
+/// (`[ a, b, c,#invalid ]`).
+fn check_comment_not_preceded_by_space(tree: &SyntaxNode, input: &str) -> Option<YamlDiagnostic> {
+    for token in tree
+        .descendants_with_tokens()
+        .filter_map(|el| el.into_token())
+        .filter(|t| t.kind() == SyntaxKind::YAML_COMMENT)
+    {
+        let start: usize = token.text_range().start().into();
+        // Start of input / line start, or a separating space/tab → valid.
+        let preceded_ok = matches!(
+            input[..start].chars().next_back(),
+            None | Some('\n' | '\r' | ' ' | '\t')
+        );
+        if !preceded_ok {
+            return Some(diag_at_range(
+                start,
+                token.text_range().end().into(),
+                diagnostic_codes::LEX_COMMENT_NOT_PRECEDED_BY_SPACE,
+                "comment must be preceded by whitespace",
+            ));
+        }
+    }
+    None
+}
+
 fn invalid_dq_escape_offset(text: &str) -> Option<usize> {
     let mut chars = text.char_indices().peekable();
     let mut in_double = false;
@@ -2436,5 +2477,40 @@ mod tests {
             diag.code,
             diagnostic_codes::LEX_INVALID_DOUBLE_QUOTED_ESCAPE
         );
+    }
+
+    #[test]
+    fn comment_abutting_closing_quote_rejected_su5z() {
+        // SU5Z: a `#` directly after a closing quote with no separating
+        // space is not a valid comment (§6.6).
+        let input = "key: \"value\"# invalid comment\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(
+            diag.code,
+            diagnostic_codes::LEX_COMMENT_NOT_PRECEDED_BY_SPACE
+        );
+    }
+
+    #[test]
+    fn comment_abutting_flow_comma_rejected_cvw2() {
+        // CVW2: a `#` immediately following a flow `,` separator.
+        let input = "---\n[ a, b, c,#invalid\n]\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(
+            diag.code,
+            diagnostic_codes::LEX_COMMENT_NOT_PRECEDED_BY_SPACE
+        );
+    }
+
+    #[test]
+    fn comment_preceded_by_space_passes() {
+        // Contract guard: a properly separated comment must not be flagged.
+        for input in [
+            "key: value # ok\n",
+            "# line-start comment\nkey: value\n",
+            "key: value\t# tab-separated\n",
+        ] {
+            assert!(run(input).is_none(), "{input:?}");
+        }
     }
 }

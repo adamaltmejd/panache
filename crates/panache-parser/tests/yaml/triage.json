@@ -204,6 +204,13 @@
       "event_parity": false
     },
     {
+      "case_id": "CVW2",
+      "diagnostic_codes": [
+        "YAML_LEX_COMMENT_NOT_PRECEDED_BY_SPACE"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "CXX2",
       "diagnostic_codes": [
         "YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START"
@@ -386,6 +393,13 @@
       "event_parity": false
     },
     {
+      "case_id": "SU5Z",
+      "diagnostic_codes": [
+        "YAML_LEX_COMMENT_NOT_PRECEDED_BY_SPACE"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "T833",
       "diagnostic_codes": [
         "YAML_PARSE_INVALID_FLOW_SEQUENCE_COMMA"
@@ -462,12 +476,6 @@
       "tree": true
     },
     {
-      "case_id": "CVW2",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "G5U8",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -493,12 +501,6 @@
     },
     {
       "case_id": "SR86",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "SU5Z",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -886,8 +888,8 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 63,
-    "fails_needs_error_path_count": 15,
+    "error_contract_ok_count": 65,
+    "fails_needs_error_path_count": 13,
     "fails_needs_feature_count": 14,
     "passes_now_count": 241,
     "total_cases": 352
