@@ -742,7 +742,7 @@ fn check_unterminated_flow(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
 
 /// Cluster G — flow context anomalies (partial coverage).
 ///
-/// Two malformed shapes are detected:
+/// Three malformed shapes are detected:
 /// - A `YAML_FLOW_SEQUENCE_ITEM` whose direct children include a
 ///   `YAML_COLON` AND a newline preceding it (covering DK4H plain-key
 ///   form `[ key\n  : value ]` and ZXT5 quoted-key form
@@ -753,6 +753,9 @@ fn check_unterminated_flow(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
 ///   folds two entries into a single malformed entry whose value
 ///   contains a second colon — that second colon is the symptom of
 ///   a missing comma between flow-map entries.
+/// - A flow item/key/value whose content is a lone `-` scalar (covering
+///   YJV2 `[-]` and G5U8 `- [-, -]`); a `-` abutting a flow indicator is
+///   a bare indicator, not a valid `ns-plain-first` scalar start.
 fn check_flow_context_anomalies(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
     for item in tree
         .descendants()
@@ -768,6 +771,49 @@ fn check_flow_context_anomalies(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
     {
         if let Some(diag) = check_flow_map_value_extra_colon(&value) {
             return Some(diag);
+        }
+    }
+    if let Some(diag) = check_flow_lone_dash(tree) {
+        return Some(diag);
+    }
+    None
+}
+
+/// Detects a lone `-` plain scalar inside a flow collection.
+///
+/// In flow context a plain scalar may only begin with `-` when the next
+/// character is a non-space, non-flow-indicator char (YAML 1.2
+/// `ns-plain-first` over `ns-plain-safe-in`). When the `-` is followed by
+/// a flow indicator (`,`, `]`, `}`) or the collection close, it is a bare
+/// indicator rather than a scalar and the document is malformed. The
+/// scanner still tokenizes the dash as a `YAML_SCALAR`, so the surviving
+/// signal is a flow item/key/value whose only significant content is a
+/// scalar whose text is exactly `-`.
+///
+/// Covers fixtures G5U8 (`- [-, -]`) and YJV2 (`[-]`). Scoped to `-`
+/// specifically; `?`/`:` are tokenized distinctly and handled elsewhere.
+fn check_flow_lone_dash(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
+    for holder in tree.descendants().filter(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::YAML_FLOW_SEQUENCE_ITEM
+                | SyntaxKind::YAML_FLOW_MAP_KEY
+                | SyntaxKind::YAML_FLOW_MAP_VALUE
+        )
+    }) {
+        let lone_dash = holder.children_with_tokens().find_map(|c| match c {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::YAML_SCALAR && t.text() == "-" => {
+                Some(t)
+            }
+            _ => None,
+        });
+        if let Some(dash) = lone_dash {
+            return Some(diag_at_range(
+                dash.text_range().start().into(),
+                dash.text_range().end().into(),
+                diagnostic_codes::PARSE_INVALID_PLAIN_SCALAR_IN_FLOW,
+                "`-` cannot start a plain scalar in flow context",
+            ));
         }
     }
     None
@@ -2244,6 +2290,47 @@ mod tests {
         // that begin with YAML_KEY.
         let input = "[\n? foo\n bar : baz\n]\n";
         assert!(run(input).is_none());
+    }
+
+    #[test]
+    fn flow_seq_lone_dash_yjv2() {
+        // YJV2: `[-]` — `-` is followed by the flow close `]`, so it is a
+        // bare indicator, not a valid plain scalar.
+        let input = "[-]\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(
+            diag.code,
+            diagnostic_codes::PARSE_INVALID_PLAIN_SCALAR_IN_FLOW
+        );
+    }
+
+    #[test]
+    fn flow_seq_lone_dash_items_g5u8() {
+        // G5U8: `- [-, -]` — both flow-seq items are a lone `-` followed
+        // by a flow indicator (`,` then `]`).
+        let input = "---\n- [-, -]\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(
+            diag.code,
+            diagnostic_codes::PARSE_INVALID_PLAIN_SCALAR_IN_FLOW
+        );
+    }
+
+    #[test]
+    fn flow_seq_dash_prefixed_scalar_passes() {
+        // Sanity: `[-1, -x]` — the `-` is followed by a plain-safe char,
+        // so each item is a legitimate plain scalar, not a bare dash.
+        let input = "[-1, -x]\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
+    }
+
+    #[test]
+    fn block_dash_prefixed_scalar_passes() {
+        // The flow-only rule must not touch block context: `key: -x` is a
+        // plain scalar value (`-` not followed by a space) outside any
+        // flow collection, so it carries no flow-node kinds to match.
+        let input = "key: -x\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
     }
 
     // ---- Cluster H: multi-line quoted scalar under-indent ----

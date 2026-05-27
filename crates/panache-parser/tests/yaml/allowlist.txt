@@ -610,3 +610,11 @@ CVW2
 # the scalar instead of opening a nested sequence (libyaml rule; only `:`
 # value indicators abort a plain-scalar continuation, not `-`/`?`).
 AB8U
+# Error-contract: a lone `-` plain scalar inside a flow collection
+# (`[-]`, `- [-, -]`). In flow context `-` may only begin a plain scalar
+# when followed by a non-space, non-flow-indicator char (§7.3.3
+# `ns-plain-first`); when it abuts a flow indicator (`,`/`]`/`}`) it is a
+# bare indicator. check_flow_lone_dash (Cluster G) surfaces
+# YAML_PARSE_INVALID_PLAIN_SCALAR_IN_FLOW.
+YJV2
+G5U8

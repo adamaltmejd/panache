@@ -253,6 +253,13 @@
       "event_parity": false
     },
     {
+      "case_id": "G5U8",
+      "diagnostic_codes": [
+        "YAML_PARSE_INVALID_PLAIN_SCALAR_IN_FLOW"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "G7JE",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
@@ -428,6 +435,13 @@
       "event_parity": false
     },
     {
+      "case_id": "YJV2",
+      "diagnostic_codes": [
+        "YAML_PARSE_INVALID_PLAIN_SCALAR_IN_FLOW"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "ZCZ6",
       "diagnostic_codes": [
         "YAML_PARSE_INVALID_KEY_TOKEN"
@@ -476,12 +490,6 @@
       "tree": true
     },
     {
-      "case_id": "G5U8",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "JKF3",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -525,12 +533,6 @@
     },
     {
       "case_id": "U99R",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "YJV2",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -883,8 +885,8 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 65,
-    "fails_needs_error_path_count": 13,
+    "error_contract_ok_count": 67,
+    "fails_needs_error_path_count": 11,
     "fails_needs_feature_count": 13,
     "passes_now_count": 242,
     "total_cases": 352
