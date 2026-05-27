@@ -15,9 +15,17 @@ updates:
     directory: "/editors/code"
     schedule:
       interval: "weekly"
+    groups:
+      npm:
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "@types/vscode"
   - package-ecosystem: "npm"
     directory: "/npm/panache-cli"
     schedule:
       interval: "weekly"
+    groups:
+      npm:
+        patterns:
+          - "*"
