@@ -914,6 +914,12 @@ MUS6/03
 MUS6/04
 MUS6/05
 MUS6/06
+# MUS6/00 — `%YAML 1.1#...` glues `#` to the version with no preceding
+# whitespace; spec §6.6 requires whitespace before a comment, so the
+# version field becomes `1.1#...` and isn't a valid `digits.digits`.
+# `check_directives` via `is_valid_yaml_version` rejects it as
+# PARSE_MALFORMED_YAML_DIRECTIVE.
+MUS6/00
 # SM9W single-character-streams — minimal valid streams of one byte
 # (`-` for empty seq, similar).
 SM9W/00

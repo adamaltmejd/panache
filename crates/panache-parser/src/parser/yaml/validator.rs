@@ -341,14 +341,38 @@ fn directive_name(text: &str) -> &str {
         .unwrap_or("")
 }
 
-/// True when a `%YAML` directive carries content beyond its single
-/// version argument. A trailing comment (`# …`) is permitted; any other
-/// token is invalid (spec §6.8.1), e.g. the `foo` in `%YAML 1.2 foo`.
+/// True when a `%YAML` directive is malformed:
+/// - extra non-comment field after the version (spec §6.8.1), e.g.
+///   `%YAML 1.2 foo` (the `foo`);
+/// - version argument is not a `digits.digits` token (spec §6.8.1.1),
+///   e.g. `%YAML 1.1#...` where the `#` glued to the version means it
+///   isn't a comment (comments need preceding whitespace per §6.6) and
+///   the version itself is not a valid version number.
+///
+/// A trailing comment (`# …`) preceded by whitespace is permitted.
 fn yaml_directive_has_trailing_content(text: &str) -> bool {
     let mut fields = text.strip_prefix('%').unwrap_or(text).split_whitespace();
     let _name = fields.next();
-    let _version = fields.next();
+    let version = fields.next();
+    if let Some(v) = version
+        && !is_valid_yaml_version(v)
+    {
+        return true;
+    }
     matches!(fields.next(), Some(field) if !field.starts_with('#'))
+}
+
+/// True when `s` is `digits.digits` — the shape required by the YAML
+/// 1.2 spec §6.8.1.1 for the `%YAML` version argument. Both halves
+/// must be non-empty and contain only ASCII digits.
+fn is_valid_yaml_version(s: &str) -> bool {
+    let mut parts = s.splitn(2, '.');
+    let major = parts.next().unwrap_or("");
+    let minor = parts.next().unwrap_or("");
+    !major.is_empty()
+        && !minor.is_empty()
+        && major.bytes().all(|b| b.is_ascii_digit())
+        && minor.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn diag_at_token(tok: &Token, code: &'static str, message: &'static str) -> YamlDiagnostic {

@@ -393,6 +393,13 @@
       "event_parity": false
     },
     {
+      "case_id": "MUS6/00",
+      "diagnostic_codes": [
+        "YAML_PARSE_MALFORMED_YAML_DIRECTIVE"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "MUS6/01",
       "diagnostic_codes": [
         "YAML_PARSE_DIRECTIVE_AFTER_CONTENT"
@@ -641,12 +648,6 @@
   "fails_needs_error_path": [
     {
       "case_id": "H7J7",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "MUS6/00",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -970,8 +971,8 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 91,
-    "fails_needs_error_path_count": 3,
+    "error_contract_ok_count": 92,
+    "fails_needs_error_path_count": 2,
     "fails_needs_feature_count": 0,
     "passes_now_count": 308,
     "total_cases": 402
