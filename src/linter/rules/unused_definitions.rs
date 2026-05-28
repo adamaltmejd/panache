@@ -260,6 +260,16 @@ mod tests {
     }
 
     #[test]
+    fn accepts_definitions_used_by_reference_image_inside_reference_link() {
+        let input = "[![example][example-badge]][example-url]\n\n[example-badge]: https://example.com\n[example-url]: https://example.com\n";
+        let diagnostics = parse_and_lint(input);
+        assert!(
+            diagnostics.is_empty(),
+            "reference image nested inside a reference link should count both labels as used: {diagnostics:?}"
+        );
+    }
+
+    #[test]
     fn still_reports_unused_definition_with_only_inline_image() {
         let input = "![alt](https://example.com/i.png)\n\n[unused]: https://example.org\n";
         let diagnostics = parse_and_lint(input);
