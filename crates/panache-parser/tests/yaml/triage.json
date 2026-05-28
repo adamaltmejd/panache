@@ -323,6 +323,13 @@
       "event_parity": false
     },
     {
+      "case_id": "JKF3",
+      "diagnostic_codes": [
+        "YAML_PARSE_UNEXPECTED_DEDENT"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "JY7Z",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
@@ -340,6 +347,13 @@
       "case_id": "N4JP",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
+      ],
+      "event_parity": false
+    },
+    {
+      "case_id": "N782",
+      "diagnostic_codes": [
+        "YAML_PARSE_INVALID_PLAIN_SCALAR_IN_FLOW"
       ],
       "event_parity": false
     },
@@ -498,19 +512,7 @@
       "tree": true
     },
     {
-      "case_id": "JKF3",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
       "case_id": "LHL4",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    },
-    {
-      "case_id": "N782",
       "diagnostic_codes": [],
       "event_parity": false,
       "tree": true
@@ -873,8 +875,8 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 69,
-    "fails_needs_error_path_count": 9,
+    "error_contract_ok_count": 71,
+    "fails_needs_error_path_count": 7,
     "fails_needs_feature_count": 11,
     "passes_now_count": 244,
     "total_cases": 352

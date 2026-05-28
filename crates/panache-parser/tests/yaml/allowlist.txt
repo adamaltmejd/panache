@@ -680,3 +680,21 @@ W4TN
 # so anchor/tag placeholders preceding a real block value (7BMT,
 # U3XV, 6JWB, RZP5, XW4D) keep parsing.
 U44R
+# Error-contract: a YAML document marker (`---` or `...`) appearing at
+# the start of a line inside a flow collection. YAML 1.2 §9.1.1
+# forbids document marker lines from interrupting flow content; once
+# `[` or `{` opens a flow context the entire flow must close before a
+# new document can begin. The scanner currently folds the marker into
+# a plain scalar at column 0, so `check_flow_doc_markers` surfaces the
+# violation by walking flow-collection scalars and matching
+# `---`/`...` followed by space, newline, or end-of-input.
+N782
+# Error-contract: a multi-line quoted scalar key inside a nested
+# block-sequence item whose continuation drops to column 0 (e.g.
+# `- - "bar\nbar": x`). YAML 1.2 line folding requires continuation
+# lines of a quoted scalar to indent past the enclosing block
+# container's column. `check_multiline_quoted_indent` now also walks
+# `YAML_BLOCK_SEQUENCE_ITEM` (in addition to `YAML_BLOCK_MAP_VALUE`)
+# so the continuation column is compared against the block sequence's
+# parent indent.
+JKF3

@@ -186,6 +186,9 @@ pub(crate) fn validate_yaml(input: &str) -> Option<YamlDiagnostic> {
     if let Some(diag) = check_flow_continuation_indent(&tree, input) {
         return Some(diag);
     }
+    if let Some(diag) = check_flow_doc_markers(&tree, input) {
+        return Some(diag);
+    }
     if let Some(diag) = check_invalid_dq_escapes(&tree) {
         return Some(diag);
     }
@@ -907,7 +910,8 @@ fn check_flow_map_value_extra_colon(value: &SyntaxNode) -> Option<YamlDiagnostic
 /// — a continuation indented less than the scalar but still greater
 /// than the parent's indent is well-formed.
 ///
-/// Covers fixture QB6E.
+/// Covers fixture QB6E (block-map value) and JKF3 (nested block-seq
+/// item where the continuation drops to column 0).
 fn check_multiline_quoted_indent(tree: &SyntaxNode, input: &str) -> Option<YamlDiagnostic> {
     for value in tree
         .descendants()
@@ -924,58 +928,89 @@ fn check_multiline_quoted_indent(tree: &SyntaxNode, input: &str) -> Option<YamlD
         }
         let block_map_start: usize = block_map.text_range().start().into();
         let parent_indent = column_of(input, block_map_start);
-        for child in value.children_with_tokens() {
-            let NodeOrToken::Token(t) = child else {
-                continue;
-            };
-            if t.kind() != SyntaxKind::YAML_SCALAR {
-                continue;
-            }
-            let text = t.text();
-            if !text.contains('\n') {
-                continue;
-            }
-            let starts_quoted = text.starts_with('"') || text.starts_with('\'');
-            if !starts_quoted {
-                continue;
-            }
-            let scalar_start: usize = t.text_range().start().into();
-            let mut offset = 0usize;
-            let bytes = text.as_bytes();
-            while offset < bytes.len() {
-                if bytes[offset] != b'\n' {
-                    offset += 1;
-                    continue;
-                }
-                let line_start_in_src = scalar_start + offset + 1;
-                let line_end_in_text = text[offset + 1..]
-                    .find('\n')
-                    .map(|i| offset + 1 + i)
-                    .unwrap_or(text.len());
-                let line_end_in_src = scalar_start + line_end_in_text.min(text.len());
-                let line_text_in_src = &input[line_start_in_src..line_end_in_src];
-                let leading_ws = line_text_in_src
-                    .bytes()
-                    .take_while(|b| *b == b' ' || *b == b'\t')
-                    .count();
-                // Blank continuation lines do not impose indent
-                // (line folding consumes them).
-                if leading_ws == line_text_in_src.len() {
-                    offset += 1;
-                    continue;
-                }
-                let first_non_ws_col = leading_ws;
-                let first_non_ws_byte = line_start_in_src + leading_ws;
-                if first_non_ws_col <= parent_indent {
-                    return Some(diag_at_range(
-                        first_non_ws_byte,
-                        first_non_ws_byte + 1,
-                        diagnostic_codes::PARSE_UNEXPECTED_DEDENT,
-                        "multi-line quoted scalar continuation indented at or below parent block indent",
-                    ));
-                }
+        if let Some(diag) = check_quoted_scalar_continuation(&value, input, parent_indent) {
+            return Some(diag);
+        }
+    }
+    for item in tree
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::YAML_BLOCK_SEQUENCE_ITEM)
+    {
+        let Some(block_seq) = item.parent() else {
+            continue;
+        };
+        if block_seq.kind() != SyntaxKind::YAML_BLOCK_SEQUENCE {
+            continue;
+        }
+        let block_seq_start: usize = block_seq.text_range().start().into();
+        let parent_indent = column_of(input, block_seq_start);
+        if let Some(diag) = check_quoted_scalar_continuation(&item, input, parent_indent) {
+            return Some(diag);
+        }
+    }
+    None
+}
+
+/// Scan direct `YAML_SCALAR` children of `container` and require any
+/// multi-line quoted scalar's continuation lines to indent strictly
+/// past `parent_indent`. Shared by the block-map-value and
+/// block-sequence-item variants of `check_multiline_quoted_indent`.
+fn check_quoted_scalar_continuation(
+    container: &SyntaxNode,
+    input: &str,
+    parent_indent: usize,
+) -> Option<YamlDiagnostic> {
+    for child in container.children_with_tokens() {
+        let NodeOrToken::Token(t) = child else {
+            continue;
+        };
+        if t.kind() != SyntaxKind::YAML_SCALAR {
+            continue;
+        }
+        let text = t.text();
+        if !text.contains('\n') {
+            continue;
+        }
+        let starts_quoted = text.starts_with('"') || text.starts_with('\'');
+        if !starts_quoted {
+            continue;
+        }
+        let scalar_start: usize = t.text_range().start().into();
+        let bytes = text.as_bytes();
+        let mut offset = 0usize;
+        while offset < bytes.len() {
+            if bytes[offset] != b'\n' {
                 offset += 1;
+                continue;
             }
+            let line_start_in_src = scalar_start + offset + 1;
+            let line_end_in_text = text[offset + 1..]
+                .find('\n')
+                .map(|i| offset + 1 + i)
+                .unwrap_or(text.len());
+            let line_end_in_src = scalar_start + line_end_in_text.min(text.len());
+            let line_text_in_src = &input[line_start_in_src..line_end_in_src];
+            let leading_ws = line_text_in_src
+                .bytes()
+                .take_while(|b| *b == b' ' || *b == b'\t')
+                .count();
+            // Blank continuation lines do not impose indent
+            // (line folding consumes them).
+            if leading_ws == line_text_in_src.len() {
+                offset += 1;
+                continue;
+            }
+            let first_non_ws_col = leading_ws;
+            let first_non_ws_byte = line_start_in_src + leading_ws;
+            if first_non_ws_col <= parent_indent {
+                return Some(diag_at_range(
+                    first_non_ws_byte,
+                    first_non_ws_byte + 1,
+                    diagnostic_codes::PARSE_UNEXPECTED_DEDENT,
+                    "multi-line quoted scalar continuation indented at or below parent block indent",
+                ));
+            }
+            offset += 1;
         }
     }
     None
@@ -1798,6 +1833,60 @@ fn enclosing_block_map_for_flow(flow: &SyntaxNode) -> Option<SyntaxNode> {
             _ => {}
         }
         node = current.parent();
+    }
+    None
+}
+
+/// Detects YAML document markers (`---`, `...`) appearing at the start
+/// of a line inside a flow collection. YAML 1.2 §9.1.1 forbids document
+/// marker lines from appearing within flow content; once a `[` or `{`
+/// opens a flow context the entire flow must close before a new document
+/// can begin. The scanner currently folds the marker into a plain scalar
+/// at column 0, so we surface the violation by walking flow-collection
+/// scalars and matching `---`/`...` followed by space/newline/end.
+///
+/// Covers fixture N782 (`[\n---,\n...\n]`).
+fn check_flow_doc_markers(tree: &SyntaxNode, input: &str) -> Option<YamlDiagnostic> {
+    let bytes = input.as_bytes();
+    for flow in tree.descendants().filter(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::YAML_FLOW_SEQUENCE | SyntaxKind::YAML_FLOW_MAP
+        )
+    }) {
+        for scalar in flow.descendants_with_tokens().filter_map(|c| match c {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::YAML_SCALAR => Some(t),
+            _ => None,
+        }) {
+            let start: usize = scalar.text_range().start().into();
+            let at_line_start = start == 0 || bytes.get(start - 1) == Some(&b'\n');
+            if !at_line_start {
+                continue;
+            }
+            let text = scalar.text();
+            let head = text.as_bytes();
+            // Only plain scalars (no quote/block-style prefix) can carry
+            // the marker shape; quoted text starting with `---`/`...` is
+            // legal content.
+            if matches!(head.first(), Some(b'"' | b'\'' | b'|' | b'>')) {
+                continue;
+            }
+            let (msg, marker_len) = match head.get(..3) {
+                Some(b"---") => ("`---` document marker not allowed in flow content", 3usize),
+                Some(b"...") => ("`...` document marker not allowed in flow content", 3usize),
+                _ => continue,
+            };
+            match head.get(marker_len) {
+                None | Some(b' ' | b'\t' | b'\n') => {}
+                _ => continue,
+            }
+            return Some(diag_at_range(
+                start,
+                start + marker_len,
+                diagnostic_codes::PARSE_INVALID_PLAIN_SCALAR_IN_FLOW,
+                msg,
+            ));
+        }
     }
     None
 }
