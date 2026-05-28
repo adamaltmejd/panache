@@ -1,5 +1,6 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
 expression: snapshot
 ---
 case_id: 7BUB
@@ -34,7 +35,9 @@ DOCUMENT@0..127
                 YAML_BLOCK_SEQUENCE_ITEM@57..74
                   YAML_BLOCK_SEQ_ENTRY@57..58 "-"
                   WHITESPACE@58..59 " "
-                  YAML_SCALAR@59..73 "&SS Sammy Sosa"
+                  YAML_ANCHOR@59..62 "&SS"
+                  WHITESPACE@62..63 " "
+                  YAML_SCALAR@63..73 "Sammy Sosa"
                   NEWLINE@73..74 "\n"
           YAML_BLOCK_MAP_ENTRY@74..127
             YAML_BLOCK_MAP_KEY@74..78
@@ -47,7 +50,7 @@ DOCUMENT@0..127
                 YAML_BLOCK_SEQUENCE_ITEM@81..113
                   YAML_BLOCK_SEQ_ENTRY@81..82 "-"
                   WHITESPACE@82..83 " "
-                  YAML_SCALAR@83..86 "*SS"
+                  YAML_ALIAS@83..86 "*SS"
                   WHITESPACE@86..87 " "
                   YAML_COMMENT@87..110 "# Subsequent occurrence"
                   NEWLINE@110..111 "\n"

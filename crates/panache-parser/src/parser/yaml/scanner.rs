@@ -263,10 +263,18 @@ impl<'a> Scanner<'a> {
                 self.fetch_block_scalar(ScalarStyle::Folded);
                 return;
             }
+            Some('&') => {
+                self.fetch_anchor();
+                return;
+            }
+            Some('*') => {
+                self.fetch_alias();
+                return;
+            }
             _ => {}
         }
         // Default: anything else opens a plain scalar.
-        // Anchors/tags/aliases land in later steps and will be
+        // Tag dispatch (`!`) lands in later steps and will be
         // dispatched here before this default.
         self.fetch_plain_scalar();
     }
@@ -453,18 +461,16 @@ impl<'a> Scanner<'a> {
         self.allow_simple_key = false;
         let start = self.cursor;
         let min_indent = self.indent + 1;
-        // Bridge for absent anchor/alias/tag tokenization: a plain scalar
-        // that begins with `&`/`*`/`!` is an emulation placeholder for an
-        // anchor, alias, or tag. Keep a following block-indicator line
-        // (`-`/`?`) separate so the projection can attach the placeholder
-        // to the collection that follows (e.g. 3R3P `&sequence\n- a`,
+        // Bridge for absent tag tokenization: a plain scalar that begins
+        // with `!` is an emulation placeholder for a tag. Keep a following
+        // block-indicator line (`-`/`?`) separate so the projection can
+        // attach the placeholder to the collection that follows (e.g.
         // J7PZ `--- !!omap\n- ...`). Genuine plain scalars instead fold
-        // such lines per libyaml (AB8U). Remove this guard once the
-        // scanner emits real anchor/alias/tag tokens.
-        let placeholder = matches!(
-            self.input[start.index..].chars().next(),
-            Some('&' | '*' | '!')
-        );
+        // such lines per libyaml (AB8U). `&`/`*` are dispatched separately
+        // by `fetch_anchor`/`fetch_alias` and never reach this path at
+        // start-of-token. Remove this guard once the scanner emits real
+        // tag tokens.
+        let placeholder = matches!(self.input[start.index..].chars().next(), Some('!'));
         loop {
             let chunk_start = self.cursor.index;
             self.consume_plain_chunk();
@@ -1188,6 +1194,58 @@ impl<'a> Scanner<'a> {
             start,
             end,
         });
+    }
+
+    /// Anchor (`&name`) at start-of-token. Anchors can occupy the
+    /// implicit-key slot (e.g. `&b *alias : value` in SU74), so we
+    /// `save_simple_key` first, then close key candidacy for this
+    /// token.
+    fn fetch_anchor(&mut self) {
+        self.save_simple_key();
+        self.allow_simple_key = false;
+        let start = self.cursor;
+        debug_assert_eq!(self.peek_char(), Some('&'));
+        self.advance();
+        self.scan_anchor_name();
+        let end = self.cursor;
+        self.tokens.push_back(Token {
+            kind: TokenKind::Anchor,
+            start,
+            end,
+        });
+    }
+
+    /// Alias (`*name`) at start-of-token. Like an anchor, an alias can
+    /// be the implicit-key slot's candidate.
+    fn fetch_alias(&mut self) {
+        self.save_simple_key();
+        self.allow_simple_key = false;
+        let start = self.cursor;
+        debug_assert_eq!(self.peek_char(), Some('*'));
+        self.advance();
+        self.scan_anchor_name();
+        let end = self.cursor;
+        self.tokens.push_back(Token {
+            kind: TokenKind::Alias,
+            start,
+            end,
+        });
+    }
+
+    /// Consume an anchor/alias name. Relaxed (libyaml/PyYAML) name
+    /// class: any non-whitespace, non-flow-indicator codepoint. This
+    /// lets `&a:` in 2SXE land as an anchor with name `a:` rather than
+    /// splitting on the colon.
+    fn scan_anchor_name(&mut self) {
+        while let Some(c) = self.peek_char() {
+            match c {
+                ' ' | '\t' | '\n' | '\r' => break,
+                ',' | '[' | ']' | '{' | '}' => break,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
     }
 
     /// Consume runs of whitespace, newlines, and comments, emitting

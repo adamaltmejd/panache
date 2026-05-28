@@ -1,5 +1,6 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
 expression: snapshot
 ---
 case_id: W5VH
@@ -18,25 +19,15 @@ DOCUMENT@0..43
               YAML_COLON@1..2 ":"
             YAML_BLOCK_MAP_VALUE@2..26
               WHITESPACE@2..3 " "
-              YAML_SCALAR@3..15 "&:@*!$\"<foo>"
-              YAML_BLOCK_MAP@15..26
-                YAML_BLOCK_MAP_ENTRY@15..26
-                  YAML_BLOCK_MAP_KEY@15..16
-                    YAML_COLON@15..16 ":"
-                  YAML_BLOCK_MAP_VALUE@16..26
-                    WHITESPACE@16..17 " "
-                    YAML_SCALAR@17..25 "scalar a"
-                    NEWLINE@25..26 "\n"
+              YAML_ANCHOR@3..16 "&:@*!$\"<foo>:"
+              WHITESPACE@16..17 " "
+              YAML_SCALAR@17..25 "scalar a"
+              NEWLINE@25..26 "\n"
           YAML_BLOCK_MAP_ENTRY@26..43
             YAML_BLOCK_MAP_KEY@26..28
               YAML_SCALAR@26..27 "b"
               YAML_COLON@27..28 ":"
             YAML_BLOCK_MAP_VALUE@28..43
               WHITESPACE@28..29 " "
-              YAML_SCALAR@29..41 "*:@*!$\"<foo>"
-              YAML_BLOCK_MAP@41..43
-                YAML_BLOCK_MAP_ENTRY@41..43
-                  YAML_BLOCK_MAP_KEY@41..42
-                    YAML_COLON@41..42 ":"
-                  YAML_BLOCK_MAP_VALUE@42..43
-                    NEWLINE@42..43 "\n"
+              YAML_ALIAS@29..42 "*:@*!$\"<foo>:"
+              NEWLINE@42..43 "\n"

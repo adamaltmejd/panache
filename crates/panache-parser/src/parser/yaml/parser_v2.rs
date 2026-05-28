@@ -631,7 +631,9 @@ fn map_token_to_syntax_kind(kind: TokenKind) -> SyntaxKind {
         TokenKind::FlowSequenceStart | TokenKind::FlowSequenceEnd => SyntaxKind::YAML_SCALAR,
         TokenKind::FlowMappingStart | TokenKind::FlowMappingEnd => SyntaxKind::YAML_SCALAR,
         TokenKind::Value => SyntaxKind::YAML_COLON,
-        TokenKind::Anchor | TokenKind::Alias | TokenKind::Tag => SyntaxKind::YAML_TAG,
+        TokenKind::Anchor => SyntaxKind::YAML_ANCHOR,
+        TokenKind::Alias => SyntaxKind::YAML_ALIAS,
+        TokenKind::Tag => SyntaxKind::YAML_TAG,
         TokenKind::Scalar(_) => SyntaxKind::YAML_SCALAR,
         // Source-backed `Key` (the explicit `?` indicator) — there is
         // no dedicated SyntaxKind yet, route to YAML_KEY for now.

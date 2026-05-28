@@ -1,5 +1,6 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
 expression: snapshot
 ---
 case_id: 3GZX
@@ -18,7 +19,9 @@ DOCUMENT@0..108
               YAML_COLON@16..17 ":"
             YAML_BLOCK_MAP_VALUE@17..30
               WHITESPACE@17..18 " "
-              YAML_SCALAR@18..29 "&anchor Foo"
+              YAML_ANCHOR@18..25 "&anchor"
+              WHITESPACE@25..26 " "
+              YAML_SCALAR@26..29 "Foo"
               NEWLINE@29..30 "\n"
           YAML_BLOCK_MAP_ENTRY@30..57
             YAML_BLOCK_MAP_KEY@30..48
@@ -26,7 +29,7 @@ DOCUMENT@0..108
               YAML_COLON@47..48 ":"
             YAML_BLOCK_MAP_VALUE@48..57
               WHITESPACE@48..49 " "
-              YAML_SCALAR@49..56 "*anchor"
+              YAML_ALIAS@49..56 "*anchor"
               NEWLINE@56..57 "\n"
           YAML_BLOCK_MAP_ENTRY@57..86
             YAML_BLOCK_MAP_KEY@57..73
@@ -34,7 +37,9 @@ DOCUMENT@0..108
               YAML_COLON@72..73 ":"
             YAML_BLOCK_MAP_VALUE@73..86
               WHITESPACE@73..74 " "
-              YAML_SCALAR@74..85 "&anchor Bar"
+              YAML_ANCHOR@74..81 "&anchor"
+              WHITESPACE@81..82 " "
+              YAML_SCALAR@82..85 "Bar"
               NEWLINE@85..86 "\n"
           YAML_BLOCK_MAP_ENTRY@86..108
             YAML_BLOCK_MAP_KEY@86..99
@@ -42,5 +47,5 @@ DOCUMENT@0..108
               YAML_COLON@98..99 ":"
             YAML_BLOCK_MAP_VALUE@99..108
               WHITESPACE@99..100 " "
-              YAML_SCALAR@100..107 "*anchor"
+              YAML_ALIAS@100..107 "*anchor"
               NEWLINE@107..108 "\n"

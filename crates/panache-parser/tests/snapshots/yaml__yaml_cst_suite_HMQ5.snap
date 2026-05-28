@@ -1,6 +1,6 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
-assertion_line: 279
+assertion_line: 283
 expression: snapshot
 ---
 case_id: HMQ5
@@ -24,9 +24,11 @@ DOCUMENT@0..43
               NEWLINE@28..29 "\n"
           YAML_BLOCK_MAP_ENTRY@29..43
             YAML_BLOCK_MAP_KEY@29..38
-              YAML_SCALAR@29..37 "&a2 baz "
+              YAML_ANCHOR@29..32 "&a2"
+              WHITESPACE@32..33 " "
+              YAML_SCALAR@33..37 "baz "
               YAML_COLON@37..38 ":"
             YAML_BLOCK_MAP_VALUE@38..43
               WHITESPACE@38..39 " "
-              YAML_SCALAR@39..42 "*a1"
+              YAML_ALIAS@39..42 "*a1"
               NEWLINE@42..43 "\n"

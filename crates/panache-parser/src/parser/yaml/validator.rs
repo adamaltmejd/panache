@@ -1535,6 +1535,10 @@ fn check_doc_level_bare_scalar_then_colon_map(tree: &SyntaxNode) -> Option<YamlD
                     SyntaxKind::YAML_SCALAR => {
                         last_bare_scalar = Some(t.clone());
                     }
+                    // Node properties (`&anchor`, `*alias`) are not
+                    // bare scalars; they attach to the following content
+                    // and must not reset or claim the slot.
+                    SyntaxKind::YAML_ANCHOR | SyntaxKind::YAML_ALIAS => {}
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::YAML_COMMENT => {}
                     _ => {
                         last_bare_scalar = None;
@@ -1594,6 +1598,10 @@ fn check_value_level_scalar_then_colon_map(tree: &SyntaxNode) -> Option<YamlDiag
             match &child {
                 NodeOrToken::Token(t) => match t.kind() {
                     SyntaxKind::YAML_SCALAR => last_scalar = Some(t.clone()),
+                    // Node properties (`&anchor`, `*alias`) are not
+                    // bare scalars; they attach to the following content
+                    // and must not reset or claim the slot.
+                    SyntaxKind::YAML_ANCHOR | SyntaxKind::YAML_ALIAS => {}
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::YAML_COMMENT => {}
                     _ => last_scalar = None,
                 },

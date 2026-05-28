@@ -19,7 +19,10 @@ DOCUMENT@0..27
               YAML_COLON@3..4 ":"
             YAML_BLOCK_MAP_VALUE@4..27
               WHITESPACE@4..5 " "
-              YAML_SCALAR@5..23 "&anchor\n !!map\n  a"
+              YAML_ANCHOR@5..12 "&anchor"
+              NEWLINE@12..13 "\n"
+              WHITESPACE@13..14 " "
+              YAML_SCALAR@14..23 "!!map\n  a"
               YAML_BLOCK_MAP@23..27
                 YAML_BLOCK_MAP_ENTRY@23..27
                   YAML_BLOCK_MAP_KEY@23..24

@@ -1,5 +1,6 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
 expression: snapshot
 ---
 case_id: 26DV
@@ -29,7 +30,9 @@ DOCUMENT@0..193
                     YAML_COLON@19..20 ":"
                   YAML_BLOCK_MAP_VALUE@20..37
                     WHITESPACE@20..21 " "
-                    YAML_SCALAR@21..36 "&alias1 scalar1"
+                    YAML_ANCHOR@21..28 "&alias1"
+                    WHITESPACE@28..29 " "
+                    YAML_SCALAR@29..36 "scalar1"
                     NEWLINE@36..37 "\n"
           YAML_BLOCK_MAP_ENTRY@37..74
             YAML_BLOCK_MAP_KEY@37..45
@@ -48,7 +51,9 @@ DOCUMENT@0..193
                     YAML_COLON@56..57 ":"
                   YAML_BLOCK_MAP_VALUE@57..74
                     WHITESPACE@57..58 " "
-                    YAML_SCALAR@58..73 "&alias2 scalar2"
+                    YAML_ANCHOR@58..65 "&alias2"
+                    WHITESPACE@65..66 " "
+                    YAML_SCALAR@66..73 "scalar2"
                     NEWLINE@73..74 "\n"
           YAML_BLOCK_MAP_ENTRY@74..108
             YAML_BLOCK_MAP_KEY@74..79
@@ -56,10 +61,15 @@ DOCUMENT@0..193
               YAML_COLON@78..79 ":"
             YAML_BLOCK_MAP_VALUE@79..108
               WHITESPACE@79..80 " "
-              YAML_SCALAR@80..98 "&node3 \n  *alias1 "
-              YAML_BLOCK_MAP@98..108
-                YAML_BLOCK_MAP_ENTRY@98..108
-                  YAML_BLOCK_MAP_KEY@98..99
+              YAML_ANCHOR@80..86 "&node3"
+              WHITESPACE@86..87 " "
+              NEWLINE@87..88 "\n"
+              WHITESPACE@88..90 "  "
+              YAML_BLOCK_MAP@90..108
+                YAML_BLOCK_MAP_ENTRY@90..108
+                  YAML_BLOCK_MAP_KEY@90..99
+                    YAML_ALIAS@90..97 "*alias1"
+                    WHITESPACE@97..98 " "
                     YAML_COLON@98..99 ":"
                   YAML_BLOCK_MAP_VALUE@99..108
                     WHITESPACE@99..100 " "
@@ -76,7 +86,8 @@ DOCUMENT@0..193
               YAML_BLOCK_MAP@117..135
                 YAML_BLOCK_MAP_ENTRY@117..135
                   YAML_BLOCK_MAP_KEY@117..126
-                    YAML_SCALAR@117..125 "*alias2 "
+                    YAML_ALIAS@117..124 "*alias2"
+                    WHITESPACE@124..125 " "
                     YAML_COLON@125..126 ":"
                   YAML_BLOCK_MAP_VALUE@126..135
                     WHITESPACE@126..127 " "
@@ -103,7 +114,10 @@ DOCUMENT@0..193
               YAML_BLOCK_MAP@167..193
                 YAML_BLOCK_MAP_ENTRY@167..193
                   YAML_BLOCK_MAP_KEY@167..184
-                    YAML_SCALAR@167..183 "&anchor6 'key6' "
+                    YAML_ANCHOR@167..175 "&anchor6"
+                    WHITESPACE@175..176 " "
+                    YAML_SCALAR@176..182 "'key6'"
+                    WHITESPACE@182..183 " "
                     YAML_COLON@183..184 ":"
                   YAML_BLOCK_MAP_VALUE@184..193
                     WHITESPACE@184..185 " "

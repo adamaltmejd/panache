@@ -345,10 +345,21 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
     }
     // Skip `%TAG`/`%YAML` directive lines: those are document-level metadata,
     // not part of the scalar body.
+    // Include WHITESPACE between tokens so a top-level `&anchor body`
+    // joins as `&anchor body`, letting `decompose_scalar` find the
+    // whitespace terminator on the anchor name.
     let text = doc
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| tok.kind() == SyntaxKind::YAML_SCALAR)
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::WHITESPACE
+            )
+        })
         .filter(|tok| !tok.text().trim_start().starts_with('%'))
         .map(|tok| tok.text().to_string())
         .collect::<Vec<_>>()
@@ -416,7 +427,15 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
 fn collect_doc_scalar_text_with_newlines(doc: &SyntaxNode) -> String {
     doc.descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| matches!(tok.kind(), SyntaxKind::YAML_SCALAR | SyntaxKind::NEWLINE))
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::NEWLINE
+            )
+        })
         .filter(|tok| !tok.text().trim_start().starts_with('%'))
         .map(|tok| tok.text().to_string())
         .collect()
@@ -435,7 +454,16 @@ fn fold_plain_document_lines(doc: &SyntaxNode) -> String {
     let raw: String = doc
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| matches!(tok.kind(), SyntaxKind::YAML_SCALAR | SyntaxKind::NEWLINE))
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::WHITESPACE
+                    | SyntaxKind::NEWLINE
+            )
+        })
         .filter(|tok| !tok.text().trim_start().starts_with('%'))
         .map(|tok| tok.text().to_string())
         .collect();
@@ -1745,7 +1773,12 @@ fn project_flow_map_entry(
         let raw_value = value_node
             .descendants_with_tokens()
             .filter_map(|el| el.into_token())
-            .filter(|tok| tok.kind() == SyntaxKind::YAML_SCALAR)
+            .filter(|tok| {
+                matches!(
+                    tok.kind(),
+                    SyntaxKind::YAML_SCALAR | SyntaxKind::YAML_ANCHOR | SyntaxKind::YAML_ALIAS
+                )
+            })
             .map(|tok| tok.text().to_string())
             .collect::<Vec<_>>()
             .join("");
@@ -1796,7 +1829,15 @@ fn project_flow_map_value(value_node: &SyntaxNode, handles: &TagHandles, out: &m
     let raw_value = value_node
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| matches!(tok.kind(), SyntaxKind::YAML_SCALAR | SyntaxKind::YAML_COLON))
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::YAML_COLON
+            )
+        })
         .map(|tok| tok.text().to_string())
         .collect::<Vec<_>>()
         .join("");
@@ -2067,6 +2108,8 @@ fn project_block_sequence_items(
                     tok.kind(),
                     SyntaxKind::YAML_SCALAR
                         | SyntaxKind::YAML_TAG
+                        | SyntaxKind::YAML_ANCHOR
+                        | SyntaxKind::YAML_ALIAS
                         | SyntaxKind::YAML_KEY
                         | SyntaxKind::YAML_COLON
                         | SyntaxKind::WHITESPACE,
@@ -2142,10 +2185,22 @@ fn project_block_sequence_items(
             .filter_map(|el| el.into_token())
             .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
             .map(|tok| tok.text().to_string());
+        // Include WHITESPACE so `&anchor body` joins as `&anchor body`,
+        // letting `decompose_scalar` find the whitespace terminator on
+        // the anchor name. See `project_block_map_entry_value` for the
+        // matching rationale at value position.
         let scalar_text = item
             .descendants_with_tokens()
             .filter_map(|el| el.into_token())
-            .filter(|tok| tok.kind() == SyntaxKind::YAML_SCALAR)
+            .filter(|tok| {
+                matches!(
+                    tok.kind(),
+                    SyntaxKind::YAML_SCALAR
+                        | SyntaxKind::YAML_ANCHOR
+                        | SyntaxKind::YAML_ALIAS
+                        | SyntaxKind::WHITESPACE
+                )
+            })
             .map(|tok| tok.text().to_string())
             .collect::<Vec<_>>()
             .join("");
@@ -2257,6 +2312,11 @@ fn absorb_anchor_or_tag(
     long_tag: &mut Option<String>,
 ) {
     match tok.kind() {
+        SyntaxKind::YAML_ANCHOR => {
+            if anchor.is_none() {
+                *anchor = Some(tok.text().trim_start_matches('&').to_string());
+            }
+        }
         SyntaxKind::YAML_TAG => {
             let trimmed = tok.text().trim();
             if let Some(name) = trimmed.strip_prefix('&') {
@@ -2345,6 +2405,11 @@ fn extract_leading_node_properties(
             continue;
         };
         match tok.kind() {
+            SyntaxKind::YAML_ANCHOR => {
+                if anchor.is_none() {
+                    anchor = Some(tok.text().trim_start_matches('&').to_string());
+                }
+            }
             SyntaxKind::YAML_TAG => {
                 if long_tag.is_none()
                     && let Some(long) = resolve_long_tag(tok.text(), handles)
@@ -2539,7 +2604,13 @@ fn project_block_map_entries(map_node: &SyntaxNode, handles: &TagHandles, out: &
                                     }
                                     if vt.kind() == SyntaxKind::YAML_TAG && value_tag.is_none() {
                                         value_tag = Some(vt.text().to_string());
-                                    } else if vt.kind() == SyntaxKind::YAML_SCALAR {
+                                    } else if matches!(
+                                        vt.kind(),
+                                        SyntaxKind::YAML_SCALAR
+                                            | SyntaxKind::YAML_ANCHOR
+                                            | SyntaxKind::YAML_ALIAS
+                                            | SyntaxKind::WHITESPACE
+                                    ) {
                                         value_text.push_str(vt.text());
                                     }
                                     value_end += 1;
@@ -2679,6 +2750,8 @@ fn project_block_map_entry(entry: &SyntaxNode, handles: &TagHandles, out: &mut V
                 tok.kind(),
                 SyntaxKind::YAML_KEY
                     | SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
                     | SyntaxKind::WHITESPACE
                     | SyntaxKind::NEWLINE
             )
@@ -2919,10 +2992,24 @@ fn project_block_map_entry_value(
         .filter_map(|el| el.into_token())
         .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
         .map(|tok| tok.text().to_string());
+    // Include WHITESPACE between scalar-ish tokens so a value like
+    // `&anchor body` joins as `&anchor body` (not `&anchorbody`),
+    // letting `decompose_scalar` find the whitespace terminator on the
+    // anchor name. The scanner emits multi-line plain scalars as one
+    // YAML_SCALAR token, so the WS we pick up here is only the inter-
+    // property indentation that yaml-test-suite trims anyway.
     let value_text = value_node
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| tok.kind() == SyntaxKind::YAML_SCALAR)
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::WHITESPACE
+            )
+        })
         .map(|tok| tok.text().to_string())
         .collect::<Vec<_>>()
         .join("");
@@ -3049,7 +3136,15 @@ fn collect_value_scalar_text_with_newlines(value_node: &SyntaxNode) -> String {
     value_node
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())
-        .filter(|tok| matches!(tok.kind(), SyntaxKind::YAML_SCALAR | SyntaxKind::NEWLINE))
+        .filter(|tok| {
+            matches!(
+                tok.kind(),
+                SyntaxKind::YAML_SCALAR
+                    | SyntaxKind::YAML_ANCHOR
+                    | SyntaxKind::YAML_ALIAS
+                    | SyntaxKind::NEWLINE
+            )
+        })
         .map(|tok| tok.text().to_string())
         .collect()
 }

@@ -78,7 +78,7 @@ DOCUMENT@0..157
               YAML_COLON@110..111 ":"
             YAML_BLOCK_MAP_VALUE@111..133
               WHITESPACE@111..112 " "
-              YAML_SCALAR@112..117 "&node"
+              YAML_ANCHOR@112..117 "&node"
               WHITESPACE@117..118 " "
               YAML_COMMENT@118..124 "# lala"
               NEWLINE@124..125 "\n"

@@ -21,6 +21,8 @@ pub enum SyntaxKind {
     YAML_KEY,            // YAML mapping key token
     YAML_COLON,          // YAML mapping key-value separator
     YAML_TAG,            // YAML explicit tag token (e.g. !!str)
+    YAML_ANCHOR,         // YAML anchor token (e.g. &name)
+    YAML_ALIAS,          // YAML alias token (e.g. *name)
     YAML_SCALAR,         // YAML scalar value token
     YAML_COMMENT,        // YAML inline comment token
     YAML_DOCUMENT_START, // YAML document start marker (---) in shadow parser

@@ -288,20 +288,6 @@
       "event_parity": false
     },
     {
-      "case_id": "GT5M",
-      "diagnostic_codes": [
-        "YAML_PARSE_INVALID_KEY_TOKEN"
-      ],
-      "event_parity": false
-    },
-    {
-      "case_id": "H7J7",
-      "diagnostic_codes": [
-        "YAML_PARSE_UNEXPECTED_DEDENT"
-      ],
-      "event_parity": false
-    },
-    {
       "case_id": "H7TQ",
       "diagnostic_codes": [
         "YAML_PARSE_MALFORMED_YAML_DIRECTIVE"
@@ -512,6 +498,18 @@
       "tree": true
     },
     {
+      "case_id": "GT5M",
+      "diagnostic_codes": [],
+      "event_parity": false,
+      "tree": true
+    },
+    {
+      "case_id": "H7J7",
+      "diagnostic_codes": [],
+      "event_parity": false,
+      "tree": true
+    },
+    {
       "case_id": "LHL4",
       "diagnostic_codes": [],
       "event_parity": false,
@@ -544,14 +542,6 @@
   ],
   "fails_needs_feature": [
     {
-      "case_id": "2SXE",
-      "diagnostic_codes": [
-        "YAML_PARSE_INVALID_KEY_TOKEN"
-      ],
-      "event_parity": false,
-      "tree": false
-    },
-    {
       "case_id": "57H4",
       "diagnostic_codes": [
         "YAML_PARSE_UNEXPECTED_DEDENT"
@@ -561,11 +551,9 @@
     },
     {
       "case_id": "6BFJ",
-      "diagnostic_codes": [
-        "YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START"
-      ],
+      "diagnostic_codes": [],
       "event_parity": false,
-      "tree": false
+      "tree": true
     },
     {
       "case_id": "9KAX",
@@ -585,11 +573,9 @@
     },
     {
       "case_id": "CN3R",
-      "diagnostic_codes": [
-        "YAML_PARSE_TRAILING_CONTENT_AFTER_FLOW_END"
-      ],
+      "diagnostic_codes": [],
       "event_parity": false,
-      "tree": false
+      "tree": true
     },
     {
       "case_id": "EHF6",
@@ -610,7 +596,7 @@
     {
       "case_id": "UGM3",
       "diagnostic_codes": [
-        "YAML_PARSE_UNEXPECTED_DEDENT"
+        "YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START"
       ],
       "event_parity": false,
       "tree": false
@@ -630,6 +616,7 @@
     "2EBW",
     "2JQS",
     "2LFX",
+    "2SXE",
     "2XXW",
     "33X3",
     "35KP",
@@ -870,10 +857,10 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 71,
-    "fails_needs_error_path_count": 7,
-    "fails_needs_feature_count": 10,
-    "passes_now_count": 245,
+    "error_contract_ok_count": 69,
+    "fails_needs_error_path_count": 9,
+    "fails_needs_feature_count": 9,
+    "passes_now_count": 246,
     "total_cases": 352
   }
 }
