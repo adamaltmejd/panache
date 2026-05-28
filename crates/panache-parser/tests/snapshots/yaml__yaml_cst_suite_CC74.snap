@@ -15,5 +15,7 @@ DOCUMENT@0..52
         NEWLINE@34..35 "\n"
         YAML_DOCUMENT_START@35..38 "---"
         NEWLINE@38..39 "\n"
-        YAML_SCALAR@39..51 "!e!foo \"bar\""
+        YAML_TAG@39..45 "!e!foo"
+        WHITESPACE@45..46 " "
+        YAML_SCALAR@46..51 "\"bar\""
         NEWLINE@51..52 "\n"

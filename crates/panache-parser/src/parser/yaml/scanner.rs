@@ -271,11 +271,13 @@ impl<'a> Scanner<'a> {
                 self.fetch_alias();
                 return;
             }
+            Some('!') => {
+                self.fetch_tag();
+                return;
+            }
             _ => {}
         }
         // Default: anything else opens a plain scalar.
-        // Tag dispatch (`!`) lands in later steps and will be
-        // dispatched here before this default.
         self.fetch_plain_scalar();
     }
 
@@ -1227,6 +1229,50 @@ impl<'a> Scanner<'a> {
         let end = self.cursor;
         self.tokens.push_back(Token {
             kind: TokenKind::Alias,
+            start,
+            end,
+        });
+    }
+
+    /// Tag (`!handle suffix`, `!!type`, or `!<verbatim>`) at start-of-token.
+    /// Tags annotate the *next* node, so they're emitted as a separate
+    /// token (decoration) and `parser_v2` carries them through without
+    /// closing the implicit-key candidate slot. Like an anchor, a tag
+    /// can occupy the implicit-key position (e.g. `!!str key: value`).
+    fn fetch_tag(&mut self) {
+        self.save_simple_key();
+        self.allow_simple_key = false;
+        let start = self.cursor;
+        debug_assert_eq!(self.peek_char(), Some('!'));
+        self.advance();
+        if self.peek_char() == Some('<') {
+            // Verbatim form `!<uri>`: consume up to and including the
+            // closing `>`. We don't validate the URI body — projection
+            // and downstream tools surface tag-shape diagnostics.
+            self.advance();
+            while let Some(c) = self.peek_char() {
+                self.advance();
+                if c == '>' {
+                    break;
+                }
+            }
+        } else {
+            // Handle + suffix: any non-whitespace, non-flow-indicator
+            // char. Relaxed (libyaml/PyYAML) name class so suffix chars
+            // like `:`, `/`, `!`, `%` all land inside the tag token.
+            while let Some(c) = self.peek_char() {
+                match c {
+                    ' ' | '\t' | '\n' | '\r' => break,
+                    ',' | '[' | ']' | '{' | '}' if self.flow_level > 0 => break,
+                    _ => {
+                        self.advance();
+                    }
+                }
+            }
+        }
+        let end = self.cursor;
+        self.tokens.push_back(Token {
+            kind: TokenKind::Tag,
             start,
             end,
         });

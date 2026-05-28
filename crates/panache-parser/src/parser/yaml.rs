@@ -486,13 +486,16 @@ mod tests {
             "scalar document should not be wrapped in YAML_BLOCK_MAP"
         );
 
-        // v2 keeps the leading `!` inside the scalar's source bytes; the
-        // projection layer resolves tags from the scalar text.
-        let has_tagged_scalar = tree
+        // The scanner emits the leading `!` as a dedicated YAML_TAG
+        // token; the projection layer reads the tag from that token.
+        let has_tag_token = tree
             .descendants_with_tokens()
             .filter_map(|el| el.into_token())
-            .any(|tok| tok.kind() == SyntaxKind::YAML_SCALAR && tok.text().starts_with('!'));
-        assert!(has_tagged_scalar, "tree should contain tag bytes in scalar");
+            .any(|tok| tok.kind() == SyntaxKind::YAML_TAG && tok.text() == "!");
+        assert!(
+            has_tag_token,
+            "tree should contain a YAML_TAG token for the leading `!`"
+        );
     }
 
     #[test]

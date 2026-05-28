@@ -19,7 +19,7 @@ DOCUMENT@0..137
       YAML_DOCUMENT@87..137
         YAML_DOCUMENT_START@87..90 "---"
         WHITESPACE@90..91 " "
-        YAML_SCALAR@91..96 "!!set"
+        YAML_TAG@91..96 "!!set"
         NEWLINE@96..97 "\n"
         YAML_BLOCK_MAP@97..137
           YAML_BLOCK_MAP_ENTRY@97..112

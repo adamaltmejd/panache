@@ -420,7 +420,10 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
             // quoted_val_event returns `=VAL "body` — splice the tag in.
             quoted.replacen("=VAL ", &format!("=VAL {long} "), 1)
         } else {
-            format!("=VAL {long} :{trimmed_text}")
+            // Plain scalar: fold multi-line continuations the same way the
+            // untagged path does so `!!str\nd\ne` projects as `:d e`.
+            let folded = fold_plain_document_lines(doc);
+            format!("=VAL {long} :{}", escape_block_scalar_text(folded.trim()))
         }
     } else if is_multi_line_quoted {
         quoted_val_event_multi_line(&multi_line_text)
@@ -1793,7 +1796,21 @@ fn project_flow_map_entry(
         let key_for_classify = raw_key.trim();
         let stripped_key = strip_explicit_key_indicator(key_for_classify);
         if stripped_key.is_empty() {
-            out.push("=VAL :".to_string());
+            // Tag-only key (`!!str : bar` in WZ62) — `raw_key` skips
+            // YAML_TAG, so an entry whose key is only a tag arrives
+            // here empty. Pick the YAML_TAG sibling off the KEY node.
+            let key_tag = key_node
+                .children_with_tokens()
+                .filter_map(|el| el.into_token())
+                .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+                .map(|tok| tok.text().to_string());
+            if let Some(t) = key_tag
+                && let Some(long) = resolve_long_tag(&t, handles)
+            {
+                out.push(format!("=VAL {long} :"));
+            } else {
+                out.push("=VAL :".to_string());
+            }
         } else if stripped_key.starts_with('"') || stripped_key.starts_with('\'') {
             if stripped_key.contains('\n') {
                 out.push(quoted_val_event_multi_line(stripped_key));
@@ -1840,11 +1857,21 @@ fn project_flow_map_entry(
 /// multi-line nested flow values like `{ a: [ b, c, { d: [e, f] } ] }`
 /// produce structured event streams instead of one slurped scalar.
 fn project_flow_map_value(value_node: &SyntaxNode, handles: &TagHandles, out: &mut Vec<String>) {
+    // A YAML_TAG sibling decorates the nested flow collection or scalar
+    // that follows (EHF6 `k: !!seq [ a, !!str b]`).
+    let decoration_tag = value_node
+        .children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+        .and_then(|tok| resolve_long_tag(tok.text(), handles));
     if let Some(flow_seq) = value_node
         .children()
         .find(|n| n.kind() == SyntaxKind::YAML_FLOW_SEQUENCE)
     {
-        out.push("+SEQ []".to_string());
+        out.push(match decoration_tag {
+            Some(t) => format!("+SEQ [] {t}"),
+            None => "+SEQ []".to_string(),
+        });
         project_flow_sequence_items_cst(&flow_seq, handles, out);
         out.push("-SEQ".to_string());
         return;
@@ -1853,7 +1880,10 @@ fn project_flow_map_value(value_node: &SyntaxNode, handles: &TagHandles, out: &m
         .children()
         .find(|n| n.kind() == SyntaxKind::YAML_FLOW_MAP)
     {
-        out.push("+MAP {}".to_string());
+        out.push(match decoration_tag {
+            Some(t) => format!("+MAP {{}} {t}"),
+            None => "+MAP {}".to_string(),
+        });
         project_flow_map_entries(&nested_map, handles, out);
         out.push("-MAP".to_string());
         return;
@@ -1882,6 +1912,21 @@ fn project_flow_map_value(value_node: &SyntaxNode, handles: &TagHandles, out: &m
         .map(|tok| tok.text().to_string())
         .collect::<Vec<_>>()
         .join("");
+    if raw_value.trim().is_empty() {
+        // Tag-only value (`!!str,` in WZ62) — no scalar content but a
+        // YAML_TAG sibling annotates the empty value.
+        let tag = value_node
+            .children_with_tokens()
+            .filter_map(|el| el.into_token())
+            .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+            .map(|tok| tok.text().to_string());
+        if let Some(t) = tag
+            && let Some(long) = resolve_long_tag(&t, handles)
+        {
+            out.push(format!("=VAL {long} :"));
+            return;
+        }
+    }
     out.push(flow_scalar_event(&raw_value, handles));
 }
 
@@ -1896,27 +1941,37 @@ fn project_flow_collection_node(node: &SyntaxNode, handles: &TagHandles, out: &m
 /// Variant of [`project_flow_collection_node`] that propagates a
 /// caller-extracted anchor (e.g. `&a [a, &b b]`) into the collection's
 /// open event (`+SEQ [] &a`, `+MAP {} &a`). The anchor name is passed
-/// without its leading `&`.
+/// without its leading `&`. A `tag` (already resolved to the long form
+/// `<tag:...>`) is appended after the anchor when the parent decorates
+/// the flow collection (`--- !!map { ... }`, EHF6).
 fn project_flow_collection_node_with_anchor(
     node: &SyntaxNode,
     anchor: Option<&str>,
     handles: &TagHandles,
     out: &mut Vec<String>,
 ) {
+    let parent_tag = node
+        .parent()
+        .and_then(|p| {
+            p.children_with_tokens()
+                .filter_map(|el| el.into_token())
+                .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+        })
+        .and_then(|tok| resolve_long_tag(tok.text(), handles));
+    let decoration_suffix = match (anchor, parent_tag) {
+        (Some(a), Some(t)) => format!(" &{a} {t}"),
+        (Some(a), None) => format!(" &{a}"),
+        (None, Some(t)) => format!(" {t}"),
+        (None, None) => String::new(),
+    };
     match node.kind() {
         SyntaxKind::YAML_FLOW_SEQUENCE => {
-            out.push(match anchor {
-                Some(a) => format!("+SEQ [] &{a}"),
-                None => "+SEQ []".to_string(),
-            });
+            out.push(format!("+SEQ []{decoration_suffix}"));
             project_flow_sequence_items_cst(node, handles, out);
             out.push("-SEQ".to_string());
         }
         SyntaxKind::YAML_FLOW_MAP => {
-            out.push(match anchor {
-                Some(a) => format!("+MAP {{}} &{a}"),
-                None => "+MAP {}".to_string(),
-            });
+            out.push(format!("+MAP {{}}{decoration_suffix}"));
             project_flow_map_entries(node, handles, out);
             out.push("-MAP".to_string());
         }
@@ -2074,6 +2129,7 @@ fn project_flow_sequence_items_cst(
                         | SyntaxKind::YAML_COLON
                         | SyntaxKind::YAML_ANCHOR
                         | SyntaxKind::YAML_ALIAS
+                        | SyntaxKind::YAML_TAG
                         | SyntaxKind::WHITESPACE
                         | SyntaxKind::NEWLINE
                 )
@@ -2182,7 +2238,27 @@ fn project_block_sequence_items(
             .children()
             .find(|n| n.kind() == SyntaxKind::YAML_BLOCK_SEQUENCE)
         {
-            out.push("+SEQ".to_string());
+            // A YAML_TAG / YAML_ANCHOR sibling decorates the nested
+            // sequence (`- !!seq\n - nested`, 57H4).
+            let mut suffix = String::new();
+            let anchor = item
+                .children_with_tokens()
+                .filter_map(|el| el.into_token())
+                .find(|tok| tok.kind() == SyntaxKind::YAML_ANCHOR)
+                .and_then(|tok| tok.text().strip_prefix('&').map(str::to_owned));
+            if let Some(a) = anchor {
+                suffix.push_str(&format!(" &{a}"));
+            }
+            let tag = item
+                .children_with_tokens()
+                .filter_map(|el| el.into_token())
+                .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+                .and_then(|tok| resolve_long_tag(tok.text(), handles));
+            if let Some(t) = tag {
+                suffix.push(' ');
+                suffix.push_str(&t);
+            }
+            out.push(format!("+SEQ{suffix}"));
             project_block_sequence_items(&nested_seq, handles, out);
             out.push("-SEQ".to_string());
             continue;
@@ -3030,9 +3106,8 @@ fn project_block_map_entry_value(
         .children()
         .find(|n| n.kind() == SyntaxKind::YAML_FLOW_MAP)
     {
-        out.push("+MAP {}".to_string());
-        project_flow_map_entries(&flow_map, handles, out);
-        out.push("-MAP".to_string());
+        let anchor = anchor_preceding_node(value_node, &flow_map);
+        project_flow_collection_node_with_anchor(&flow_map, anchor.as_deref(), handles, out);
         return;
     }
 
@@ -3045,15 +3120,37 @@ fn project_block_map_entry_value(
         .children()
         .find(|n| n.kind() == SyntaxKind::YAML_FLOW_SEQUENCE)
     {
-        out.push("+SEQ []".to_string());
-        project_flow_sequence_items_cst(&flow_seq, handles, out);
-        out.push("-SEQ".to_string());
+        let anchor = anchor_preceding_node(value_node, &flow_seq);
+        project_flow_collection_node_with_anchor(&flow_seq, anchor.as_deref(), handles, out);
         return;
     }
 
     if let Some((indicator, body)) = extract_block_scalar_body(value_node) {
+        // Tag/anchor siblings of the block scalar (e.g. `!foo >1\n value`,
+        // `!!binary | ...`) decorate the scalar — splice them into the
+        // event in canonical `&anchor <tag> <indicator>body` order.
+        let mut prefix = String::new();
+        let anchor_text = value_node
+            .children_with_tokens()
+            .filter_map(|el| el.into_token())
+            .find(|tok| tok.kind() == SyntaxKind::YAML_ANCHOR)
+            .map(|tok| tok.text().to_string());
+        if let Some(anchor) = anchor_text.as_deref().and_then(|t| t.strip_prefix('&')) {
+            prefix.push_str(&format!("&{anchor} "));
+        }
+        let tag_text = value_node
+            .children_with_tokens()
+            .filter_map(|el| el.into_token())
+            .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
+            .map(|tok| tok.text().to_string());
+        if let Some(tag) = tag_text
+            && let Some(long) = resolve_long_tag(&tag, handles)
+        {
+            prefix.push_str(&long);
+            prefix.push(' ');
+        }
         let escaped = escape_block_scalar_text(&body);
-        out.push(format!("=VAL {indicator}{escaped}"));
+        out.push(format!("=VAL {prefix}{indicator}{escaped}"));
         return;
     }
 

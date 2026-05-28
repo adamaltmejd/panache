@@ -21,13 +21,14 @@ DOCUMENT@0..34
               YAML_COLON@8..9 ":"
             YAML_FLOW_MAP_VALUE@9..15
               WHITESPACE@9..10 " "
-              YAML_SCALAR@10..15 "!!str"
+              YAML_TAG@10..15 "!!str"
           YAML_SCALAR@15..16 ","
           NEWLINE@16..17 "\n"
           WHITESPACE@17..19 "  "
           YAML_FLOW_MAP_ENTRY@19..30
             YAML_FLOW_MAP_KEY@19..26
-              YAML_SCALAR@19..25 "!!str "
+              YAML_TAG@19..24 "!!str"
+              WHITESPACE@24..25 " "
               YAML_COLON@25..26 ":"
             YAML_FLOW_MAP_VALUE@26..30
               WHITESPACE@26..27 " "

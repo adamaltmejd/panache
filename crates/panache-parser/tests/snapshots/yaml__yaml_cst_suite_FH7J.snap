@@ -15,7 +15,7 @@ DOCUMENT@0..51
           YAML_BLOCK_SEQUENCE_ITEM@0..8
             YAML_BLOCK_SEQ_ENTRY@0..1 "-"
             WHITESPACE@1..2 " "
-            YAML_SCALAR@2..7 "!!str"
+            YAML_TAG@2..7 "!!str"
             NEWLINE@7..8 "\n"
           YAML_BLOCK_SEQUENCE_ITEM@8..34
             YAML_BLOCK_SEQ_ENTRY@8..9 "-"
@@ -24,7 +24,8 @@ DOCUMENT@0..51
             YAML_BLOCK_MAP@12..34
               YAML_BLOCK_MAP_ENTRY@12..25
                 YAML_BLOCK_MAP_KEY@12..20
-                  YAML_SCALAR@12..19 "!!null "
+                  YAML_TAG@12..18 "!!null"
+                  WHITESPACE@18..19 " "
                   YAML_COLON@19..20 ":"
                 YAML_BLOCK_MAP_VALUE@20..25
                   WHITESPACE@20..21 " "
@@ -37,7 +38,7 @@ DOCUMENT@0..51
                   YAML_COLON@26..27 ":"
                 YAML_BLOCK_MAP_VALUE@27..34
                   WHITESPACE@27..28 " "
-                  YAML_SCALAR@28..33 "!!str"
+                  YAML_TAG@28..33 "!!str"
                   NEWLINE@33..34 "\n"
           YAML_BLOCK_SEQUENCE_ITEM@34..51
             YAML_BLOCK_SEQ_ENTRY@34..35 "-"
@@ -45,9 +46,10 @@ DOCUMENT@0..51
             YAML_BLOCK_MAP@36..51
               YAML_BLOCK_MAP_ENTRY@36..51
                 YAML_BLOCK_MAP_KEY@36..43
-                  YAML_SCALAR@36..42 "!!str "
+                  YAML_TAG@36..41 "!!str"
+                  WHITESPACE@41..42 " "
                   YAML_COLON@42..43 ":"
                 YAML_BLOCK_MAP_VALUE@43..51
                   WHITESPACE@43..44 " "
-                  YAML_SCALAR@44..50 "!!null"
+                  YAML_TAG@44..50 "!!null"
                   NEWLINE@50..51 "\n"

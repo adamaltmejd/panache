@@ -1,6 +1,5 @@
 ---
 source: crates/panache-parser/tests/yaml.rs
-assertion_line: 279
 expression: snapshot
 ---
 case_id: P76L
@@ -16,7 +15,9 @@ DOCUMENT@0..74
         NEWLINE@33..34 "\n"
         YAML_DOCUMENT_START@34..37 "---"
         NEWLINE@37..38 "\n"
-        YAML_SCALAR@38..49 "!!int 1 - 3"
+        YAML_TAG@38..43 "!!int"
+        WHITESPACE@43..44 " "
+        YAML_SCALAR@44..49 "1 - 3"
         WHITESPACE@49..50 " "
         YAML_COMMENT@50..73 "# Interval, not integer"
         NEWLINE@73..74 "\n"

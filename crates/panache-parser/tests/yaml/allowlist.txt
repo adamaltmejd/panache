@@ -660,16 +660,13 @@ GDY7
 # the document via YAML_PARSE_UNEXPECTED_DEDENT — wording is approximate
 # but the rejection is correct.
 Q4CL
-# Error-contract: a tag-shorthand prefix (`!prefix!A`) on the same line
-# as a `---` document-start marker. Tag dispatch isn't implemented in
-# the scanner yet, so the prefix is surfaced as trailing content after
-# the marker; the parser rejects via
-# YAML_LEX_TRAILING_CONTENT_AFTER_DOCUMENT_START. The fixture's spec
-# error (a `!prefix!` shorthand defined only in the first document) is
-# a different motivation, but both converge on rejection — keeping the
-# case in the harness will flag any future regression where tag dispatch
-# silently accepts the shape.
-QLJ7
+# Error-contract DROPPED: tag dispatch now silently accepts the shape,
+# as flagged in the prior comment here. The fixture's real spec error
+# (`!prefix!` shorthand defined only in the first document but used in
+# subsequent docs without re-declaration) needs a dedicated check_*
+# cluster in validator.rs — `%TAG` handles are document-scoped per
+# YAML 1.2 §6.8.2 and must not leak across `---`. Re-add this case
+# once that check lands.
 # Doc-root literal/folded block scalar with column-0 body (e.g. `--- |\n%!PS-Adobe-2.0`).
 # Per YAML 1.2 §8.1.1.1 content indent must be strictly greater than the
 # block scalar's parent indent; at doc root parent = -1, so column 0 is
@@ -761,3 +758,18 @@ X38W
 # emits `+SEQ &anchor`. G9HC (anchor at column 0, parent indent)
 # stays rejected by the column gate.
 SKE5
+# Tag dispatch in scanner: `!`-prefixed tokens (verbatim `!<uri>`,
+# shorthand `!handle`/`!!type`) now emit a dedicated YAML_TAG token
+# instead of folding into a plain-scalar placeholder. Five fixtures
+# share this shape and unblock as a cluster:
+# UGM3: verbatim tag `!<tag:...>` on the `---` line, then a block map.
+# 57H4: nested block sequence tagged `- !!seq\n - nested` inside a
+# parent indentless seq value.
+# C4HZ: %TAG-prefixed local tags on block-seq items + flow-map value
+# anchor `&ORIGIN { ... }`.
+# EHF6: nested flow-map / flow-seq decorated with `!!map`, `!!seq`,
+# `!!str` across multiple lines.
+UGM3
+57H4
+C4HZ
+EHF6

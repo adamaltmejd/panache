@@ -19,5 +19,7 @@ DOCUMENT@0..54
           YAML_BLOCK_SEQUENCE_ITEM@39..54
             YAML_BLOCK_SEQ_ENTRY@39..40 "-"
             WHITESPACE@40..41 " "
-            YAML_SCALAR@41..53 "!e!foo \"bar\""
+            YAML_TAG@41..47 "!e!foo"
+            WHITESPACE@47..48 " "
+            YAML_SCALAR@48..53 "\"bar\""
             NEWLINE@53..54 "\n"
