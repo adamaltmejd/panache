@@ -18,17 +18,13 @@
 //!
 //! Coverage status:
 //! - **F. Directives** — implemented: directive after content,
-//!   directive without `---` marker. Covers EB22, RHX7, 9MMA, B63P
-//!   (4 of 5 cluster-F error contracts).
-//!
-//!   Known false-positive risk on M7A3 and W4TN: the streaming
-//!   scanner currently emits `Directive` for `%`-prefixed lines that
-//!   are actually the body of an open `|`/`>` block scalar, because
-//!   it does not yet consume block-scalar bodies past the header.
-//!   The fix belongs in the scanner (proper block-scalar body
-//!   tokenization), not in a validator workaround. Until that lands,
-//!   neither M7A3, W4TN, nor 9HCY (where the scanner subsumes a
-//!   `%TAG` line into the scalar) is allowlisted.
+//!   directive without `---` marker, duplicate `%YAML`, and malformed
+//!   `%YAML` argument list. Covers EB22, RHX7, 9MMA, B63P, SF5V,
+//!   H7TQ, 9HCY (`!foo "bar"\n%TAG ...` — tag dispatch in the
+//!   scanner now keeps `%TAG` out of the preceding scalar so the
+//!   directive lands in its real position). M7A3 / W4TN no longer
+//!   trip false positives now that the scanner consumes block-scalar
+//!   bodies past their header.
 //!
 //! - **A. Trailing content after structure close** — implemented:
 //!   trailing content after a closed flow sequence/map at document
@@ -123,10 +119,22 @@
 //!   a character not in YAML 1.2 §5.7's escape table. Mirrors the v1
 //!   lexer's `invalid_double_quote_escape_offset` contract.
 //!
-//! Cluster I (LHL4 — invalid tag syntax) is deferred: the v2
-//! scanner currently absorbs `!invalid{}tag scalar` as a single bare
-//! scalar with no Tag token, so the validator has nothing to inspect.
-//! The fix belongs in the scanner.
+//! - **M. Anchor decorates alias** — implemented: walks every
+//!   `YAML_BLOCK_MAP_KEY` / `YAML_BLOCK_MAP_VALUE` /
+//!   `YAML_BLOCK_SEQUENCE_ITEM` (and flow analogues) and emits
+//!   `PARSE_ANCHOR_DECORATES_ALIAS` when a `YAML_ANCHOR` token is
+//!   immediately followed — modulo trivia — by a `YAML_ALIAS` token.
+//!   YAML 1.2 §6.9.2: an alias is a complete node and cannot carry
+//!   node properties. Covers SR86 (`key2: &b *a`) and SU74
+//!   (`&b *alias : value2`).
+//!
+//! Cluster I (LHL4 — invalid tag syntax) is deferred: the scanner
+//! accepts `!invalid{}tag` as a single tag token because its tag-name
+//! class is relaxed (libyaml-style), so the validator would need to
+//! reject the malformed characters separately. Cluster N (U99R —
+//! invalid comma inside a `!!str,` tag suffix outside flow context)
+//! has the same root cause and is deferred until the scanner's tag
+//! name class tightens.
 //!
 //! See `.claude/skills/yaml-shadow-expand/scanner-rewrite.md` for the
 //! cutover plan and per-cluster detection scope.
@@ -193,6 +201,9 @@ pub(crate) fn validate_yaml(input: &str) -> Option<YamlDiagnostic> {
         return Some(diag);
     }
     if let Some(diag) = check_comment_not_preceded_by_space(&tree, input) {
+        return Some(diag);
+    }
+    if let Some(diag) = check_anchor_decorates_alias(&tree) {
         return Some(diag);
     }
     None
@@ -1967,6 +1978,57 @@ fn check_comment_not_preceded_by_space(tree: &SyntaxNode, input: &str) -> Option
     None
 }
 
+/// Cluster M — anchor decorates alias.
+///
+/// YAML 1.2 §6.9.2: an alias node (`*name`) is itself a complete node
+/// and cannot carry node properties. In particular, an anchor cannot
+/// decorate an alias: `&b *a` is invalid because the alias already
+/// resolves to the original anchored node and cannot be re-anchored.
+///
+/// We walk every container that holds node-property tokens directly
+/// (`YAML_BLOCK_MAP_KEY`, `YAML_BLOCK_MAP_VALUE`,
+/// `YAML_BLOCK_SEQUENCE_ITEM`, and the flow analogues), and look for a
+/// `YAML_ANCHOR` token immediately followed — modulo trivia — by a
+/// `YAML_ALIAS` token. When found, the diagnostic points at the alias
+/// (the spec-illegal node).
+///
+/// Covers fixtures SR86 (`key2: &b *a`) and SU74 (`&b *alias : value`).
+fn check_anchor_decorates_alias(tree: &SyntaxNode) -> Option<YamlDiagnostic> {
+    for container in tree.descendants().filter(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::YAML_BLOCK_MAP_KEY
+                | SyntaxKind::YAML_BLOCK_MAP_VALUE
+                | SyntaxKind::YAML_BLOCK_SEQUENCE_ITEM
+                | SyntaxKind::YAML_FLOW_MAP_KEY
+                | SyntaxKind::YAML_FLOW_MAP_VALUE
+                | SyntaxKind::YAML_FLOW_SEQUENCE_ITEM
+        )
+    }) {
+        let mut saw_anchor = false;
+        for child in container.children_with_tokens() {
+            let NodeOrToken::Token(tok) = child else {
+                saw_anchor = false;
+                continue;
+            };
+            match tok.kind() {
+                SyntaxKind::YAML_ANCHOR => saw_anchor = true,
+                SyntaxKind::YAML_ALIAS if saw_anchor => {
+                    return Some(diag_at_range(
+                        tok.text_range().start().into(),
+                        tok.text_range().end().into(),
+                        diagnostic_codes::PARSE_ANCHOR_DECORATES_ALIAS,
+                        "alias node cannot be decorated with an anchor",
+                    ));
+                }
+                SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::YAML_COMMENT => {}
+                _ => saw_anchor = false,
+            }
+        }
+    }
+    None
+}
+
 fn invalid_dq_escape_offset(text: &str) -> Option<usize> {
     let mut chars = text.char_indices().peekable();
     let mut in_double = false;
@@ -2867,5 +2929,37 @@ mod tests {
         ] {
             assert!(run(input).is_none(), "{input:?}");
         }
+    }
+
+    #[test]
+    fn anchor_decorates_alias_sr86() {
+        // SR86: anchor on a block-map value whose body is itself an alias.
+        let input = "key1: &a value\nkey2: &b *a\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(diag.code, diagnostic_codes::PARSE_ANCHOR_DECORATES_ALIAS);
+    }
+
+    #[test]
+    fn anchor_decorates_alias_su74() {
+        // SU74: anchor + alias used together as a block-map key.
+        let input = "key1: &alias value1\n&b *alias : value2\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(diag.code, diagnostic_codes::PARSE_ANCHOR_DECORATES_ALIAS);
+    }
+
+    #[test]
+    fn anchor_followed_by_scalar_passes() {
+        // Contract guard: a plain anchor decorating an ordinary scalar
+        // (i.e. not an alias) must not be flagged.
+        let input = "key: &a value\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
+    }
+
+    #[test]
+    fn lone_alias_without_anchor_passes() {
+        // Contract guard: a bare alias (no preceding anchor sibling) is
+        // valid.
+        let input = "key1: &a value\nkey2: *a\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
     }
 }

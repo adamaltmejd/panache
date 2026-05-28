@@ -1,0 +1,10 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+assertion_line: 283
+expression: snapshot
+---
+case_id: SU74
+input: "key1: &alias value1\n&b *alias : value2\n"
+diagnostics:
+YAML_PARSE_ANCHOR_DECORATES_ALIAS:alias node cannot be decorated with an anchor@23..29
+cst:

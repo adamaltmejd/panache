@@ -786,3 +786,18 @@ EHF6
 #     `map_open_event_for_block_map` and `seq_open_event` with
 #     `map_open_event_from_props`.
 9KAX
+# 9HCY: `!foo "bar"\n%TAG ...\n---\n!foo "bar"\n` — an explicit `%TAG`
+# directive after document content with no preceding `...` close.
+# Now that the scanner tokenizes `!foo` as a `Tag` (instead of folding
+# the line into a plain scalar that swallows the following `%TAG`),
+# the `check_directives` cluster sees the directive in its real
+# position and fires `PARSE_DIRECTIVE_AFTER_CONTENT`. Closes the gap
+# the validator docstring flagged for cluster F.
+9HCY
+# Cluster J — anchor decorates alias. YAML 1.2 §6.9.2: an alias is a
+# complete node and cannot carry node properties, so `&anchor *alias`
+# is invalid in any position.
+# SR86: anchor + alias as a block-map value (`key2: &b *a`).
+# SU74: anchor + alias as a block-map key (`&b *alias : value2`).
+SR86
+SU74
