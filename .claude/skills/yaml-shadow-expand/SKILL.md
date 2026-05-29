@@ -53,15 +53,14 @@ Residual cutover work (deferred):
   `collect_value_scalar_text_with_newlines`,
   `quoted_val_event_multi_line` — projection still re-stitches
   multi-line scalars.
-- Tag/anchor/alias dispatch (`!`, `&`, `*`) is not yet implemented in
-  the scanner; these characters fall through to plain scalar at the
-  start of a token. The validator-driven directive-ordering pass
-  inherits the scanner's view, so cases like
-  `!foo "bar"\n%TAG ...\n---\n` are currently parsed as one big plain
-  scalar followed by a doc-start marker. Adding tag dispatch is the
-  next large scanner feature; once it lands the
-  `parse_yaml_report_detects_directive_after_content` test should be
-  switched back to the tag-shaped input.
+
+Tag, anchor, and alias dispatch landed in the scanner — `!`, `&`, `*`
+emit dedicated `Tag` / `Anchor` / `Alias` tokens that flow through
+`parser_v2` to `YAML_TAG` / `YAML_ANCHOR` / `YAML_ALIAS`, and
+`events.rs::resolve_long_tag` consults per-document `%TAG` handles for
+the `<tag:...>` event annotation. The validator's `check_tag_handle_scope`
+enforces YAML 1.2 §6.8.2 (handles are document-scoped) and emits
+`PARSE_UNDEFINED_TAG_HANDLE` on undeclared use.
 
 The concrete plan and design decisions for the rewrite — including
 trivia model, token enum lifetime, scalar cooking, diagnostic channel,

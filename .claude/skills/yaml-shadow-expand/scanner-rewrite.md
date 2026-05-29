@@ -30,18 +30,21 @@ What landed:
   and `lexer.rs` + `model.rs::YamlToken` / `YamlTokenSpan` are
   deleted.
 
-What is still deferred (residual work):
+What landed since then:
 
-- Tag/anchor/alias dispatch (`!`, `&`, `*`) in `scanner.rs`. These
-  characters currently fall through to plain scalar at token start.
-  The user-visible consequence: malformed inputs like
-  `!foo "bar"\n%TAG ...\n---\n` are parsed as one big plain scalar
-  followed by a doc-start (no `Directive` token, no
-  `PARSE_DIRECTIVE_AFTER_CONTENT` diagnostic). The
-  `parse_yaml_report_detects_directive_after_content` test was
-  switched to an EB22-shape input (comment terminates the scalar, so
-  the `%`-prefixed line is dispatched fresh and emits a `Directive`
-  token) until tag dispatch lands.
+- Tag/anchor/alias dispatch in `scanner.rs`. `!`, `&`, `*` emit
+  dedicated `Tag` / `Anchor` / `Alias` tokens (`fetch_tag`,
+  `fetch_anchor`, `fetch_alias` at `scanner.rs:1242+`). `parser_v2`
+  maps them to `YAML_TAG` / `YAML_ANCHOR` / `YAML_ALIAS`,
+  `events.rs::resolve_long_tag` consults per-document `%TAG` handles
+  for the `<tag:...>` event annotation, and the validator's new
+  `check_tag_handle_scope` (`validator.rs`) enforces YAML 1.2 §6.8.2
+  document-scoping with `PARSE_UNDEFINED_TAG_HANDLE` (QLJ7).
+  `parse_yaml_report_detects_directive_after_content` is back on its
+  original tag-shape input.
+
+What is still deferred:
+
 - `events.rs` projection helpers
   `collect_doc_scalar_text_with_newlines`,
   `collect_value_scalar_text_with_newlines`, and
