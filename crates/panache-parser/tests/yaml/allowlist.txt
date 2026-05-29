@@ -975,3 +975,26 @@ Y79Y/009
 # `\t` line between `foo: 1` and `bar: 2` is now treated as a
 # blank separator (the existing check would have rejected it).
 DK95/04
+# 9MQT/01 unterminated-double-quoted-spans-doc-end — `--- "a\n... x\nb"`
+# opens a double-quoted scalar that visually wraps a `...` doc-end
+# marker. The scanner reports `YAML_LEX_UNTERMINATED_QUOTED_SCALAR`
+# because the doc-end marker cannot live inside a multi-line flow
+# scalar; allowlist locks in the rejection.
+9MQT/01
+# DK95/06 tab-as-indent-on-nested-map-entry — `^Ib: 2` sits where
+# spaces are required to keep the entry indented under `a: 1`; the
+# parser surfaces `YAML_PARSE_INVALID_KEY_TOKEN` (implicit key
+# cannot span lines) because the tab forces `b` outside the inner
+# block-map indent. Lock in the rejection.
+DK95/06
+# MUS6/01 directive-after-empty-document — `%YAML 1.2 --- %YAML 1.2 ---`
+# starts a fresh directive section before the prior doc closes with
+# `...`. `YAML_PARSE_DIRECTIVE_AFTER_CONTENT` fires on the second
+# directive; lock in the rejection.
+MUS6/01
+# VJP3/00 flow-collection-under-indent — `k: {` opens a flow mapping
+# at col 4, but the subsequent `k`, `:`, `v`, `}` lines start at
+# col 1, below the block-context indent of the surrounding map.
+# `YAML_LEX_WRONG_INDENTED_FLOW` enforces the §9.2 indent rule;
+# lock in the rejection.
+VJP3/00

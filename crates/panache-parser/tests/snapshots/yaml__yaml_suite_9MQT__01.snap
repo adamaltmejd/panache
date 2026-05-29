@@ -1,0 +1,9 @@
+---
+source: crates/panache-parser/tests/yaml.rs
+expression: snapshot
+---
+case_id: 9MQT/01
+input: "--- \"a\n... x\nb\"\n"
+has_error_contract: true
+parsed_mapping_tree: false
+diagnostics: [YAML_LEX_UNTERMINATED_QUOTED_SCALAR:unterminated quoted scalar@4..7]
