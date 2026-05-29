@@ -1,20 +1,13 @@
 //! v2-aware diagnostic validator.
 //!
-//! Phase-2 cutover: detection runs over the streaming scanner's token
-//! output and the v2 CST. Each cluster of error-contract patterns
-//! lands as its own checker function. The public entry
-//! [`validate_yaml`] composes them in priority order and is wired into
+//! Detection runs over the streaming scanner's token output and the v2
+//! CST. Each cluster of error-contract patterns lands as its own
+//! checker function. The public entry [`validate_yaml`] composes them
+//! in priority order and is wired into
 //! [`super::parser::parse_yaml_report`] as the structural-validation
-//! source. The v1 lexer is still called to surface lex-level
-//! diagnostics (e.g. `LEX_INVALID_DOUBLE_QUOTED_ESCAPE`) and to handle
-//! directive-ordering, because the v2 scanner does not yet recognize
-//! `%`-prefixed lines after content (it folds them into a Plain
-//! scalar). Closing those gaps is scanner-side follow-up work; once
-//! complete, the v1 lexer body can be deleted.
-//!
-//! Cases that the v1 sniff used to catch but the validator cannot yet
-//! cover without scanner enhancements are listed in `blocked.txt` and
-//! are intentionally absent from `allowlist.txt`.
+//! source. Lex-level diagnostics (e.g. `LEX_INVALID_DOUBLE_QUOTED_ESCAPE`)
+//! are surfaced through the scanner's own diagnostic channel plus
+//! `check_invalid_dq_escapes`; the v1 lexer is gone.
 //!
 //! Coverage status:
 //! - **F. Directives** — implemented: directive after content,
