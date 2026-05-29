@@ -998,3 +998,10 @@ MUS6/01
 # `YAML_LEX_WRONG_INDENTED_FLOW` enforces the §9.2 indent rule;
 # lock in the rejection.
 VJP3/00
+# QLJ7 tag-handle-not-scoped-per-document — `%TAG !prefix!` is
+# declared only in doc 1; docs 2/3 reuse `!prefix!B`/`!prefix!C`
+# without redeclaring. Per YAML 1.2 §6.8.2 tag directives don't
+# carry across `---`, so doc 2's tag use must error.
+# `YAML_PARSE_UNDEFINED_TAG_HANDLE` fires on the first undeclared
+# handle; lock in the rejection.
+QLJ7

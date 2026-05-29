@@ -140,6 +140,8 @@
 //! cutover plan and per-cluster detection scope.
 #![allow(dead_code)]
 
+use std::collections::HashSet;
+
 use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 use rowan::NodeOrToken;
 
@@ -155,6 +157,9 @@ use super::scanner::{Scanner, Token, TokenKind};
 pub(crate) fn validate_yaml(input: &str) -> Option<YamlDiagnostic> {
     let tokens = collect_tokens(input);
     if let Some(diag) = check_directives(input, &tokens) {
+        return Some(diag);
+    }
+    if let Some(diag) = check_tag_handle_scope(input, &tokens) {
         return Some(diag);
     }
     if let Some(diag) = check_unterminated_quoted(input) {
@@ -376,6 +381,77 @@ fn is_valid_yaml_version(s: &str) -> bool {
         && !minor.is_empty()
         && major.bytes().all(|b| b.is_ascii_digit())
         && minor.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Tag handle scope cluster — `!handle!suffix` must reference a handle
+/// declared in the current document.
+///
+/// YAML 1.2 §6.8.2: `%TAG` directives are document-scoped. They do not
+/// carry across `---` boundaries; a subsequent document that uses the
+/// same handle must redeclare it. The primary `!` and secondary `!!`
+/// handles are always defined. Verbatim `!<URI>` tags bypass handle
+/// resolution entirely.
+///
+/// `pending` collects handles declared by `%TAG` directives that precede
+/// the next `DocumentStart`; on `DocumentStart` they are merged into the
+/// current document's `declared` set alongside the builtins. The set is
+/// reset at each `DocumentStart` so handles do not leak across docs.
+///
+/// Covers fixture QLJ7.
+fn check_tag_handle_scope<'a>(input: &'a str, tokens: &[Token]) -> Option<YamlDiagnostic> {
+    let mut pending: HashSet<&'a str> = HashSet::new();
+    let mut declared: HashSet<&'a str> = HashSet::from(["!", "!!"]);
+    for tok in tokens {
+        match tok.kind {
+            TokenKind::DocumentStart => {
+                declared.clear();
+                declared.insert("!");
+                declared.insert("!!");
+                declared.extend(pending.drain());
+            }
+            TokenKind::Directive => {
+                let text = &input[tok.start.index..tok.end.index];
+                if directive_name(text) != "TAG" {
+                    continue;
+                }
+                let mut fields = text.strip_prefix('%').unwrap_or(text).split_whitespace();
+                let _name = fields.next();
+                if let Some(handle) = fields.next() {
+                    pending.insert(handle);
+                }
+            }
+            TokenKind::Tag => {
+                let text = &input[tok.start.index..tok.end.index];
+                if text.starts_with("!<") {
+                    continue;
+                }
+                let handle = extract_tag_handle(text);
+                if !declared.contains(handle) {
+                    return Some(diag_at_token(
+                        tok,
+                        diagnostic_codes::PARSE_UNDEFINED_TAG_HANDLE,
+                        "tag handle is not declared in the current document",
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Extract the handle portion of a tag token. Tags are tokenized by the
+/// scanner with the leading `!` already consumed into the token text:
+/// `!!str` → `!!`, `!prefix!A` → `!prefix!`, `!foo` → `!`, bare `!` → `!`.
+/// Verbatim `!<URI>` tags are filtered out by the caller.
+fn extract_tag_handle(text: &str) -> &str {
+    if text.len() < 2 {
+        return text;
+    }
+    if let Some(rel) = text[1..].find('!') {
+        return &text[..rel + 2];
+    }
+    &text[..1]
 }
 
 fn diag_at_token(tok: &Token, code: &'static str, message: &'static str) -> YamlDiagnostic {
@@ -3448,6 +3524,47 @@ mod tests {
         // Contract guard: `- &a item` — anchor before the item's value
         // is valid.
         let input = "- &a item\n- b\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
+    }
+
+    #[test]
+    fn undefined_tag_handle_in_second_doc_qlj7() {
+        // QLJ7: `%TAG !prefix!` declared in doc 1 only; doc 2's
+        // `!prefix!B` must error because tag directives don't carry
+        // across `---` per YAML 1.2 §6.8.2.
+        let input =
+            "%TAG !prefix! tag:example.com,2011:\n--- !prefix!A\na: b\n--- !prefix!B\nc: d\n";
+        let diag = run(input).expect("expected diagnostic");
+        assert_eq!(diag.code, diagnostic_codes::PARSE_UNDEFINED_TAG_HANDLE);
+    }
+
+    #[test]
+    fn declared_tag_handle_in_same_doc_passes() {
+        // Sanity: `%TAG !prefix!` directive + `!prefix!a` use within
+        // the same document is valid.
+        let input = "%TAG !prefix! tag:example.com,2011:\n--- !prefix!a\nkey: value\n";
+        assert!(run(input).is_none(), "got {:?}", run(input));
+    }
+
+    #[test]
+    fn builtin_tag_handles_always_ok() {
+        // The primary `!` and secondary `!!` handles are always declared
+        // without an explicit `%TAG` directive.
+        let secondary = "--- !!str foo\n";
+        assert!(
+            run(secondary).is_none(),
+            "secondary: got {:?}",
+            run(secondary)
+        );
+        let primary = "--- !local foo\n";
+        assert!(run(primary).is_none(), "primary: got {:?}", run(primary));
+    }
+
+    #[test]
+    fn verbatim_tag_bypasses_handle_lookup() {
+        // `!<URI>` tags use the URI verbatim and don't go through handle
+        // resolution.
+        let input = "--- !<tag:example.com,2025:foo> bar\n";
         assert!(run(input).is_none(), "got {:?}", run(input));
     }
 }

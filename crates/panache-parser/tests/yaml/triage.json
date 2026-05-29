@@ -449,6 +449,13 @@
       "event_parity": false
     },
     {
+      "case_id": "QLJ7",
+      "diagnostic_codes": [
+        "YAML_PARSE_UNDEFINED_TAG_HANDLE"
+      ],
+      "event_parity": false
+    },
+    {
       "case_id": "RHX7",
       "diagnostic_codes": [
         "YAML_PARSE_DIRECTIVE_AFTER_CONTENT"
@@ -652,14 +659,7 @@
       "event_parity": false
     }
   ],
-  "fails_needs_error_path": [
-    {
-      "case_id": "QLJ7",
-      "diagnostic_codes": [],
-      "event_parity": false,
-      "tree": true
-    }
-  ],
+  "fails_needs_error_path": [],
   "fails_needs_feature": [],
   "passes_now": [
     "229Q",
@@ -972,8 +972,8 @@
     "ZWK4"
   ],
   "summary": {
-    "error_contract_ok_count": 93,
-    "fails_needs_error_path_count": 1,
+    "error_contract_ok_count": 94,
+    "fails_needs_error_path_count": 0,
     "fails_needs_feature_count": 0,
     "passes_now_count": 308,
     "total_cases": 402
