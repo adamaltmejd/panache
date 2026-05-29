@@ -128,16 +128,16 @@
       "id": "absorb_anchor_or_tag_text_fallback",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 2555,
-      "summary": "Inside absorb_anchor_or_tag, the YAML_SCALAR arm at l.2555-2567 falls back to text-prefix detection (`trimmed.strip_prefix('&')`, `trimmed.starts_with('!')`) when the token is a scalar rather than a dedicated YAML_ANCHOR / YAML_TAG.",
-      "classification": "PARSER_GAP",
-      "ownership_target": "scanner.rs",
-      "rationale": "This is the same root cause as residual_splice_26dv and extract_tagged_block_scalar: the scanner sometimes bundles `&anchor` / `!tag` into a YAML_SCALAR token's text. After those scanner fixes land, the YAML_SCALAR arm of absorb_anchor_or_tag should be dead and removable.",
+      "summary": "Inside absorb_anchor_or_tag, a YAML_SCALAR arm falls back to text-prefix detection (`trimmed.strip_prefix('&')`, `trimmed.starts_with('!')`) when the token is a scalar rather than a dedicated YAML_ANCHOR / YAML_TAG.",
+      "classification": "RESOLVED",
+      "resolution": "Dead. The scanner emits YAML_ANCHOR / YAML_TAG / YAML_ALIAS as dedicated tokens for every case in the allowlist, so the YAML_SCALAR arm never fires. Ablation under the `_ => {}` catch-all left the full yaml suite green (17/17). The YAML_TAG arm still has a residual `strip_prefix('&')` check on YAML_TAG tokens whose text starts with `&` — also suspect, but out of scope for this commit; tracked as follow-up.",
+      "ownership_target": null,
       "predicted_regressions_if_ablated": [],
       "seed_case_ids_in_comments": [],
-      "depends_on": ["residual_splice_26dv", "extract_tagged_block_scalar"],
+      "depends_on": [],
       "blocks": [],
       "fix_size_estimate": "S",
-      "test_strategy": "After dependencies land, gut the YAML_SCALAR arm and run yaml_allowlist_projected_event_parity. Empty regression set confirms removable."
+      "test_strategy": "n/a — removed."
     },
     {
       "id": "find_block_scalar_kv_split",
@@ -192,7 +192,6 @@
     }
   ],
   "sequencing": [
-    "absorb_anchor_or_tag_text_fallback",
     "decompose_scalar",
     "flow_kv_split",
     "simple_flow_sequence_items",

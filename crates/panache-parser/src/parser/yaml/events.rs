@@ -2477,19 +2477,6 @@ fn absorb_anchor_or_tag(
                 *long_tag = Some(long);
             }
         }
-        SyntaxKind::YAML_SCALAR => {
-            let trimmed = tok.text().trim();
-            if anchor.is_none()
-                && let Some(name) = trimmed.strip_prefix('&')
-            {
-                *anchor = Some(name.to_string());
-            } else if long_tag.is_none()
-                && trimmed.starts_with('!')
-                && let Some(long) = resolve_long_tag(trimmed, handles)
-            {
-                *long_tag = Some(long);
-            }
-        }
         _ => {}
     }
 }
