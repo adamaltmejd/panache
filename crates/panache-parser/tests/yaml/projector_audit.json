@@ -23,13 +23,13 @@
       "summary": "Hand-rolled char_indices loop with single/double-quote tracking to locate a `:` key-indicator inside a flow-sequence item's text. Reached after project_flow_sequence_items_cst assembles item_text from selected tokens.",
       "classification": "CST_FIDELITY_BUG",
       "ownership_target": "parser_v2.rs",
-      "rationale": "The scanner already emits YAML_COLON tokens inside flow sequences (see project_flow_sequence_items_cst at l.2127-2141, which already recognizes collection-keyed pairs via YAML_COLON). The text-based KV split persists because parser_v2 doesn't add KEY/VALUE child nodes inside YAML_FLOW_SEQUENCE_ITEM. Promoting flow-seq items to carry explicit key/value structure (or wrapping implicit pairs in YAML_FLOW_MAP_ENTRY) lets the projector walk structure instead of re-tokenizing text.",
-      "predicted_regressions_if_ablated": ["87E4", "L9U5", "LQZ7", "9MMW", "6BFJ", "X38W"],
+      "rationale": "Confirmed load-bearing: ablation regresses QF4Y (implicit flow-map entry inside `[...]`). The scanner emits YAML_COLON tokens for the boundary, but parser_v2 doesn't surface flow-map-entry structure inside YAML_FLOW_SEQUENCE_ITEM, so the projector has to re-locate the `:` in the item's joined text. Promoting flow-seq items to carry explicit YAML_FLOW_MAP_ENTRY children (or YAML_KEY/YAML_VALUE tokens) lets the projector walk structure instead of re-tokenizing text. Same pattern as decompose_scalar (projector joins-then-reparses), but here the structural information genuinely isn't in the CST at the item level.",
+      "predicted_regressions_if_ablated": ["QF4Y", "87E4", "L9U5", "LQZ7", "9MMW", "6BFJ", "X38W"],
       "seed_case_ids_in_comments": ["87E4", "L9U5", "LQZ7", "9MMW", "6BFJ", "X38W"],
       "depends_on": [],
-      "blocks": ["simple_flow_sequence_items"],
+      "blocks": [],
       "fix_size_estimate": "M",
-      "test_strategy": "Parser-crate CST snapshot for 87E4 (verify YAML_FLOW_SEQUENCE_ITEM now has KEY/VALUE children); projection-parity for 9MMW (JSON-like key adjacency, the special case at l.624-628)."
+      "test_strategy": "Parser-crate CST snapshot for QF4Y / 87E4 verifying YAML_FLOW_SEQUENCE_ITEM gains KEY/VALUE children; projection-parity for 9MMW (JSON-like key adjacency, the special case at l.624-628)."
     },
     {
       "id": "simple_flow_sequence_items",
@@ -68,16 +68,16 @@
       "id": "decompose_scalar",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 2715,
-      "summary": "Peel leading `&anchor` and `!tag` prefixes off a scalar's text via string scanning; returns (anchor, long_tag, rest).",
-      "classification": "PARSER_GAP",
-      "ownership_target": "scanner.rs",
-      "rationale": "Per SKILL.md, the scanner now emits YAML_ANCHOR/YAML_TAG/YAML_ALIAS as dedicated tokens for the bulk of cases. This helper covers the residual where the scanner still bundles node properties into a YAML_SCALAR token's text. The remaining call sites overlap with the acknowledged multi-line-scalar debt (the `*_with_newlines` re-stitching pulls the whole multi-line body into one text blob before peeling), but at least one single-line residual likely remains (audit which sites still trigger it after the W5VH and 26DV fixes land).",
-      "predicted_regressions_if_ablated": ["26DV", "BU8L", "M5C3", "565N", "Z67P", "M5DY"],
+      "summary": "Peel leading `&anchor` and `!tag` prefixes off a scalar's text via string scanning; returns (anchor, long_tag, rest). Called from ~12 sites in events.rs to recover node properties from scalar text.",
+      "classification": "LEGITIMATE_PROJECTION",
+      "ownership_target": null,
+      "rationale": "Not a scanner gap. Ablation by returning (None, None, text.trim()) regresses JS2J — but the JS2J CST already has YAML_ANCHOR as a dedicated token. The 'fusion' is **self-inflicted by the projector**: `project_block_map_entry_value` (and several other call sites) join YAML_SCALAR + YAML_ANCHOR + WHITESPACE tokens into a single `value_text` string, then peel the anchor back off via decompose_scalar. The scanner is fine; the projector chose a join-then-reparse pattern over a token-walking pattern. Refactoring the call sites to walk tokens and extract anchor/tag directly would let decompose_scalar die, but that's a projector-style choice, not a parser gap — within the projector's stated remit per SKILL.md.",
+      "predicted_regressions_if_ablated": ["JS2J"],
       "seed_case_ids_in_comments": [],
-      "depends_on": ["rebuild_anchor_alias_with_trailing_colon", "residual_splice_26dv", "extract_tagged_block_scalar"],
+      "depends_on": [],
       "blocks": [],
-      "fix_size_estimate": "S",
-      "test_strategy": "After the dependency fixes land, ablate decompose_scalar (return (None, None, text.trim())). Surviving regressions = multi-line-scalar residuals (ACKNOWLEDGED_DEBT); no regressions = dead and removable."
+      "fix_size_estimate": "L",
+      "test_strategy": "Follow-up refactor (not required for the audit conclusion): walk tokens in each scalar-projection site; remove decompose_scalar."
     },
     {
       "id": "rebuild_anchor_alias_with_trailing_colon",
@@ -143,16 +143,16 @@
       "id": "find_block_scalar_kv_split",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 2202,
-      "summary": "Locate a `:` key-indicator inside a block-context scalar text, honoring a leading quoted body. Called from project_block_sequence_items at l.2342 for inline-map sequence items (`- key: value`).",
-      "classification": "CST_FIDELITY_BUG",
-      "ownership_target": "parser_v2.rs",
-      "rationale": "Inline-map sequence items (e.g. `- key: value`) currently land in the CST as a YAML_BLOCK_SEQUENCE_ITEM containing a flat YAML_SCALAR + YAML_COLON token stream that the projector text-scans to split. parser_v2 should emit a YAML_BLOCK_MAP_ENTRY (or KEY/VALUE child nodes) inside the sequence item so the projector walks structure. Related to flow_kv_split — both are projector-side rescans that exist because parser_v2 doesn't surface implicit-pair structure.",
+      "summary": "Locate a `:` key-indicator inside a block-context scalar text, honoring a leading quoted body. Called from project_block_sequence_items for inline-map sequence items (`- key: value`).",
+      "classification": "RESOLVED",
+      "resolution": "Dead. parser_v2 already wraps inline-map sequence items in a nested YAML_BLOCK_MAP child, so the fallback structured branch handles every allowlisted case. Ablation by returning None left the yaml suite green (17/17). Helper, call site, and a stale comment referencing decompose_scalar tag recovery removed.",
+      "ownership_target": null,
       "predicted_regressions_if_ablated": [],
       "seed_case_ids_in_comments": [],
       "depends_on": [],
       "blocks": [],
-      "fix_size_estimate": "M",
-      "test_strategy": "Ablate (return None) to enumerate which inline-map sequence-item cases regress; fix parser_v2 to expose the implicit key/value boundary as CST structure; CST snapshot for one representative case."
+      "fix_size_estimate": "S",
+      "test_strategy": "n/a — removed."
     },
     {
       "id": "fold_plain_document_lines",
@@ -192,9 +192,7 @@
     }
   ],
   "sequencing": [
-    "decompose_scalar",
     "flow_kv_split",
-    "find_block_scalar_kv_split",
     "fold_block_scalar_raw"
   ],
   "sequencing_rationale": "Scanner-side anchor/alias/tag emission fixes go first (rebuild_anchor_alias_with_trailing_colon, residual_splice_26dv, extract_tagged_block_scalar) because they are the smallest scanner state-machine changes and they unblock the most downstream projector workarounds (absorb_anchor_or_tag_text_fallback, decompose_scalar). After those land, the projector's anchor/tag/alias text-peel paths can be confirmed dead via ablation. Then move to parser_v2 shape work: flow_kv_split (add KEY/VALUE children to YAML_FLOW_SEQUENCE_ITEM), which unblocks the simple_flow_sequence_items dead-code confirmation, then find_block_scalar_kv_split (add implicit-map structure to YAML_BLOCK_SEQUENCE_ITEM). Block-scalar content-indent attachment (fold_block_scalar_raw_indent_inference) goes last because it touches the YAML_BLOCK_SCALAR node shape that the earlier fixes also use, and the cooking portion of fold_block_scalar_raw stays in events.rs regardless.",
