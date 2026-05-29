@@ -442,6 +442,8 @@ golden_test_cases!(
     line_blocks,
     line_ending_crlf,
     line_ending_lf,
+    gfm_image_inside_link_text,
+    gfm_inline_image,
     image_inside_link_text_pandoc,
     link_in_link_reference_commonmark,
     link_inside_link_text_commonmark,
