@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
+use super::cooking;
 use super::parser::parse_yaml_tree;
 
 /// Per-document tag handle map: handle (`!!`, `!yaml!`, `!e!`) → URI prefix.
@@ -395,7 +396,7 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
         .filter_map(|el| el.into_token())
         .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
         .map(|tok| tok.text().to_string());
-    let multi_line_text = collect_doc_scalar_text_with_newlines(doc);
+    let multi_line_text = collect_doc_scalar_source(doc);
     let is_multi_line_quoted = multi_line_text.contains('\n')
         && (trimmed_text.starts_with('"') || trimmed_text.starts_with('\''));
     let event = if let Some(tag) = tag_text
@@ -440,11 +441,12 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
     Some(event)
 }
 
-/// Reconstruct the doc's scalar text with line breaks intact: walk
-/// `YAML_SCALAR` + `NEWLINE` tokens in order (skipping directive lines).
-/// Required for multi-line quoted folding because `YAML_SCALAR`-only joins
-/// throw away the line structure that drives YAML 1.2 §7.3.2/§7.3.3 folding.
-fn collect_doc_scalar_text_with_newlines(doc: &SyntaxNode) -> String {
+/// Collect the document's scalar source bytes — concatenate every
+/// `YAML_SCALAR` / `YAML_ANCHOR` / `YAML_ALIAS` / `NEWLINE` token in
+/// order, skipping directive lines. The result is the raw multi-line
+/// text the [`super::cooking`] helpers expect when folding a
+/// top-level multi-line quoted document.
+fn collect_doc_scalar_source(doc: &SyntaxNode) -> String {
     doc.descendants_with_tokens()
         .filter_map(|el| el.into_token())
         .filter(|tok| {
@@ -538,7 +540,7 @@ fn flow_scalar_event(text: &str, handles: &TagHandles) -> String {
     if anchor.is_some() || long_tag.is_some() {
         return scalar_event(anchor, long_tag.as_deref(), body);
     }
-    plain_val_event(&fold_plain_scalar(text))
+    plain_val_event(&cooking::cook_plain(text))
 }
 
 /// Split a leading tag shorthand (`!handle!suffix` or `!local`) off `text`,
@@ -665,7 +667,7 @@ fn project_flow_seq_item(item: &str, handles: &TagHandles, out: &mut Vec<String>
         // flow-seq item (`[&item a, b, c]`, 6BFJ) project as
         // `=VAL &item :a` and alias items (`[*b]`, X38W) project as
         // `=ALI *b`.
-        out.push(flow_scalar_event(&fold_plain_scalar(item), handles));
+        out.push(flow_scalar_event(&cooking::cook_plain(item), handles));
     }
 }
 
@@ -681,10 +683,10 @@ fn strip_explicit_key_indicator(key: &str) -> &str {
 
 fn quoted_val_event(text: &str) -> String {
     if text.starts_with('\'') {
-        let inner = decode_single_quoted(text);
+        let inner = cooking::cook_single_quoted_single_line(text);
         format!("=VAL '{}", escape_for_event(&inner))
     } else {
-        let inner = decode_double_quoted(text);
+        let inner = cooking::cook_double_quoted_single_line(text);
         format!("=VAL \"{}", escape_for_event(&inner))
     }
 }
@@ -698,297 +700,12 @@ fn quoted_val_event(text: &str) -> String {
 fn quoted_val_event_multi_line(raw: &str) -> String {
     let trimmed = raw.trim_start_matches([' ', '\t', '\n']);
     if trimmed.starts_with('\'') {
-        let inner_with_breaks = strip_quoted_wrapper(trimmed, '\'');
-        let folded = fold_quoted_inner(&inner_with_breaks, false);
-        let decoded = folded.replace("''", "'");
+        let decoded = cooking::cook_single_quoted_multi_line(trimmed);
         format!("=VAL '{}", escape_for_event(&decoded))
     } else {
-        let inner_with_breaks = strip_quoted_wrapper(trimmed, '"');
-        let folded = fold_quoted_inner(&inner_with_breaks, true);
-        let decoded = decode_double_quoted_inner(&folded);
+        let decoded = cooking::cook_double_quoted_multi_line(trimmed);
         format!("=VAL \"{}", escape_for_event(&decoded))
     }
-}
-
-/// Strip the surrounding quote characters from a multi-line quoted scalar's
-/// raw source. Walks until the first un-escaped (for `"`) or non-doubled
-/// (for `'`) closing quote so embedded `\"` / `''` don't terminate early.
-fn strip_quoted_wrapper(text: &str, quote: char) -> String {
-    let body = text.strip_prefix(quote).unwrap_or(text);
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if quote == '"' {
-            if ch == '\\' {
-                out.push(ch);
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-                continue;
-            }
-            if ch == '"' {
-                break;
-            }
-        } else if ch == '\'' {
-            if chars.peek() == Some(&'\'') {
-                out.push('\'');
-                out.push('\'');
-                chars.next();
-                continue;
-            }
-            break;
-        }
-        out.push(ch);
-    }
-    out
-}
-
-/// Fold the inner body of a multi-line quoted scalar per YAML §7.3:
-/// - On the first line, leading whitespace is preserved as-is.
-/// - On continuation lines, leading whitespace is stripped.
-/// - Trailing whitespace from the running output is dropped before folding.
-/// - A run of `n` consecutive empty lines folds to `n` `\n` chars.
-/// - A single line break (no blank between) folds to a single space.
-/// - Trailing whitespace of the final line is stripped (matching
-///   yaml-test-suite event expectations for multi-line quoted scalars).
-///
-/// `escaped_breaks` enables YAML §7.5 double-quoted escaped line breaks: a
-/// continuation line whose predecessor ends in an unescaped (odd-count)
-/// backslash joins directly with no folded space, and the escaping backslash
-/// is dropped. Pass `false` for single-quoted and plain scalars, where a
-/// trailing backslash is literal content.
-fn fold_quoted_inner(inner: &str, escaped_breaks: bool) -> String {
-    let mut out = String::new();
-    let mut blanks = 0usize;
-    let mut have_first = false;
-    for (idx, line) in inner.split('\n').enumerate() {
-        if idx == 0 {
-            out.push_str(line);
-            have_first = true;
-            continue;
-        }
-        let stripped = line.trim_start_matches([' ', '\t']);
-        if stripped.is_empty() {
-            blanks += 1;
-            continue;
-        }
-        trim_trailing_ws_respecting_escape(&mut out, escaped_breaks);
-        if escaped_breaks && blanks == 0 && have_first && ends_with_odd_backslashes(&out) {
-            // The preceding line ends in an unescaped backslash: the line
-            // break is escaped, so the continuation joins with no folded
-            // space and the escaping backslash is consumed.
-            out.pop();
-            out.push_str(stripped);
-            blanks = 0;
-            continue;
-        }
-        if !have_first {
-            // No content yet, so prepend nothing — first-line leading
-            // whitespace is preserved later by the `idx == 0` branch only.
-        } else if blanks == 0 {
-            out.push(' ');
-        } else {
-            for _ in 0..blanks {
-                out.push('\n');
-            }
-        }
-        out.push_str(stripped);
-        blanks = 0;
-        have_first = true;
-    }
-    if blanks > 0 {
-        // A trailing run of blank/whitespace-only lines ends the scalar. The
-        // accumulated content is followed by a fold, so strip its trailing
-        // whitespace, then append the folded breaks: a single break collapses
-        // to a space, a run of `n` breaks collapses to `n - 1` newlines. When
-        // every line is empty/whitespace-only the content is empty and this is
-        // the scalar's only contribution (yaml-test-suite NAT4).
-        trim_trailing_ws_respecting_escape(&mut out, escaped_breaks);
-        if blanks == 1 {
-            out.push(' ');
-        } else {
-            for _ in 0..blanks - 1 {
-                out.push('\n');
-            }
-        }
-    }
-    // No trailing blank run: the final line's trailing whitespace before the
-    // closing quote is content (yaml-test-suite 7A4E) and is preserved as-is.
-    out
-}
-
-/// Strip trailing space/tab chars from a double-quoted folding buffer,
-/// preserving the first whitespace char of a `\<ws>` escape sequence.
-///
-/// YAML 1.2 §5.7 includes escapes `\<TAB>` (literal tab) and `\<SPACE>`
-/// (literal space) — the whitespace after the backslash is the escape's
-/// argument and must survive the trailing-whitespace strip that fold rules
-/// apply on continuation. Without this, inputs like `"x\<TAB> \n y"`
-/// (DE56/02) lose the tab and the trailing `\` is mis-detected as a
-/// line-continuation marker, collapsing the value to `xy`.
-///
-/// For single-quoted / plain scalars (`escaped_breaks == false`), `\` is
-/// literal content and the function degrades to a plain whitespace strip.
-fn trim_trailing_ws_respecting_escape(out: &mut String, escaped_breaks: bool) {
-    let bytes = out.as_bytes();
-    let mut end = bytes.len();
-    while end > 0 && (bytes[end - 1] == b' ' || bytes[end - 1] == b'\t') {
-        end -= 1;
-    }
-    if !escaped_breaks || end == bytes.len() || end == 0 || bytes[end - 1] != b'\\' {
-        out.truncate(end);
-        return;
-    }
-    let mut bs_start = end - 1;
-    while bs_start > 0 && bytes[bs_start - 1] == b'\\' {
-        bs_start -= 1;
-    }
-    let bs_count = end - bs_start;
-    if bs_count % 2 == 1 {
-        // Unescaped `\` — the next byte (a space or tab) is the escape's
-        // argument; keep it and trim anything past it.
-        out.truncate(end + 1);
-    } else {
-        out.truncate(end);
-    }
-}
-
-/// Whether `s` ends with an odd-length run of `\` characters, i.e. the final
-/// backslash is unescaped. Used to detect double-quoted escaped line breaks.
-fn ends_with_odd_backslashes(s: &str) -> bool {
-    s.chars().rev().take_while(|&c| c == '\\').count() % 2 == 1
-}
-
-/// Inner-only variant of [`decode_double_quoted`]: the input has no
-/// surrounding quote characters and is consumed in full. Shares escape
-/// decoding semantics with the wrapped form.
-fn decode_double_quoted_inner(body: &str) -> String {
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            out.push(ch);
-            continue;
-        }
-        let Some(next) = chars.next() else {
-            out.push('\\');
-            break;
-        };
-        match next {
-            '0' => out.push('\0'),
-            'a' => out.push('\u{07}'),
-            'b' => out.push('\u{08}'),
-            't' | '\t' => out.push('\t'),
-            'n' => out.push('\n'),
-            'v' => out.push('\u{0B}'),
-            'f' => out.push('\u{0C}'),
-            'r' => out.push('\r'),
-            'e' => out.push('\u{1B}'),
-            ' ' => out.push(' '),
-            '"' => out.push('"'),
-            '/' => out.push('/'),
-            '\\' => out.push('\\'),
-            'N' => out.push('\u{85}'),
-            '_' => out.push('\u{A0}'),
-            'L' => out.push('\u{2028}'),
-            'P' => out.push('\u{2029}'),
-            'x' => {
-                if let Some(c) = take_hex_char(&mut chars, 2) {
-                    out.push(c);
-                }
-            }
-            'u' => {
-                if let Some(c) = take_hex_char(&mut chars, 4) {
-                    out.push(c);
-                }
-            }
-            'U' => {
-                if let Some(c) = take_hex_char(&mut chars, 8) {
-                    out.push(c);
-                }
-            }
-            other => {
-                out.push('\\');
-                out.push(other);
-            }
-        }
-    }
-    out
-}
-
-fn decode_single_quoted(text: &str) -> String {
-    let body = text.strip_prefix('\'').unwrap_or(text);
-    let body = body.strip_suffix('\'').unwrap_or(body);
-    body.replace("''", "'")
-}
-
-/// Decode YAML double-quoted scalar escape sequences into actual characters
-/// per YAML 1.2 §5.7. Unknown escapes are kept verbatim so the harness can
-/// surface them as bare backslash-prefixed text.
-fn decode_double_quoted(text: &str) -> String {
-    let body = text.strip_prefix('"').unwrap_or(text);
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(ch) = chars.next() {
-        if ch == '"' {
-            break;
-        }
-        if ch != '\\' {
-            out.push(ch);
-            continue;
-        }
-        let Some(next) = chars.next() else {
-            out.push('\\');
-            break;
-        };
-        match next {
-            '0' => out.push('\0'),
-            'a' => out.push('\u{07}'),
-            'b' => out.push('\u{08}'),
-            't' | '\t' => out.push('\t'),
-            'n' => out.push('\n'),
-            'v' => out.push('\u{0B}'),
-            'f' => out.push('\u{0C}'),
-            'r' => out.push('\r'),
-            'e' => out.push('\u{1B}'),
-            ' ' => out.push(' '),
-            '"' => out.push('"'),
-            '/' => out.push('/'),
-            '\\' => out.push('\\'),
-            'N' => out.push('\u{85}'),
-            '_' => out.push('\u{A0}'),
-            'L' => out.push('\u{2028}'),
-            'P' => out.push('\u{2029}'),
-            'x' => {
-                if let Some(c) = take_hex_char(&mut chars, 2) {
-                    out.push(c);
-                }
-            }
-            'u' => {
-                if let Some(c) = take_hex_char(&mut chars, 4) {
-                    out.push(c);
-                }
-            }
-            'U' => {
-                if let Some(c) = take_hex_char(&mut chars, 8) {
-                    out.push(c);
-                }
-            }
-            other => {
-                out.push('\\');
-                out.push(other);
-            }
-        }
-    }
-    out
-}
-
-fn take_hex_char(chars: &mut std::str::Chars<'_>, n: usize) -> Option<char> {
-    let hex: String = chars.take(n).collect();
-    if hex.len() != n {
-        return None;
-    }
-    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
 }
 
 /// Escape decoded scalar text for the yaml-test-suite event format, where
@@ -1467,24 +1184,6 @@ fn parse_block_scalar_indicator(text: &str) -> Option<(char, BlockScalarChomp, O
     Some((indicator, chomp, indent))
 }
 
-fn fold_plain_scalar(text: &str) -> String {
-    let mut pieces = Vec::new();
-    for line in text.split('\n') {
-        let trimmed = line.trim();
-        // A line whose first non-blank character is `#` is a YAML comment
-        // line (the lexer currently leaves these embedded in scalar token
-        // text inside multi-line flow continuations); skip it from folding.
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        pieces.push(trimmed.to_string());
-    }
-    if pieces.is_empty() {
-        return String::new();
-    }
-    pieces.join(" ")
-}
-
 fn project_flow_map_entries(flow_map: &SyntaxNode, handles: &TagHandles, out: &mut Vec<String>) {
     // Walk the flow_map's children left-to-right, tracking any orphan
     // scalar text (`pending`) that sits between entries. A scalar that
@@ -1610,7 +1309,7 @@ fn flush_pending_orphan(pending: &str, handles: &TagHandles, out: &mut Vec<Strin
             out.push(quoted_val_event(trimmed));
         }
     } else {
-        let folded = fold_plain_scalar(trimmed);
+        let folded = cooking::cook_plain(trimmed);
         let stripped = strip_explicit_key_indicator(&folded);
         if stripped.is_empty() {
             out.push("=VAL :".to_string());
@@ -1748,7 +1447,7 @@ fn project_flow_map_entry(
             // bypasses folding when the input contains explicit tag
             // bytes — handle the plain branch here so multi-line
             // orphans collapse to a single line.
-            let folded = fold_plain_scalar(stripped_key);
+            let folded = cooking::cook_plain(stripped_key);
             out.push(flow_scalar_event(&folded, handles));
         }
         project_flow_map_value(&value_node, handles, out);
@@ -1766,7 +1465,7 @@ fn project_flow_map_entry(
             .collect::<Vec<_>>()
             .join("");
         let combined = format!("{raw_key}{raw_value}");
-        let folded = fold_plain_scalar(&combined);
+        let folded = cooking::cook_plain(&combined);
         let stripped = strip_explicit_key_indicator(&folded);
         if stripped.is_empty() {
             out.push("=VAL :".to_string());
@@ -2198,7 +1897,7 @@ fn project_block_sequence_items(
             let long_tag = item_long_tag.or(body_tag);
             let folded;
             let body_for_event: &str = if body.contains('\n') {
-                folded = fold_plain_scalar(body);
+                folded = cooking::cook_plain(body);
                 &folded
             } else {
                 body
@@ -2743,7 +2442,7 @@ fn project_block_map_entry(entry: &SyntaxNode, handles: &TagHandles, out: &mut V
         let long_tag = key_long_tag.or(body_tag);
         let folded;
         let body_for_event: &str = if body.contains('\n') {
-            folded = fold_quoted_inner(body, false);
+            folded = cooking::fold_quoted_inner(body, false);
             &folded
         } else {
             body
@@ -2880,7 +2579,7 @@ fn project_block_map_entry_value(
             // rules so blank lines fold to `\n` and single breaks fold to
             // space. Without this, joining YAML_SCALAR tokens directly drops
             // line structure (yaml-test-suite case XV9V).
-            let multi_line_text = collect_value_scalar_text_with_newlines(value_node);
+            let multi_line_text = collect_value_scalar_source(value_node);
             // Strip trailing whitespace/newlines that come AFTER the
             // closing quote. v2 keeps a single quoted-scalar token so
             // those bytes are post-value trivia (NEWLINE) — they don't
@@ -2912,7 +2611,7 @@ fn project_block_map_entry_value(
                 // body is itself double-quoted; the later `decode_double_quoted`
                 // in `scalar_event` strips the quotes and remaining escapes.
                 let escaped_breaks = body.trim_start().starts_with('"');
-                folded = fold_quoted_inner(body, escaped_breaks);
+                folded = cooking::fold_quoted_inner(body, escaped_breaks);
                 &folded
             } else {
                 body
@@ -2922,11 +2621,11 @@ fn project_block_map_entry_value(
     }
 }
 
-/// Reconstruct a YAML_BLOCK_MAP_VALUE's scalar text with line breaks intact
-/// for multi-line quoted-scalar folding. Mirrors
-/// [`collect_doc_scalar_text_with_newlines`] but bounded to a single
-/// block-map value so it doesn't pull in scalars from nested blocks.
-fn collect_value_scalar_text_with_newlines(value_node: &SyntaxNode) -> String {
+/// Collect a block-map value's scalar source bytes — same shape as
+/// [`collect_doc_scalar_source`] but bounded to a single
+/// `YAML_BLOCK_MAP_VALUE` so it doesn't pull in scalars from nested
+/// blocks.
+fn collect_value_scalar_source(value_node: &SyntaxNode) -> String {
     value_node
         .descendants_with_tokens()
         .filter_map(|el| el.into_token())

@@ -1236,7 +1236,7 @@ impl<'a> Scanner<'a> {
 
     /// Tag (`!handle suffix`, `!!type`, or `!<verbatim>`) at start-of-token.
     /// Tags annotate the *next* node, so they're emitted as a separate
-    /// token (decoration) and `parser_v2` carries them through without
+    /// token (decoration) and the parser carries them through without
     /// closing the implicit-key candidate slot. Like an anchor, a tag
     /// can occupy the implicit-key position (e.g. `!!str key: value`).
     fn fetch_tag(&mut self) {

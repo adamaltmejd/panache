@@ -8,14 +8,14 @@
 //! - enable shadow-mode comparison against the existing YAML engine before rollout.
 //! - prepare for first-class YAML formatting support once parser parity is proven.
 
+#[path = "yaml/cooking.rs"]
+mod cooking;
 #[path = "yaml/events.rs"]
 mod events;
 #[path = "yaml/model.rs"]
 mod model;
 #[path = "yaml/parser.rs"]
 mod parser;
-#[path = "yaml/parser_v2.rs"]
-mod parser_v2;
 #[path = "yaml/scanner.rs"]
 mod scanner;
 #[path = "yaml/validator.rs"]
@@ -26,8 +26,10 @@ pub use model::{
     ShadowYamlOptions, ShadowYamlOutcome, ShadowYamlReport, YamlDiagnostic, YamlInputKind,
     YamlParseReport, diagnostic_codes,
 };
-pub use parser::{parse_shadow, parse_yaml_report, parse_yaml_tree};
-pub use parser_v2::{ShadowParserV2Report, parse_v2, shadow_parser_v2_check};
+pub use parser::{
+    ShadowParserReport, parse_shadow, parse_stream, parse_yaml_report, parse_yaml_tree,
+    shadow_parser_check,
+};
 pub use scanner::{ShadowScannerReport, shadow_scanner_check};
 
 #[doc(hidden)]

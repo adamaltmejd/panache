@@ -7,10 +7,10 @@
     "fails_needs_feature": 0,
     "fails_needs_error_path": 0
   },
-  "scope": "Sweep of crates/panache-parser/src/parser/yaml/events.rs for projector logic that compensates for scanner / parser_v2 gaps. Each site is classified by ownership target. Predictions are inspection-only; the next planning round confirms regressions empirically.",
+  "scope": "Sweep of crates/panache-parser/src/parser/yaml/events.rs for projector logic that compensates for scanner / parse_stream gaps. Each site is classified by ownership target. Predictions are inspection-only; the next planning round confirms regressions empirically.",
   "classifications": {
     "PARSER_GAP": "Scanner mis-tokenizes. Fix target: scanner.rs.",
-    "CST_FIDELITY_BUG": "Scanner OK; parser_v2 collapses tokens into a node shape that loses a structural distinction. Fix target: parser_v2.rs.",
+    "CST_FIDELITY_BUG": "Scanner OK; the parser collapses tokens into a node shape that loses a structural distinction. Fix target: parser.rs (parse_stream).",
     "LEGITIMATE_PROJECTION": "Within the skill's stated projector remit (scalar cooking, folding, event reconstruction from a correct CST).",
     "ACKNOWLEDGED_DEBT": "Listed in SKILL.md or scanner-rewrite.md as residual cutover work.",
     "RESOLVED": "Confirmed dead at audit time; helper deleted with no behavior change."
@@ -22,8 +22,8 @@
       "anchor_line": 593,
       "summary": "Hand-rolled char_indices loop with single/double-quote tracking to locate a `:` key-indicator inside a flow-sequence item's text. Reached after project_flow_sequence_items_cst assembles item_text from selected tokens.",
       "classification": "CST_FIDELITY_BUG",
-      "ownership_target": "parser_v2.rs",
-      "rationale": "Confirmed load-bearing: ablation regresses QF4Y (implicit flow-map entry inside `[...]`). The scanner emits YAML_COLON tokens for the boundary, but parser_v2 doesn't surface flow-map-entry structure inside YAML_FLOW_SEQUENCE_ITEM, so the projector has to re-locate the `:` in the item's joined text. Promoting flow-seq items to carry explicit YAML_FLOW_MAP_ENTRY children (or YAML_KEY/YAML_VALUE tokens) lets the projector walk structure instead of re-tokenizing text. Same pattern as decompose_scalar (projector joins-then-reparses), but here the structural information genuinely isn't in the CST at the item level.",
+      "ownership_target": "parser.rs",
+      "rationale": "Confirmed load-bearing: ablation regresses QF4Y (implicit flow-map entry inside `[...]`). The scanner emits YAML_COLON tokens for the boundary, but parse_stream doesn't surface flow-map-entry structure inside YAML_FLOW_SEQUENCE_ITEM, so the projector has to re-locate the `:` in the item's joined text. Promoting flow-seq items to carry explicit YAML_FLOW_MAP_ENTRY children (or YAML_KEY/YAML_VALUE tokens) lets the projector walk structure instead of re-tokenizing text. Same pattern as decompose_scalar (projector joins-then-reparses), but here the structural information genuinely isn't in the CST at the item level.",
       "predicted_regressions_if_ablated": ["QF4Y", "87E4", "L9U5", "LQZ7", "9MMW", "6BFJ", "X38W"],
       "seed_case_ids_in_comments": ["87E4", "L9U5", "LQZ7", "9MMW", "6BFJ", "X38W"],
       "depends_on": [],
@@ -55,8 +55,8 @@
         "folding_and_chomping": "LEGITIMATE_PROJECTION",
         "content_indent_inference": "CST_FIDELITY_BUG"
       },
-      "ownership_target": "parser_v2.rs",
-      "rationale": "Fold/chomp rules (l.1436-1483 plus fold_greater_lines) are spec-defined post-processing of already-correct content and belong in the projector. The content-indent inference at l.1372-1380 walks the raw body text counting leading spaces; the scanner already tracks the block-scalar's content indent via the indent stack when it emits the body tokens. Attaching a content_indent attribute to the YAML_BLOCK_SCALAR node (via parser_v2 reading a scanner-tracked value) lets fold_block_scalar_raw stop scanning lines to recompute it.",
+      "ownership_target": "parser.rs",
+      "rationale": "Fold/chomp rules (l.1436-1483 plus fold_greater_lines) are spec-defined post-processing of already-correct content and belong in the projector. The content-indent inference at l.1372-1380 walks the raw body text counting leading spaces; the scanner already tracks the block-scalar's content indent via the indent stack when it emits the body tokens. Attaching a content_indent attribute to the YAML_BLOCK_SCALAR node (via parse_stream reading a scanner-tracked value) lets fold_block_scalar_raw stop scanning lines to recompute it.",
       "predicted_regressions_if_ablated": ["T26H", "JEF9/01", "JEF9/02", "Y79Y/001", "R4YG", "MJS9", "DK3J", "7T8X"],
       "seed_case_ids_in_comments": ["T26H", "JEF9/01", "JEF9/02", "Y79Y/001", "R4YG", "MJS9", "DK3J", "7T8X"],
       "depends_on": [],
@@ -145,7 +145,7 @@
       "anchor_line": 2202,
       "summary": "Locate a `:` key-indicator inside a block-context scalar text, honoring a leading quoted body. Called from project_block_sequence_items for inline-map sequence items (`- key: value`).",
       "classification": "RESOLVED",
-      "resolution": "Dead. parser_v2 already wraps inline-map sequence items in a nested YAML_BLOCK_MAP child, so the fallback structured branch handles every allowlisted case. Ablation by returning None left the yaml suite green (17/17). Helper, call site, and a stale comment referencing decompose_scalar tag recovery removed.",
+      "resolution": "Dead. parse_stream already wraps inline-map sequence items in a nested YAML_BLOCK_MAP child, so the fallback structured branch handles every allowlisted case. Ablation by returning None left the yaml suite green (17/17). Helper, call site, and a stale comment referencing decompose_scalar tag recovery removed.",
       "ownership_target": null,
       "predicted_regressions_if_ablated": [],
       "seed_case_ids_in_comments": [],
@@ -159,52 +159,52 @@
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 483,
       "summary": "Fold a plain-scalar document's lines (raw.split('\\n'), join with spaces) when the document body is a single multi-line plain scalar.",
-      "classification": "ACKNOWLEDGED_DEBT",
-      "ownership_target": "scanner.rs",
-      "rationale": "Same residual debt family as collect_doc_scalar_text_with_newlines: relies on multi-line plain scalars being emitted as multiple per-line YAML_SCALAR tokens (or one big text blob). Inherits the scanner-side scalar-unification cutover named in scanner-rewrite.md."
+      "classification": "RESOLVED",
+      "ownership_target": "n/a",
+      "resolution": "Helper still present but the framing was wrong — the scanner already emits multi-line plain scalars as a single token (`Token::Scalar(Plain)` spanning the whole body). Nothing is re-stitched. Local-version folding logic moved into `cooking::cook_plain`; `fold_plain_document_lines` now delegates."
     },
     {
       "id": "collect_doc_scalar_text_with_newlines",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 457,
-      "summary": "Rebuild a document-level scalar's text with newlines intact by walking YAML_SCALAR / NEWLINE tokens.",
-      "classification": "ACKNOWLEDGED_DEBT",
-      "ownership_target": "scanner.rs",
-      "rationale": "Explicitly named in SKILL.md residual cutover work and in scanner-rewrite.md as a multi-line scalar re-stitch helper awaiting scanner unification (one styled-scalar token per scalar)."
+      "summary": "Concatenate document-level YAML_SCALAR / YAML_ANCHOR / YAML_ALIAS / NEWLINE token text in order, skipping directive lines.",
+      "classification": "RESOLVED",
+      "ownership_target": "n/a",
+      "resolution": "Renamed to `collect_doc_scalar_source`. Not a re-stitch — the scanner already emits scalars as single tokens. This collector aggregates raw token *source* (scalar + adjacent anchor/alias/newline tokens) for the multi-line-quoted projection path; cooking is delegated to `super::cooking`."
     },
     {
       "id": "collect_value_scalar_text_with_newlines",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
       "anchor_line": 3366,
-      "summary": "Bounded version of collect_doc_scalar_text_with_newlines for a single block-map value.",
-      "classification": "ACKNOWLEDGED_DEBT",
-      "ownership_target": "scanner.rs",
-      "rationale": "Explicitly named in SKILL.md residual cutover work alongside collect_doc_scalar_text_with_newlines."
+      "summary": "Block-map-value-bounded version of the doc-level scalar source collector.",
+      "classification": "RESOLVED",
+      "ownership_target": "n/a",
+      "resolution": "Renamed to `collect_value_scalar_source`; same scope as above (aggregates raw source for multi-line quoted projection; cooking delegated to `super::cooking`)."
     },
     {
       "id": "quoted_val_event_multi_line",
       "file": "crates/panache-parser/src/parser/yaml/events.rs",
-      "anchor_line": 708,
-      "summary": "Apply YAML 1.2 §7.3 line-folding to a multi-line quoted scalar body that has been re-stitched from per-line YAML_SCALAR tokens.",
-      "classification": "ACKNOWLEDGED_DEBT",
-      "ownership_target": "scanner.rs",
-      "rationale": "Explicitly named in SKILL.md residual cutover work as a multi-line scalar re-stitch helper. Becomes obsolete once the scanner emits a styled quoted scalar as a single token."
+      "anchor_line": 700,
+      "summary": "Wrap a multi-line quoted scalar's cooked value in the yaml-test-suite `=VAL '` / `=VAL \"` event prefix with `escape_for_event` applied.",
+      "classification": "RESOLVED",
+      "ownership_target": "n/a",
+      "resolution": "Now a thin event-formatting wrapper. The fold/decode pipeline (`fold_quoted_inner`, `strip_quoted_wrapper`, `decode_double_quoted_inner`) was extracted to `cooking.rs` as `cook_single_quoted_multi_line` / `cook_double_quoted_multi_line`; this helper just dispatches to them and adds the event prefix."
     }
   ],
   "sequencing": [
     "flow_kv_split",
     "fold_block_scalar_raw"
   ],
-  "sequencing_rationale": "Scanner-side anchor/alias/tag emission fixes go first (rebuild_anchor_alias_with_trailing_colon, residual_splice_26dv, extract_tagged_block_scalar) because they are the smallest scanner state-machine changes and they unblock the most downstream projector workarounds (absorb_anchor_or_tag_text_fallback, decompose_scalar). After those land, the projector's anchor/tag/alias text-peel paths can be confirmed dead via ablation. Then move to parser_v2 shape work: flow_kv_split (add KEY/VALUE children to YAML_FLOW_SEQUENCE_ITEM), which unblocks the simple_flow_sequence_items dead-code confirmation, then find_block_scalar_kv_split (add implicit-map structure to YAML_BLOCK_SEQUENCE_ITEM). Block-scalar content-indent attachment (fold_block_scalar_raw_indent_inference) goes last because it touches the YAML_BLOCK_SCALAR node shape that the earlier fixes also use, and the cooking portion of fold_block_scalar_raw stays in events.rs regardless.",
+  "sequencing_rationale": "Scanner-side anchor/alias/tag emission fixes go first (rebuild_anchor_alias_with_trailing_colon, residual_splice_26dv, extract_tagged_block_scalar) because they are the smallest scanner state-machine changes and they unblock the most downstream projector workarounds (absorb_anchor_or_tag_text_fallback, decompose_scalar). After those land, the projector's anchor/tag/alias text-peel paths can be confirmed dead via ablation. Then move to parse_stream shape work: flow_kv_split (add KEY/VALUE children to YAML_FLOW_SEQUENCE_ITEM), which unblocks the simple_flow_sequence_items dead-code confirmation, then find_block_scalar_kv_split (add implicit-map structure to YAML_BLOCK_SEQUENCE_ITEM). Block-scalar content-indent attachment (fold_block_scalar_raw_indent_inference) goes last because it touches the YAML_BLOCK_SCALAR node shape that the earlier fixes also use, and the cooking portion of fold_block_scalar_raw stays in events.rs regardless.",
   "open_questions": [
     "How much of decompose_scalar's remaining work is the multi-line-scalar acknowledged debt vs. genuinely single-line residuals? Settled by ablation after the three scanner fixes land.",
     "Does simple_flow_sequence_items have any live callers after the YAML_FLOW_SEQUENCE structured branch took precedence? Settled by ablation; expected dead.",
-    "find_block_scalar_kv_split — is the right fix a new YAML_BLOCK_MAP_ENTRY inside YAML_BLOCK_SEQUENCE_ITEM, or a flatter shape with KEY/VALUE tokens? Needs a parser_v2 design decision in its own planning round.",
+    "find_block_scalar_kv_split — is the right fix a new YAML_BLOCK_MAP_ENTRY inside YAML_BLOCK_SEQUENCE_ITEM, or a flatter shape with KEY/VALUE tokens? Needs a parse_stream design decision in its own planning round.",
     "For fold_block_scalar_raw content-indent attachment — does the scanner currently surface content_indent anywhere usable, or does it need a new field on the block-scalar token? Check scanner.rs's block-scalar emission state."
   ],
   "what_this_audit_does_not_cover": [
     "Ablation runs to confirm predicted regressions.",
-    "Edits to scanner.rs, parser_v2.rs, validator.rs, events.rs.",
+    "Edits to scanner.rs, parser.rs, validator.rs, events.rs.",
     "New SyntaxKind variants.",
     "Changes to triage.json, allowlist.txt, or any fixture."
   ]

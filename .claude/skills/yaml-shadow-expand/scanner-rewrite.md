@@ -2,11 +2,13 @@
 
 ## Status (as of 2026-05)
 
-The scanner rewrite has fully landed. v2 `scanner.rs` + `parser_v2.rs`
-build the returned tree, structural diagnostics flow through
-`validator.rs`, and **the v1 line-based lexer is deleted**. The live
-diagnostic path is `parse_yaml_report` → `validate_yaml` →
-`parse_v2`. There is no v1 directive-ordering pass.
+The scanner rewrite has fully landed. The streaming `scanner.rs` plus
+`parser.rs::parse_stream` (formerly `parser_v2.rs::parse_v2`; merged
+into `parser.rs` once the legacy lexer was gone) build the returned
+tree, structural diagnostics flow through `validator.rs`, and **the v1
+line-based lexer is deleted**. The live diagnostic path is
+`parse_yaml_report` → `validate_yaml` → `parse_stream`. There is no v1
+directive-ordering pass.
 
 What landed:
 
@@ -34,7 +36,7 @@ What landed since then:
 
 - Tag/anchor/alias dispatch in `scanner.rs`. `!`, `&`, `*` emit
   dedicated `Tag` / `Anchor` / `Alias` tokens (`fetch_tag`,
-  `fetch_anchor`, `fetch_alias` at `scanner.rs:1242+`). `parser_v2`
+  `fetch_anchor`, `fetch_alias` at `scanner.rs:1242+`). `parse_stream`
   maps them to `YAML_TAG` / `YAML_ANCHOR` / `YAML_ALIAS`,
   `events.rs::resolve_long_tag` consults per-document `%TAG` handles
   for the `<tag:...>` event annotation, and the validator's new
@@ -43,14 +45,35 @@ What landed since then:
   `parse_yaml_report_detects_directive_after_content` is back on its
   original tag-shape input.
 
+What landed since then (continued):
+
+- Scalar cooking extracted to `parser/yaml/cooking.rs`. The pure
+  fold/strip/decode primitives (`fold_quoted_inner`,
+  `strip_quoted_wrapper`, `decode_double_quoted_inner`, etc.) and the
+  per-style entry points (`cook_plain`, `cook_single_quoted`,
+  `cook_double_quoted`) live there. `events.rs` delegates;
+  `quoted_val_event_multi_line` is now a thin event-formatting
+  wrapper around `cooking::cook_*_multi_line`. The two CST-walking
+  collectors were renamed to `collect_doc_scalar_source` /
+  `collect_value_scalar_source` — they assemble raw token source for
+  the quoted multi-line paths but no longer cook.
+- `parser_v2.rs` merged into `parser.rs`; the `v2` suffix is gone
+  (`parse_stream`, `ShadowParserReport`, `shadow_parser_check`).
+- The scanner already emits each multi-line scalar (plain, quoted,
+  literal/folded block) as a single token. No re-stitching is
+  happening anywhere; the prior framing in this doc was inaccurate.
+
 What is still deferred:
 
-- `events.rs` projection helpers
-  `collect_doc_scalar_text_with_newlines`,
-  `collect_value_scalar_text_with_newlines`, and
-  `quoted_val_event_multi_line` still re-stitch multi-line scalars
-  in projection because the scanner emits per-segment scalar tokens.
-  Unifying these into a single styled `Scalar` token is a follow-up.
+- The eventual `yaml_parser` (legacy crate) live-path cutover for the
+  embedded YAML region in `crates/panache-parser/src/syntax/yaml.rs`.
+- Promoting scalar style into the CST as styled `SyntaxKind` variants
+  (`YAML_PLAIN_SCALAR` / `YAML_*_QUOTED_SCALAR` / `YAML_LITERAL_SCALAR`
+  / `YAML_FOLDED_SCALAR`) and adding a typed `Scalar` AST wrapper.
+  Scoped out of the cooking-extraction work because it would force
+  ~50 predicate updates in `validator.rs` plus bulk snapshot
+  regeneration. Pick it up when a formatter that needs first-class
+  style discrimination is ready.
 - Step 13 (recover unlocked cases) is partially done — the lexer
   removal alone moved triage by +38 cases (`passes_now_count`:
   144 → 182). More can likely be allowlisted by walking the
@@ -79,9 +102,13 @@ been deleted; see the Status section above):
 
 - `collect_doc_scalar_text_with_newlines`,
   `collect_value_scalar_text_with_newlines`,
-  `quoted_val_event_multi_line` in `events.rs` — re-stitch multi-line
-  scalars in projection because they were lexed as separate per-line
-  tokens. Still present (deferred deletion).
+  `quoted_val_event_multi_line` in `events.rs` — were named as if
+  they re-stitched multi-line scalars. They didn't: the scanner
+  already emits each multi-line scalar as one token. Renamed to
+  `collect_doc_scalar_source` / `collect_value_scalar_source` (raw
+  source-byte collectors used by the multi-line quoted projection
+  path) and the cooking primitives in `quoted_val_event_multi_line`
+  were extracted to `parser/yaml/cooking.rs`.
 - `has_explicit_key` in `parser.rs` — string-prefix lookahead to
   classify document body as block map vs scalar. **Deleted at cutover.**
 - `doc_level_property_present` peek in `parser.rs` — guarded property
@@ -258,20 +285,22 @@ candidate token in the queue, emit `Key`, then emit `Value`. If not, emit
 `Value` only. Candidates expire on next-line-at-same-or-less-indent,
 on a blank line, or on flow boundaries.
 
-### Parser-side coupling (`parser.rs` / `parser_v2.rs`)
+### Parser-side coupling (`parser.rs`)
 
 The body emitters were *not* refactored in place. Instead, a parallel
-`parser_v2.rs` was built that consumes the scanner's token stream and
-emits the rowan green tree directly, keyed on `BlockMappingStart` /
-`Key` / `Value` / `BlockEntry` / `BlockEnd` / flow indicators. Trivia
-tokens are consumed inline into the CST. Explicit-key entries (`Key`
-token) route through the same path as implicit keys, with
-nested-collection bodies handled recursively.
+emitter (originally `parser_v2.rs::parse_v2`, since merged in as
+`parser.rs::parse_stream`) was built that consumes the scanner's
+token stream and emits the rowan green tree directly, keyed on
+`BlockMappingStart` / `Key` / `Value` / `BlockEntry` / `BlockEnd` /
+flow indicators. Trivia tokens are consumed inline into the CST.
+Explicit-key entries (`Key` token) route through the same path as
+implicit keys, with nested-collection bodies handled recursively.
 
-`parser.rs` shrank to a slim orchestrator that calls v1 lex + v2
-scanner + validator and stitches the v2 stream into the
-`DOCUMENT > YAML_METADATA_CONTENT > YAML_STREAM` envelope expected by
-downstream consumers.
+`parser.rs` is the single home for both the orchestrator
+(`parse_yaml_report` / `parse_yaml_tree` / `parse_shadow`) and the
+streaming emitter; the orchestrator stitches the streaming output
+into the `DOCUMENT > YAML_METADATA_CONTENT > YAML_STREAM` envelope
+expected by downstream consumers.
 
 What was **deleted at cutover** (commit `9b442587`):
 
@@ -287,10 +316,11 @@ What was **deleted at cutover** (commit `9b442587`):
 
 What is still **live** (deferred to a follow-up cutover step):
 
-- `events.rs::collect_doc_scalar_text_with_newlines`,
-  `collect_value_scalar_text_with_newlines`,
-  `quoted_val_event_multi_line` — projection still re-stitches
-  multi-line scalars
+- (No projection helpers from this section remain as debt.
+  `collect_doc_scalar_text_with_newlines` /
+  `collect_value_scalar_text_with_newlines` /
+  `quoted_val_event_multi_line` were renamed and/or thinned to
+  delegate to `cooking.rs` — see the Status section above.)
 
 What was deleted in step 12b (this session):
 
@@ -361,7 +391,8 @@ old lexer remains the live path until step 8.
     branch in `parser.rs`) that consumes the scanner. Initially exercised
     by an `#[ignore]`d test that round-trips against the live parser on
     the allowlist. Build out the body emitters incrementally; each
-    sub-commit may flip a few cases at a time on the v2 path.
+    sub-commit may flip a few cases at a time on the v2 path. _(The
+    v2 file was later merged back into `parser.rs` as `parse_stream`.)_
 
 12. **Cutover** — switch `parse_yaml_report` (`parser.rs`) to consume
     the scanner-built tree and route structural diagnostics through
@@ -396,19 +427,26 @@ surprises. Step 13 is pure win.
 
 ## Critical files
 
-- `crates/panache-parser/src/parser/yaml/scanner.rs` — the rewrite
-  (~2,851 LOC). Streaming char-by-char scanner with simple-key table.
-- `crates/panache-parser/src/parser/yaml/parser_v2.rs` — consumes the
-  scanner and emits the rowan green tree (~1,134 LOC).
-- `crates/panache-parser/src/parser/yaml/validator.rs` — v2-aware
-  structural validator. Each `check_*` function is one cluster of
-  error contracts; `validate_yaml` composes them.
-- `crates/panache-parser/src/parser/yaml/parser.rs` — slim
-  orchestrator. Calls validator for structural diagnostics, then
-  parser_v2 for tree construction.
+- `crates/panache-parser/src/parser/yaml/scanner.rs` — the rewrite.
+  Streaming char-by-char scanner with simple-key table.
+- `crates/panache-parser/src/parser/yaml/parser.rs` — orchestrator
+  (`parse_yaml_report` / `parse_yaml_tree` / `parse_shadow`) plus
+  `parse_stream` (consumes the scanner and emits the rowan green
+  tree). Was previously split into `parser.rs` + `parser_v2.rs`;
+  merged once the legacy lexer was gone.
+- `crates/panache-parser/src/parser/yaml/validator.rs` — structural
+  validator. Each `check_*` function is one cluster of error
+  contracts; `validate_yaml` composes them.
+- `crates/panache-parser/src/parser/yaml/cooking.rs` — pure scalar
+  cooking primitives (`cook_plain`, `cook_single_quoted`,
+  `cook_double_quoted` plus internal `fold_quoted_inner`,
+  `strip_quoted_wrapper`, `decode_double_quoted_inner`, ...). Event
+  projection delegates here; the formatter should too.
 - `crates/panache-parser/src/parser/yaml/events.rs` — projection
-  helpers; the `*_with_newlines` / `*_multi_line` helpers are still
-  live (deferred deletion).
+  helpers. The CST-walking source collectors
+  `collect_doc_scalar_source` / `collect_value_scalar_source` assemble
+  raw token text for the quoted multi-line paths and call into
+  `super::cooking` for the actual fold/decode.
 - `crates/panache-parser/src/parser/yaml/model.rs` — `YamlDiagnostic`,
   `diagnostic_codes`, `YamlParseReport`. (`YamlToken` /
   `YamlTokenSpan` deleted in step 12b.)

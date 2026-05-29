@@ -139,7 +139,7 @@ use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 use rowan::NodeOrToken;
 
 use super::model::{YamlDiagnostic, diagnostic_codes};
-use super::parser_v2::parse_v2;
+use super::parser::parse_stream;
 use super::scanner::{Scanner, Token, TokenKind};
 
 /// Run every implemented diagnostic cluster over `input`, returning the
@@ -158,7 +158,7 @@ pub(crate) fn validate_yaml(input: &str) -> Option<YamlDiagnostic> {
     if let Some(diag) = check_unterminated_quoted(input) {
         return Some(diag);
     }
-    let tree = parse_v2(input);
+    let tree = parse_stream(input);
     if let Some(diag) = check_trailing_content(&tree) {
         return Some(diag);
     }

@@ -1,7 +1,7 @@
 use panache_parser::parser::yaml::{
-    ShadowYamlOptions, ShadowYamlOutcome, YamlInputKind, parse_shadow, parse_v2, parse_yaml_report,
-    parse_yaml_tree, project_events, project_events_from_tree, shadow_parser_v2_check,
-    shadow_scanner_check,
+    ShadowYamlOptions, ShadowYamlOutcome, YamlInputKind, parse_shadow, parse_stream,
+    parse_yaml_report, parse_yaml_tree, project_events, project_events_from_tree,
+    shadow_parser_check, shadow_scanner_check,
 };
 use panache_parser::syntax::SyntaxNode as ParserSyntaxNode;
 use serde_json::json;
@@ -757,16 +757,14 @@ fn shadow_scanner_byte_completeness_over_allowlist() {
 
 /// Manual harness: run the v2 parser scaffold over every allowlisted
 /// fixture and assert text-losslessness — i.e. `tree.text() == input`.
-/// This is the byte-completeness invariant the v2 builder must hold
-/// every step of step-11 sub-commits, even before structural parity
-/// with the existing parser is reached. Ignored by default; invoke
-/// with:
+/// Byte-completeness invariant the streaming builder must hold over
+/// every allowlisted fixture. Ignored by default; invoke with:
 ///
 ///   cargo test -p panache-parser --test yaml -- --ignored \
-///     shadow_parser_v2_text_losslessness_over_allowlist
+///     shadow_parser_text_losslessness_over_allowlist
 #[test]
-#[ignore = "manual v2 parser losslessness check over allowlisted fixtures"]
-fn shadow_parser_v2_text_losslessness_over_allowlist() {
+#[ignore = "manual streaming-parser losslessness check over allowlisted fixtures"]
+fn shadow_parser_text_losslessness_over_allowlist() {
     let mut failures: Vec<String> = Vec::new();
     for (case_id, case_path) in allowlisted_case_paths() {
         let input_path = case_path.join("in.yaml");
@@ -775,38 +773,36 @@ fn shadow_parser_v2_text_losslessness_over_allowlist() {
         }
         let input = fs::read_to_string(&input_path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", input_path.display()));
-        let report = shadow_parser_v2_check(&input);
+        let report = shadow_parser_check(&input);
         if !report.text_lossless {
             failures.push(format!("- {case_id}"));
         }
     }
     if !failures.is_empty() {
         panic!(
-            "v2 parser not text-lossless over {} allowlisted case(s):\n{}",
+            "streaming parser not text-lossless over {} allowlisted case(s):\n{}",
             failures.len(),
             failures.join("\n"),
         );
     }
 }
 
-/// Manual harness: project events from both the live (v1) shadow parser and
-/// the v2 parser scaffold and report the cases where they diverge. This is
-/// the round-trip-against-the-live-parser test step 11 of the scanner
-/// rewrite plan calls for: it lets each v2 sub-commit measure how many
-/// allowlisted cases now match v1's projection. A passing case here means
-/// v2's CST is event-equivalent to v1's for that fixture.
+/// Manual harness: project events from both the live (legacy) shadow parser
+/// and the streaming parser and report the cases where they diverge. A
+/// passing case means the streaming parser's CST is event-equivalent to
+/// the legacy projection for that fixture.
 ///
 /// Ignored by default; the full diff is too large to gate normal runs on.
 /// Invoke with:
 ///
 ///     cargo test -p panache-parser --test yaml -- --ignored \
-///         shadow_parser_v2_event_parity_over_allowlist --nocapture
+///         shadow_parser_event_parity_over_allowlist --nocapture
 ///
 /// Failure mode: the test panics with a count plus a per-case bullet of
 /// the first diverging line so we can triage by shared root cause.
 #[test]
-#[ignore = "manual v2-vs-v1 event parity check over allowlisted fixtures"]
-fn shadow_parser_v2_event_parity_over_allowlist() {
+#[ignore = "manual streaming-vs-legacy event parity check over allowlisted fixtures"]
+fn shadow_parser_event_parity_over_allowlist() {
     let mut matches: usize = 0;
     let mut mismatches: Vec<String> = Vec::new();
     let mut considered: usize = 0;
@@ -818,63 +814,73 @@ fn shadow_parser_v2_event_parity_over_allowlist() {
         }
         let input = fs::read_to_string(&input_path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", input_path.display()));
-        let v1_events = project_events(&input);
-        // v1 returning no events means it rejected the input as malformed.
-        // Those cases live on the allowlist for other reasons (e.g. error
-        // contract coverage); they don't say anything about whether v2's
-        // CST is event-equivalent. Skip them so the parity number tracks
-        // structural progress, not error-rejection differences.
-        if v1_events.is_empty() {
+        let legacy_events = project_events(&input);
+        // Legacy projection returning no events means it rejected the input
+        // as malformed. Those cases live on the allowlist for other reasons
+        // (e.g. error contract coverage); they don't say anything about
+        // whether the streaming CST is event-equivalent. Skip them so the
+        // parity number tracks structural progress, not error-rejection
+        // differences.
+        if legacy_events.is_empty() {
             skipped_v1_rejects += 1;
             continue;
         }
         considered += 1;
-        // The projection layer was written for v1's CST shape and `expect`s
-        // its way through several structural assumptions (e.g. `YAML_KEY`
-        // tokens inside `YAML_BLOCK_MAP_KEY` nodes). v2 emits a different
-        // shape today, so projecting its tree can panic. Treat a panic as
-        // a parity failure on that case rather than aborting the whole run.
-        let v2_tree = parse_v2(&input);
-        let v2_events = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            project_events_from_tree(&v2_tree)
+        // The projection layer was written for the legacy CST shape and
+        // `expect`s its way through several structural assumptions (e.g.
+        // `YAML_KEY` tokens inside `YAML_BLOCK_MAP_KEY` nodes). The streaming
+        // parser emits a different shape today, so projecting its tree can
+        // panic. Treat a panic as a parity failure on that case rather than
+        // aborting the whole run.
+        let streaming_tree = parse_stream(&input);
+        let streaming_events = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            project_events_from_tree(&streaming_tree)
         })) {
             Ok(events) => events,
             Err(_) => {
-                mismatches.push(format!("- {case_id}: projection panicked on v2 tree"));
+                mismatches.push(format!(
+                    "- {case_id}: projection panicked on streaming tree"
+                ));
                 continue;
             }
         };
-        if v1_events == v2_events {
+        if legacy_events == streaming_events {
             matches += 1;
             continue;
         }
-        let first_diff = v1_events
+        let first_diff = legacy_events
             .iter()
-            .zip(v2_events.iter())
+            .zip(streaming_events.iter())
             .position(|(a, b)| a != b)
             .map(|idx| {
-                let v1_line = v1_events.get(idx).map(String::as_str).unwrap_or("<eos>");
-                let v2_line = v2_events.get(idx).map(String::as_str).unwrap_or("<eos>");
-                format!("@{idx}: v1={v1_line:?} v2={v2_line:?}")
+                let legacy_line = legacy_events
+                    .get(idx)
+                    .map(String::as_str)
+                    .unwrap_or("<eos>");
+                let streaming_line = streaming_events
+                    .get(idx)
+                    .map(String::as_str)
+                    .unwrap_or("<eos>");
+                format!("@{idx}: legacy={legacy_line:?} streaming={streaming_line:?}")
             })
             .unwrap_or_else(|| {
                 format!(
-                    "len mismatch: v1={} v2={}",
-                    v1_events.len(),
-                    v2_events.len()
+                    "len mismatch: legacy={} streaming={}",
+                    legacy_events.len(),
+                    streaming_events.len()
                 )
             });
         mismatches.push(format!("- {case_id}: {first_diff}"));
     }
     eprintln!(
-        "v2 event parity: {matches}/{considered} v1-accepted allowlisted case(s) match v1 \
-         (mismatches: {}, skipped because v1 rejects: {skipped_v1_rejects})",
+        "streaming event parity: {matches}/{considered} legacy-accepted allowlisted case(s) \
+         match (mismatches: {}, skipped because legacy rejects: {skipped_v1_rejects})",
         mismatches.len(),
     );
     if !mismatches.is_empty() {
         let body = mismatches.join("\n");
         panic!(
-            "v2 event projection diverges from v1 on {} allowlisted case(s):\n{body}",
+            "streaming event projection diverges from legacy on {} allowlisted case(s):\n{body}",
             mismatches.len(),
         );
     }
