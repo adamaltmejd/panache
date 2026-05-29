@@ -804,8 +804,8 @@ warning[footnote-ref-in-footnote-def]: Footnote reference '[^b]' inside a footno
 
 ### `stray-fenced-div-markers` {#stray-fenced-div-markers}
 
-Detects stray closing fenced div markers (`:::` or longer runs of colons) that
-do not pair with an opening fence and consequently land inside paragraph text.
+Detects runs of three or more colons (`:::`, `::::`, ...) that appear inside
+paragraph text instead of parsing as fenced div markers.
 
 Severity
 :   Warning
@@ -823,23 +823,25 @@ Diagnostic codes
 Description
 
 :   Pandoc fenced divs use `:::` (or longer colon runs) for both openers (with
-    an attribute or class) and closers (bare colons). When a closer-shaped line
-    has no matching opener in scope, Pandoc treats it as ordinary paragraph text
-    instead of as a div marker. This is almost always a typo---a mismatched
-    fence count between opener and closer, an accidentally deleted opener, or a
-    copy/paste artifact---and the document silently renders with `:::` showing
-    up in the prose.
+    an attribute or class) and closers (bare colons). Pandoc only treats `:::`
+    as a marker when it starts a line on its own; if the colons end up embedded
+    in paragraph text---a stray closer with no matching opener, a closer
+    accidentally glued to the previous line, or a marker with extra words after
+    it---they silently render as `:::` characters in the prose and the div
+    either never opens or never closes.
 
     Quarto's runtime emits a warning when it sees stray `:::`, but exits 0, which
     makes the issue invisible to CI/Makefile workflows. This rule fills that gap by
     flagging the same condition at lint time.
 
-    The rule fires when, after up to three leading spaces, a line in a paragraph
-    consists of three or more colons followed only by trailing whitespace. It does
-    **not** flag mid-line `:::`, code spans containing `:::`, or indented code
-    blocks---those are not closing-fence shapes.
+    The rule fires on any run of three or more `:` characters that survives as plain
+    text inside a paragraph. Code spans (`` `:::` ``), indented code blocks, and raw
+    HTML blocks are not flagged because the colons there are not paragraph text.
+    Authentic prose mentions of `:::` (writing about Pandoc syntax) should be
+    wrapped in backticks anyway---runs of three or more consecutive colons are
+    otherwise extremely rare in natural text.
 
-**Example violation:**
+**Example violations:**
 
 ```markdown
 ::: warning
@@ -847,13 +849,19 @@ The fence count on the opener and closer don't match.
 ::::
 ```
 
+```markdown
+::: {lang=en-US}
+[contact Ms. Nebbercracker]{lang=en-US}:::
+```
+
 **Diagnostic:**
 
 ```
-warning[stray-fenced-div-markers]: Stray fenced div marker '::::' has no matching opener
+warning[stray-fenced-div-markers]: '::::' appears as text, not as a fenced div marker
  --> document.qmd:3:1
-  = help: if this is meant to close a div, check the opener's class/attributes;
-          otherwise escape the colons or rewrite the line
+  = help: Pandoc only treats ':::' as a fenced div marker when it starts a line
+          on its own (optionally followed by a class or attributes). Add a
+          newline before it, or wrap it in backticks if it's intentional text
 ```
 
 ## YAML diagnostics

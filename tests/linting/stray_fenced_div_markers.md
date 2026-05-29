@@ -16,10 +16,13 @@ A different fence count, properly closed.
 
 Inline `:::` should not trigger because it sits inside a code span.
 
-Mid-line ::: text should not trigger either.
+Mid-line ::: is suspicious and should be flagged.
 
 Some prose.
 
 ::::::
+
+::: {lang=en-US}
+[contact Ms. Nebbercracker]{lang=en-US}:::
 
 End.

@@ -818,9 +818,9 @@ fn test_stray_fenced_div_markers() {
         .filter(|d| d.code == "stray-fenced-div-markers")
         .collect();
 
-    assert_eq!(issues.len(), 2, "expected 2 diagnostics, got {:#?}", issues);
+    assert_eq!(issues.len(), 4, "expected 4 diagnostics, got {:#?}", issues);
     let lines: Vec<usize> = issues.iter().map(|d| d.location.line).collect();
-    assert_eq!(lines, vec![9, 23]);
+    assert_eq!(lines, vec![9, 19, 23, 26]);
     assert!(issues.iter().all(|d| d.fix.is_none()));
     assert!(
         issues[0].message.contains(":::"),

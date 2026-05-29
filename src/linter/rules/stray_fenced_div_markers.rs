@@ -25,36 +25,34 @@ impl Rule for StrayFencedDivMarkersRule {
             if node.kind() != SyntaxKind::PARAGRAPH {
                 continue;
             }
-            let para_range = node.text_range();
-            let para_start: u32 = para_range.start().into();
-            let Some(slice) =
-                input.get(usize::from(para_range.start())..usize::from(para_range.end()))
-            else {
-                continue;
-            };
-
-            let mut line_offset = 0usize;
-            for line in slice.split_inclusive('\n') {
-                let raw_line = line.trim_end_matches('\n').trim_end_matches('\r');
-                if let Some(hit) = match_stray_fence(raw_line) {
-                    let abs_start = para_start + (line_offset + hit.start) as u32;
-                    let abs_end = para_start + (line_offset + hit.end) as u32;
+            for elem in node.descendants_with_tokens() {
+                let Some(token) = elem.into_token() else {
+                    continue;
+                };
+                if token.kind() != SyntaxKind::TEXT {
+                    continue;
+                }
+                let text = token.text();
+                let token_start: u32 = token.text_range().start().into();
+                for (run_start, run_end) in find_colon_runs(text) {
+                    let abs_start = token_start + run_start as u32;
+                    let abs_end = token_start + run_end as u32;
                     let range = TextRange::new(abs_start.into(), abs_end.into());
                     let location = Location::from_range(range, input);
-                    let marker = &raw_line[hit.start..hit.end];
+                    let marker = &text[run_start..run_end];
                     let diag = Diagnostic::warning(
                         location,
                         "stray-fenced-div-markers",
-                        format!("Stray fenced div marker '{marker}' has no matching opener"),
+                        format!("'{marker}' appears as text, not as a fenced div marker"),
                     )
                     .with_note(
                         DiagnosticNoteKind::Help,
-                        "if this is meant to close a div, check the opener's class/attributes; \
-                         otherwise escape the colons or rewrite the line",
+                        "Pandoc only treats ':::' as a fenced div marker when it starts a line \
+                         on its own (optionally followed by a class or attributes). Add a \
+                         newline before it, or wrap it in backticks if it's intentional text",
                     );
                     diagnostics.push(diag);
                 }
-                line_offset += line.len();
             }
         }
 
@@ -62,34 +60,26 @@ impl Rule for StrayFencedDivMarkersRule {
     }
 }
 
-struct FenceHit {
-    start: usize,
-    end: usize,
-}
-
-/// A line is a stray fence if, after up to 3 leading spaces, it consists of
-/// only `:` characters (length >= 3) followed by optional trailing whitespace.
-///
-/// Pandoc treats `:::` (or longer) with no attributes as a closing fence; if
-/// it lands inside a paragraph as text, the parser found no matching opener
-/// and almost always this indicates a typo (e.g. `:::` instead of `::::`).
-fn match_stray_fence(line: &str) -> Option<FenceHit> {
-    let bytes = line.as_bytes();
-    let leading_spaces = bytes.iter().take(3).take_while(|&&b| b == b' ').count();
-    let after_spaces = &bytes[leading_spaces..];
-    let colon_count = after_spaces.iter().take_while(|&&b| b == b':').count();
-    if colon_count < 3 {
-        return None;
+/// Non-overlapping byte offsets of every run of three or more `:` characters
+/// in `text`.
+fn find_colon_runs(text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut runs = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b':' {
+                i += 1;
+            }
+            if i - start >= 3 {
+                runs.push((start, i));
+            }
+        } else {
+            i += 1;
+        }
     }
-    // Everything after the colon run must be trailing whitespace only.
-    let tail = &after_spaces[colon_count..];
-    if !tail.iter().all(|&b| b == b' ' || b == b'\t') {
-        return None;
-    }
-    Some(FenceHit {
-        start: leading_spaces,
-        end: leading_spaces + colon_count,
-    })
+    runs
 }
 
 #[cfg(test)]
@@ -135,9 +125,11 @@ mod tests {
     }
 
     #[test]
-    fn ignores_mid_line_triple_colon() {
+    fn flags_mid_line_triple_colon() {
         let input = "Use ::: to start a div.\n";
-        assert!(parse_and_lint(input).is_empty());
+        let diagnostics = parse_and_lint(input);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].location.line, 1);
     }
 
     #[test]
@@ -154,16 +146,28 @@ mod tests {
     }
 
     #[test]
-    fn ignores_text_after_colons() {
-        // `::: foo` parses as an opener; `::: foo bar` is rejected as opener
-        // and falls through, but it's not a closing-fence shape so we don't
-        // flag it (avoid false positives for arbitrary `:::`-prefixed text).
-        let input = "para\n\n::: not a fence shape with words\n\nmore\n";
-        assert!(parse_and_lint(input).is_empty());
+    fn flags_colons_glued_to_inline_span() {
+        // Issue #333: ':::' glued to the end of a span on the same line — the
+        // user almost certainly meant a closing fence on its own line.
+        let input = "::: {lang=en-US}\n[contact Ms. N]{lang=en-US}:::\n";
+        let diagnostics = parse_and_lint(input);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].location.line, 2);
+        assert!(diagnostics[0].message.contains(":::"));
     }
 
     #[test]
-    fn allows_up_to_three_leading_spaces() {
+    fn flags_text_after_colons() {
+        // `::: foo bar` is rejected as an opener and falls through to text;
+        // it's still a strong "did the user mean a fence?" signal.
+        let input = "para\n\n::: not a fence shape with words\n\nmore\n";
+        let diagnostics = parse_and_lint(input);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].location.line, 3);
+    }
+
+    #[test]
+    fn flags_up_to_three_leading_spaces() {
         let input = "para\n\n   :::\n\nmore\n";
         let diagnostics = parse_and_lint(input);
         assert_eq!(diagnostics.len(), 1);
@@ -176,6 +180,15 @@ mod tests {
         assert_eq!(diagnostics.len(), 2);
         assert_eq!(diagnostics[0].location.line, 3);
         assert_eq!(diagnostics[1].location.line, 7);
+    }
+
+    #[test]
+    fn flags_multiple_runs_on_one_line() {
+        let input = "start ::: middle ::::: end\n";
+        let diagnostics = parse_and_lint(input);
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics[0].message.contains(":::"));
+        assert!(diagnostics[1].message.contains(":::::"));
     }
 
     #[test]
