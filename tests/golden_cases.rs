@@ -330,6 +330,7 @@ golden_test_cases!(
     pipe_table_unicode,
     plain_continuation_edge_cases,
     quarto_code_blocks,
+    quarto_executable_class_attrs,
     quarto_hashpipe,
     quarto_shortcodes,
     raw_blocks,

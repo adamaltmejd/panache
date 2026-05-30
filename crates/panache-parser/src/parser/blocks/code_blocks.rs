@@ -158,11 +158,13 @@ impl InfoString {
             let lang_index = attrs.iter().position(|(k, _)| k == first_token).unwrap();
 
             // Check if there's a second bareword (implicit label in R/Quarto chunks)
-            // Pattern: {r mylabel} is equivalent to {r, label=mylabel}
+            // Pattern: {r mylabel} is equivalent to {r, label=mylabel}.
+            // Skip tokens that are actually class (`.foo`) or id (`#foo`)
+            // attributes — those are not labels.
             let mut has_implicit_label = false;
             let implicit_label_value = if lang_index + 1 < attrs.len() {
-                if let (label_key, None) = &attrs[lang_index + 1] {
-                    // Second bareword after language
+                let (label_key, val) = &attrs[lang_index + 1];
+                if val.is_none() && !label_key.starts_with('.') && !label_key.starts_with('#') {
                     has_implicit_label = true;
                     Some(label_key.clone())
                 } else {
@@ -1041,17 +1043,18 @@ fn emit_chunk_options(builder: &mut GreenNodeBuilder<'static>, content: &str) {
 
             builder.finish_node(); // CHUNK_OPTION
         } else {
-            // No '=' - this is a label or bareword option
-            // Emit any whitespace we skipped as TEXT
+            // No '=' - classify by prefix: '.foo' is a class, '#foo' is an id,
+            // anything else is a chunk label (e.g. `{r mylabel}`).
+            let kind = match key.as_bytes().first() {
+                Some(b'.') => SyntaxKind::ATTR_CLASS,
+                Some(b'#') => SyntaxKind::ATTR_ID,
+                _ => SyntaxKind::CHUNK_LABEL,
+            };
+            builder.start_node(kind.into());
+            builder.token(SyntaxKind::TEXT.into(), key);
+            builder.finish_node();
             if pos > ws_before_eq_start {
-                builder.start_node(SyntaxKind::CHUNK_LABEL.into());
-                builder.token(SyntaxKind::TEXT.into(), key);
-                builder.finish_node(); // CHUNK_LABEL
                 builder.token(SyntaxKind::TEXT.into(), &content[ws_before_eq_start..pos]);
-            } else {
-                builder.start_node(SyntaxKind::CHUNK_LABEL.into());
-                builder.token(SyntaxKind::TEXT.into(), key);
-                builder.finish_node(); // CHUNK_LABEL
             }
         }
     }

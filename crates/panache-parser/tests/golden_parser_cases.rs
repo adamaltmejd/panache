@@ -177,6 +177,7 @@ golden_test_cases!(
     bookdown,
     chunk_options_complex,
     code_blocks_executable,
+    code_blocks_executable_with_classes,
     code_blocks_raw,
     code_spans,
     code_spans_unmatched_backtick_run_commonmark,

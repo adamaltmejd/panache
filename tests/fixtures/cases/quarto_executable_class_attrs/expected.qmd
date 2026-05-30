@@ -1,0 +1,23 @@
+```{python .marimo}
+import marimo as mo
+```
+
+```{python .marimo .cell-code}
+import pandas as pd
+```
+
+```{r #setup}
+options(stringsAsFactors = FALSE)
+```
+
+```{python .marimo}
+#| echo: false
+
+mo.md("hello")
+```
+
+```{python .marimo}
+#| label: "cell-one"
+
+print("hi")
+```

@@ -129,6 +129,68 @@ impl ChunkLabel {
     }
 }
 
+/// A class attribute in an executable code block (e.g., `.marimo` in
+/// `{python .marimo}`). The text accessor includes the leading `.`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChunkClass(SyntaxNode);
+
+impl AstNode for ChunkClass {
+    type Language = PanacheLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool {
+        kind == SyntaxKind::ATTR_CLASS
+    }
+
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        Self::can_cast(node.kind()).then(|| ChunkClass(node))
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.0
+    }
+}
+
+impl ChunkClass {
+    pub fn text(&self) -> String {
+        self.0.text().to_string()
+    }
+
+    pub fn range(&self) -> rowan::TextRange {
+        self.0.text_range()
+    }
+}
+
+/// An id attribute in an executable code block (e.g., `#setup` in
+/// `{r #setup}`). The text accessor includes the leading `#`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChunkId(SyntaxNode);
+
+impl AstNode for ChunkId {
+    type Language = PanacheLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool {
+        kind == SyntaxKind::ATTR_ID
+    }
+
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        Self::can_cast(node.kind()).then(|| ChunkId(node))
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.0
+    }
+}
+
+impl ChunkId {
+    pub fn text(&self) -> String {
+        self.0.text().to_string()
+    }
+
+    pub fn range(&self) -> rowan::TextRange {
+        self.0.text_range()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChunkOptionSource {
     InlineInfo,
@@ -228,6 +290,8 @@ impl ChunkLabelEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ChunkInfoItem {
     Label(ChunkLabel),
+    Class(ChunkClass),
+    Id(ChunkId),
     Option(ChunkOption),
 }
 
@@ -266,6 +330,12 @@ impl ChunkOptions {
         self.0.children().filter_map(|child| {
             if let Some(label) = ChunkLabel::cast(child.clone()) {
                 return Some(ChunkInfoItem::Label(label));
+            }
+            if let Some(class) = ChunkClass::cast(child.clone()) {
+                return Some(ChunkInfoItem::Class(class));
+            }
+            if let Some(id) = ChunkId::cast(child.clone()) {
+                return Some(ChunkInfoItem::Id(id));
             }
             ChunkOption::cast(child).map(ChunkInfoItem::Option)
         })

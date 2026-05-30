@@ -342,11 +342,27 @@ fn determine_fence_length(content: &str, fence_char: char) -> usize {
     (max_sequence + 1).max(3)
 }
 
-/// Extract chunk options from CST CHUNK_OPTIONS node.
-/// Returns (label, options) where label is the first unlabeled option if any.
-fn extract_chunk_options_from_cst(
-    info_node: &SyntaxNode,
-) -> Vec<(Option<String>, Option<String>, bool)> {
+/// One entry in an executable fence's `{language ...}` info string, in the
+/// order it appears. Class/Id sit on the fence as bare `.foo`/`#foo`
+/// attributes; Label and KeyValue are the comma-list members.
+#[derive(Debug, Clone)]
+pub(super) enum ChunkOptionRepr {
+    /// `.foo` attribute (text includes the leading `.`).
+    Class(String),
+    /// `#foo` attribute (text includes the leading `#`).
+    Id(String),
+    /// Bareword label, e.g. `mylabel` in `{r mylabel}`.
+    Label(String),
+    /// `key=value` (with or without quotes).
+    KeyValue {
+        key: String,
+        value: String,
+        is_quoted: bool,
+    },
+}
+
+/// Extract chunk options from CST CHUNK_OPTIONS node, preserving order.
+fn extract_chunk_options_from_cst(info_node: &SyntaxNode) -> Vec<ChunkOptionRepr> {
     use crate::syntax::{ChunkInfoItem, CodeInfo};
 
     let Some(info) = CodeInfo::cast(info_node.clone()) else {
@@ -363,56 +379,90 @@ fn extract_chunk_options_from_cst(
                     pending_label_parts.push(value);
                 }
             }
+            ChunkInfoItem::Class(class) => {
+                let value = class.text();
+                if !value.is_empty() {
+                    options.push(ChunkOptionRepr::Class(value));
+                }
+            }
+            ChunkInfoItem::Id(id) => {
+                let value = id.text();
+                if !value.is_empty() {
+                    options.push(ChunkOptionRepr::Id(value));
+                }
+            }
             ChunkInfoItem::Option(option) => {
                 if !pending_label_parts.is_empty() {
-                    options.push((None, Some(pending_label_parts.join(" ")), false));
+                    options.push(ChunkOptionRepr::Label(pending_label_parts.join(" ")));
                     pending_label_parts.clear();
                 }
                 if let (Some(key), Some(value)) = (option.key(), option.value()) {
-                    options.push((Some(key), Some(value), option.is_quoted()));
+                    options.push(ChunkOptionRepr::KeyValue {
+                        key,
+                        value,
+                        is_quoted: option.is_quoted(),
+                    });
                 }
             }
         }
     }
 
     if !pending_label_parts.is_empty() {
-        options.push((None, Some(pending_label_parts.join(" ")), false));
+        options.push(ChunkOptionRepr::Label(pending_label_parts.join(" ")));
     }
 
     options
 }
 
-/// Format chunk options for inline display: label, key=value, key="quoted value"
-fn format_chunk_options_inline(options: &[(Option<String>, Option<String>, bool)]) -> String {
-    let mut parts = Vec::new();
-
-    for (key, value, is_quoted) in options {
-        match (key, value) {
-            (None, Some(val)) => {
-                // Label
-                parts.push(val.clone());
+/// Render the contents of an executable fence's `{...}` info string for the
+/// given language and (possibly empty) option list. Class/id attributes are
+/// emitted space-separated immediately after the language (pandoc canonical
+/// shape — `{python .marimo .cell-code}`). Labels and `key=value` pairs are
+/// emitted comma-separated after a `, ` separator (Quarto chunk-option
+/// style — `{r, label="x", echo=false}`).
+pub(super) fn render_executable_info(language: &str, options: &[ChunkOptionRepr]) -> String {
+    let mut attr_parts = Vec::new();
+    let mut option_parts = Vec::new();
+    for option in options {
+        match option {
+            ChunkOptionRepr::Class(text) | ChunkOptionRepr::Id(text) => {
+                attr_parts.push(text.clone());
             }
-            (Some(k), Some(v)) => {
-                // Key=value
+            ChunkOptionRepr::Label(text) => option_parts.push(text.clone()),
+            ChunkOptionRepr::KeyValue {
+                key,
+                value,
+                is_quoted,
+            } => {
                 if *is_quoted {
                     // Re-add quotes. Pick a quote char that won't collide with
                     // the value contents so we don't produce broken syntax like
                     // `key="class="cover""` for an original `key='class="cover"'`.
-                    let quote = if v.contains('"') && !v.contains('\'') {
+                    let quote = if value.contains('"') && !value.contains('\'') {
                         '\''
                     } else {
                         '"'
                     };
-                    parts.push(format!("{}={}{}{}", k, quote, v, quote));
+                    option_parts.push(format!("{}={}{}{}", key, quote, value, quote));
                 } else {
-                    parts.push(format!("{}={}", k, v));
+                    option_parts.push(format!("{}={}", key, value));
                 }
             }
-            _ => {}
         }
     }
 
-    parts.join(", ")
+    let mut out = String::from("{");
+    out.push_str(language);
+    if !attr_parts.is_empty() {
+        out.push(' ');
+        out.push_str(&attr_parts.join(" "));
+    }
+    if !option_parts.is_empty() {
+        out.push_str(", ");
+        out.push_str(&option_parts.join(", "));
+    }
+    out.push('}');
+    out
 }
 
 /// Format the info string based on block type and config preferences
@@ -479,15 +529,7 @@ fn format_info_string(info_node: &SyntaxNode, info: &InfoString) -> String {
             // Executable chunk: extract options from CST nodes
             // Always keep as {language} with attributes
             let options = extract_chunk_options_from_cst(info_node);
-            if options.is_empty() {
-                format!("{{{}}}", language)
-            } else {
-                format!(
-                    "{{{}, {}}}",
-                    language,
-                    format_chunk_options_inline(&options)
-                )
-            }
+            render_executable_info(language, &options)
         }
         CodeBlockType::Raw { format } => {
             // Raw block: always preserve exactly as {=format}
@@ -536,17 +578,13 @@ fn format_code_block_hashpipe(
         None => return false, // Unknown language - fall back to inline format
     };
 
-    // Open fence with language and any complex options
+    // Open fence with language and any complex options (classes/ids stay on
+    // the fence verbatim; un-hashpipeable key=value pairs ride along as the
+    // comma group).
     for _ in 0..fence_length {
         output.push(fence_char);
     }
-    output.push('{');
-    output.push_str(language);
-    if !complex.is_empty() {
-        output.push_str(", ");
-        output.push_str(&format_chunk_options_inline(&complex));
-    }
-    output.push('}');
+    output.push_str(&render_executable_info(language, &complex));
     output.push('\n');
 
     // Add hashpipe options

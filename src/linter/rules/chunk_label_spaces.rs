@@ -63,7 +63,10 @@ fn check_implicit_label_spaces(block: &CodeBlock, input: &str) -> Vec<Diagnostic
     for item in info.chunk_items() {
         match item {
             ChunkInfoItem::Label(label) => leading_labels.push(label),
-            ChunkInfoItem::Option(_) => break,
+            // `.class` / `#id` aren't labels and can't contain whitespace —
+            // they also terminate the "implicit-label run" the same way an
+            // explicit option does, so we stop scanning when we hit one.
+            ChunkInfoItem::Class(_) | ChunkInfoItem::Id(_) | ChunkInfoItem::Option(_) => break,
         }
     }
 

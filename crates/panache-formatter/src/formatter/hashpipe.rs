@@ -10,12 +10,10 @@ use panache_parser::parser::utils::chunk_options::ChunkOptionValue;
 use panache_parser::parser::utils::chunk_options::hashpipe_comment_prefix;
 use panache_parser::parser::utils::hashpipe_normalizer::normalize_hashpipe_header;
 
+use super::code_blocks::ChunkOptionRepr;
+
 /// A chunk option with a classified value (simple or expression).
 type ClassifiedOption = (String, ChunkOptionValue);
-
-/// An option extracted from CST: (key, value, is_quoted).
-/// For labels, key is None.
-type CstOption = (Option<String>, Option<String>, bool);
 
 /// Value types that can appear in chunk options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,11 +163,11 @@ pub fn split_options_from_cst_with_content(
     info_node: &SyntaxNode,
     content: &str,
     prefix: &str,
-) -> ((Vec<ClassifiedOption>, Vec<CstOption>), bool) {
+) -> ((Vec<ClassifiedOption>, Vec<ChunkOptionRepr>), bool) {
     #[derive(Clone)]
     enum Entry {
         Simple(ClassifiedOption),
-        Complex(CstOption),
+        Complex(ChunkOptionRepr),
     }
 
     fn upsert(entries: &mut Vec<(String, Entry)>, normalized_key: String, entry: Entry) {
@@ -206,7 +204,11 @@ pub fn split_options_from_cst_with_content(
             upsert(
                 entries,
                 normalized_key,
-                Entry::Complex((Some(key), Some(value), is_quoted)),
+                Entry::Complex(ChunkOptionRepr::KeyValue {
+                    key,
+                    value,
+                    is_quoted,
+                }),
             );
         }
     }
@@ -234,6 +236,7 @@ pub fn split_options_from_cst_with_content(
     }
 
     let mut entries: Vec<(String, Entry)> = Vec::new();
+    let mut fence_attrs: Vec<ChunkOptionRepr> = Vec::new();
     let mut had_content_hashpipe = false;
     let mut pending_label_parts: Vec<String> = Vec::new();
 
@@ -248,6 +251,21 @@ pub fn split_options_from_cst_with_content(
                 let label_value = label.text();
                 if !label_value.is_empty() {
                     pending_label_parts.push(label_value);
+                }
+            }
+            ChunkInfoItem::Class(class) => {
+                // Classes stay on the fence line — hashpipe YAML has no class
+                // syntax, so they belong with `complex` (which the caller
+                // re-emits between the language and the comma options).
+                let text = class.text();
+                if !text.is_empty() {
+                    fence_attrs.push(ChunkOptionRepr::Class(text));
+                }
+            }
+            ChunkInfoItem::Id(id) => {
+                let text = id.text();
+                if !text.is_empty() {
+                    fence_attrs.push(ChunkOptionRepr::Id(text));
                 }
             }
             ChunkInfoItem::Option(opt) => {
@@ -292,7 +310,9 @@ pub fn split_options_from_cst_with_content(
     }
 
     let mut simple = Vec::new();
-    let mut complex = Vec::new();
+    // Classes/ids lead the fence-side group so the renderer can emit them
+    // directly after the language token (pandoc-canonical shape).
+    let mut complex: Vec<ChunkOptionRepr> = fence_attrs;
     for (_, entry) in entries {
         match entry {
             Entry::Simple(s) => simple.push(s),

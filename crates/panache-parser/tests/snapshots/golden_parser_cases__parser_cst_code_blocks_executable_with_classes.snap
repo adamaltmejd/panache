@@ -1,0 +1,98 @@
+---
+source: crates/panache-parser/tests/golden_parser_cases.rs
+expression: cst_output
+---
+DOCUMENT@0..220
+  CODE_BLOCK@0..44
+    CODE_FENCE_OPEN@0..20
+      CODE_FENCE_MARKER@0..3 "```"
+      CODE_INFO@3..19
+        TEXT@3..4 "{"
+        CODE_LANGUAGE@4..10 "python"
+        CHUNK_OPTIONS@10..19
+          TEXT@10..11 " "
+          ATTR_CLASS@11..18
+            TEXT@11..18 ".marimo"
+          TEXT@18..19 "}"
+      NEWLINE@19..20 "\n"
+    CODE_CONTENT@20..40
+      TEXT@20..39 "import marimo as mo"
+      NEWLINE@39..40 "\n"
+    CODE_FENCE_CLOSE@40..44
+      CODE_FENCE_MARKER@40..43 "```"
+      NEWLINE@43..44 "\n"
+  BLANK_LINE@44..45
+    BLANK_LINE@44..45 "\n"
+  CODE_BLOCK@45..100
+    CODE_FENCE_OPEN@45..76
+      CODE_FENCE_MARKER@45..48 "```"
+      CODE_INFO@48..75
+        TEXT@48..49 "{"
+        CODE_LANGUAGE@49..55 "python"
+        CHUNK_OPTIONS@55..75
+          TEXT@55..56 " "
+          ATTR_CLASS@56..63
+            TEXT@56..63 ".marimo"
+          TEXT@63..64 " "
+          ATTR_CLASS@64..74
+            TEXT@64..74 ".cell-code"
+          TEXT@74..75 "}"
+      NEWLINE@75..76 "\n"
+    CODE_CONTENT@76..96
+      TEXT@76..95 "import pandas as pd"
+      NEWLINE@95..96 "\n"
+    CODE_FENCE_CLOSE@96..100
+      CODE_FENCE_MARKER@96..99 "```"
+      NEWLINE@99..100 "\n"
+  BLANK_LINE@100..101
+    BLANK_LINE@100..101 "\n"
+  CODE_BLOCK@101..153
+    CODE_FENCE_OPEN@101..115
+      CODE_FENCE_MARKER@101..104 "```"
+      CODE_INFO@104..114
+        TEXT@104..105 "{"
+        CODE_LANGUAGE@105..106 "r"
+        CHUNK_OPTIONS@106..114
+          TEXT@106..107 " "
+          ATTR_ID@107..113
+            TEXT@107..113 "#setup"
+          TEXT@113..114 "}"
+      NEWLINE@114..115 "\n"
+    CODE_CONTENT@115..149
+      TEXT@115..148 "options(stringsAsFact ..."
+      NEWLINE@148..149 "\n"
+    CODE_FENCE_CLOSE@149..153
+      CODE_FENCE_MARKER@149..152 "```"
+      NEWLINE@152..153 "\n"
+  BLANK_LINE@153..154
+    BLANK_LINE@153..154 "\n"
+  CODE_BLOCK@154..220
+    CODE_FENCE_OPEN@154..204
+      CODE_FENCE_MARKER@154..157 "```"
+      CODE_INFO@157..203
+        TEXT@157..158 "{"
+        CODE_LANGUAGE@158..164 "python"
+        CHUNK_OPTIONS@164..203
+          TEXT@164..165 " "
+          ATTR_CLASS@165..172
+            TEXT@165..172 ".marimo"
+          TEXT@172..174 ", "
+          CHUNK_OPTION@174..184
+            CHUNK_OPTION_KEY@174..178 "echo"
+            TEXT@178..179 "="
+            CHUNK_OPTION_VALUE@179..184 "false"
+          TEXT@184..186 ", "
+          CHUNK_OPTION@186..202
+            CHUNK_OPTION_KEY@186..191 "label"
+            TEXT@191..192 "="
+            CHUNK_OPTION_QUOTE@192..193 "\""
+            CHUNK_OPTION_VALUE@193..201 "cell-one"
+            CHUNK_OPTION_QUOTE@201..202 "\""
+          TEXT@202..203 "}"
+      NEWLINE@203..204 "\n"
+    CODE_CONTENT@204..216
+      TEXT@204..215 "print(\"hi\")"
+      NEWLINE@215..216 "\n"
+    CODE_FENCE_CLOSE@216..220
+      CODE_FENCE_MARKER@216..219 "```"
+      NEWLINE@219..220 "\n"
