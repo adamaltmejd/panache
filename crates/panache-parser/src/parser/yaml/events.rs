@@ -396,7 +396,7 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
         .filter_map(|el| el.into_token())
         .find(|tok| tok.kind() == SyntaxKind::YAML_TAG)
         .map(|tok| tok.text().to_string());
-    let multi_line_text = collect_doc_scalar_source(doc);
+    let multi_line_text = collect_scalar_source(doc);
     let is_multi_line_quoted = multi_line_text.contains('\n')
         && (trimmed_text.starts_with('"') || trimmed_text.starts_with('\''));
     let event = if let Some(tag) = tag_text
@@ -441,13 +441,15 @@ fn scalar_document_value(doc: &SyntaxNode, handles: &TagHandles) -> Option<Strin
     Some(event)
 }
 
-/// Collect the document's scalar source bytes — concatenate every
-/// `YAML_SCALAR` / `YAML_ANCHOR` / `YAML_ALIAS` / `NEWLINE` token in
-/// order, skipping directive lines. The result is the raw multi-line
-/// text the [`super::cooking`] helpers expect when folding a
-/// top-level multi-line quoted document.
-fn collect_doc_scalar_source(doc: &SyntaxNode) -> String {
-    doc.descendants_with_tokens()
+/// Collect a node's scalar source bytes — concatenate every
+/// `YAML_SCALAR` / `YAML_ANCHOR` / `YAML_ALIAS` / `NEWLINE` descendant
+/// token in order, skipping any line whose first non-whitespace byte is
+/// `%` (a directive token left over from the document prologue). The
+/// result is the raw multi-line text the [`super::cooking`] helpers
+/// expect when folding a multi-line quoted scalar — usable at the
+/// document level or scoped to a single `YAML_BLOCK_MAP_VALUE`.
+fn collect_scalar_source(node: &SyntaxNode) -> String {
+    node.descendants_with_tokens()
         .filter_map(|el| el.into_token())
         .filter(|tok| {
             matches!(
@@ -2579,7 +2581,7 @@ fn project_block_map_entry_value(
             // rules so blank lines fold to `\n` and single breaks fold to
             // space. Without this, joining YAML_SCALAR tokens directly drops
             // line structure (yaml-test-suite case XV9V).
-            let multi_line_text = collect_value_scalar_source(value_node);
+            let multi_line_text = collect_scalar_source(value_node);
             // Strip trailing whitespace/newlines that come AFTER the
             // closing quote. v2 keeps a single quoted-scalar token so
             // those bytes are post-value trivia (NEWLINE) — they don't
@@ -2619,25 +2621,4 @@ fn project_block_map_entry_value(
             out.push(scalar_event(anchor, long_tag.as_deref(), body_for_event));
         }
     }
-}
-
-/// Collect a block-map value's scalar source bytes — same shape as
-/// [`collect_doc_scalar_source`] but bounded to a single
-/// `YAML_BLOCK_MAP_VALUE` so it doesn't pull in scalars from nested
-/// blocks.
-fn collect_value_scalar_source(value_node: &SyntaxNode) -> String {
-    value_node
-        .descendants_with_tokens()
-        .filter_map(|el| el.into_token())
-        .filter(|tok| {
-            matches!(
-                tok.kind(),
-                SyntaxKind::YAML_SCALAR
-                    | SyntaxKind::YAML_ANCHOR
-                    | SyntaxKind::YAML_ALIAS
-                    | SyntaxKind::NEWLINE
-            )
-        })
-        .map(|tok| tok.text().to_string())
-        .collect()
 }
