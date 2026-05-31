@@ -1,0 +1,35 @@
+//! Options surface for the in-tree YAML formatter.
+//!
+//! Kept dependency-lean and free of host config concerns. The bridge
+//! that maps from the host `Config` (line-width, wrap mode) into
+//! `YamlFormatOptions` lives at the call site, currently
+//! `yaml_engine.rs`. Cutover (Phase 2) re-points that bridge from
+//! `pretty_yaml::config::FormatOptions` to this struct.
+
+/// Wrapping policy for plain scalars. Quoted (`"…"` / `'…'`) and
+/// block (`>` / `|`) styles are never wrapped — see STYLE.md once it
+/// lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WrapMode {
+    /// Wrap plain scalars to fit `line_width` with +2 indent on
+    /// continuation lines.
+    #[default]
+    Always,
+    /// Leave plain scalars unwrapped regardless of width.
+    Preserve,
+}
+
+#[derive(Debug, Clone)]
+pub struct YamlFormatOptions {
+    pub line_width: usize,
+    pub wrap: WrapMode,
+}
+
+impl Default for YamlFormatOptions {
+    fn default() -> Self {
+        Self {
+            line_width: 80,
+            wrap: WrapMode::Always,
+        }
+    }
+}

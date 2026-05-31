@@ -7,7 +7,9 @@ matching the `scanner-rewrite.md` precedent in `yaml-shadow-expand/`.
 
 ## Status
 
-- **Phase 1 (shadow formatter):** not started.
+- **Phase 1 (shadow formatter):** in progress. 1.1 module skeleton
+  landed (byte-passthrough stub); 1.2 (move STYLE spec) and 1.3
+  (cross-validation harness) outstanding.
 - **Phase 2 (joint cutover):** not started, blocked on Phase 1.
 - **Phase 3 (hashpipe extension):** not started, blocked on Phase 2.
 
@@ -15,7 +17,19 @@ matching the `scanner-rewrite.md` precedent in `yaml-shadow-expand/`.
 
 _(Update as phases complete. Earliest entries on top.)_
 
-- _Nothing yet._
+- **Phase 1.1 — module skeleton.** Added
+  `crates/panache-formatter/src/formatter/yaml.rs` (parent) and the
+  six submodule files (`options.rs`, `document.rs`, `block_map.rs`,
+  `block_sequence.rs`, `flow.rs`, `scalar.rs`) under
+  `crates/panache-formatter/src/formatter/yaml/`. Public entry
+  `format_yaml(text, &YamlFormatOptions) -> String` calls
+  `panache_parser::parser::yaml::parse_yaml_tree`, walks the CST, and
+  emits tokens verbatim (byte-lossless stub — applies no style rules
+  yet). Module wired into `formatter.rs` as `pub mod yaml;` behind an
+  `#[allow(dead_code)]` shadow marker; not reachable from the live
+  pipeline. Compiles clean; clippy clean; two unit-test smokes pass.
+  Plan amended to spell out the no-`mod.rs` layout rule, matching the
+  project convention from AGENTS.md.
 
 ## Context
 
@@ -146,13 +160,21 @@ in-tree parser CST. Not wired to the live pipeline.
 
 ### 1.1 — Module skeleton
 
-- New module `crates/panache-formatter/src/formatter/yaml/`:
-  - `mod.rs` — public entry: `format_yaml(text: &str, opts: &YamlFormatOptions) -> String`.
+Follow the project's modern-Rust layout convention: a parent `yaml.rs`
+file declares the submodules; per-feature code sits in sibling files
+under `yaml/`. **No `mod.rs`** anywhere in the tree (see AGENTS.md).
+
+- `crates/panache-formatter/src/formatter/yaml.rs` — parent module.
+  Public entry: `format_yaml(text: &str, opts: &YamlFormatOptions) -> String`.
+  Declares the submodules below.
+- `crates/panache-formatter/src/formatter/yaml/` — submodule files:
   - `document.rs` — top-level document orchestration.
   - `block_map.rs`, `block_sequence.rs`, `flow.rs`, `scalar.rs` —
     per-CST-node rendering.
   - `options.rs` — `YamlFormatOptions` (line-width, wrap mode, quote
     style preference, …).
+- Wire into the formatter crate by adding `pub mod yaml;` to
+  `crates/panache-formatter/src/formatter.rs`.
 - Initial entry calls into in-tree parser via
   `panache_parser::parser::yaml::parse_yaml_tree(text)`, walks the
   returned CST, emits text.
@@ -160,10 +182,11 @@ in-tree parser CST. Not wired to the live pipeline.
 ### 1.2 — Move style spec into the module
 
 When `crates/panache-formatter/src/formatter/yaml/` exists, move the
-style-spec table from this plan into `STYLE.md` in that directory and
-link to it from the user-facing formatter docs (`docs/guide/`). The
-spec then has one canonical home; this plan tracks rollout, not the
-spec itself.
+style-spec table from this plan into
+`crates/panache-formatter/src/formatter/yaml/STYLE.md` and link to it
+from the user-facing formatter docs (`docs/guide/`). The spec then
+has one canonical home; this plan tracks rollout, not the spec
+itself.
 
 If Phase 1 development discovers a 13th rule (an edge case neither
 the spec nor pretty_yaml currently covers), add it to STYLE.md with
