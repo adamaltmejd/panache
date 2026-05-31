@@ -34,8 +34,15 @@ the load-bearing invariants.
    double-quoted form (e.g. `'C:\Users\test'`).
 4. **Block scalar style** (literal `|` vs folded `>`): preserved from input.
    They carry different YAML semantics and are not interchangeable.
-5. **Flow spacing:** `{ key: value }` with spaces inside braces; `[a, b, c]`
-   with a space after each comma.
+5. **Flow spacing:** `{ key: value }` with one space inside braces; `[a, b, c]`
+   with no space inside brackets, one space after each comma, one space after
+   each `:`. Multi-line flow containers and flow containers with embedded
+   `YAML_COMMENT` tokens are preserved verbatim (rule 6 owns multi-line wrap;
+   in-flow comments are too rare to warrant their own canonicalization path). If
+   the parser couldn't structure a flow map's contents into entries (e.g.
+   `{key:value}`, no space to disambiguate `:`), the inner bytes are emitted
+   verbatim between `{` and `}` --- matches pretty_yaml's "normalize spacing
+   around structure, don't re-parse content" behavior.
 6. **Flow wrap on line-width overflow:** each item on its own line, trailing
    comma, **opening bracket stays on the key line**
    (`keywords: [\n  first,\n  ...\n]`). This is the one point of disagreement

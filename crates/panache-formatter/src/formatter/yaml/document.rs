@@ -6,92 +6,224 @@
 //! [`block_sequence`](super::block_sequence),
 //! [`flow`](super::flow), [`scalar`](super::scalar)).
 //!
-//! Phase 1.8 status: five rules are applied across the render pipeline.
-//! The token walk that builds `raw` already applies rule 8 (collapse
-//! whitespace before an inline `YAML_COMMENT` to exactly one space) so
-//! that the only CST-offset-dependent pass — rule 1's depth lookup —
-//! runs against precomputed per-CST-line depths (decoupled from the
-//! mutable buffer). After that, rule 1 (canonical 2-space indent per
-//! `YAML_BLOCK_MAP_ENTRY`/`YAML_BLOCK_SEQUENCE_ITEM` nesting depth),
-//! rule 10 (strip trailing whitespace per line), rule 7 (collapse runs
-//! of multiple blank lines to one), and rule 13 (exactly one `\n` at
-//! EOF) run as line-level post-passes in that order. Block scalar
-//! (`|`/`>`) interior lines are skipped by rule 1 — their indent is
-//! baked into a single `YAML_SCALAR` token and full canonicalization
-//! needs a real block-scalar renderer (deferred). Token bodies inside
-//! each line are otherwise emitted verbatim — per-container restyling
-//! (quote style, flow spacing / wrap, …) has not landed yet.
+//! Phase 1.9 status: six rules across the render pipeline. The CST walk
+//! that builds `raw` is recursive (descends into nodes, emits tokens):
+//! it applies rule 8 (collapse whitespace before an inline
+//! `YAML_COMMENT` to one space — needs CST kind to distinguish `#` in
+//! quoted scalars from comment indicators) and rule 5 (canonical flow
+//! spacing — takes over emission for single-line, comment-free
+//! `YAML_FLOW_SEQUENCE` / `YAML_FLOW_MAP` subtrees, producing
+//! `[a, b, c]` and `{ k: v, ... }`). After that, rule 1 (canonical
+//! 2-space indent) runs against per-CST-line depths precomputed from
+//! `root.text()` so it stays robust to rule 8's byte shifts; then
+//! rule 10 (strip trailing whitespace per line), rule 7 (collapse
+//! blank-line runs), and rule 13 (exactly one `\n` at EOF) run as
+//! line-level post-passes. Multi-line flow containers and flow
+//! containers with embedded comments are emitted verbatim (rule 6 will
+//! own multi-line flow wrap). Block-scalar (`|`/`>`) interior lines
+//! are still preserved verbatim — rule 1 needs a real block-scalar
+//! renderer to canonicalize their indent.
 
 use panache_parser::SyntaxNode;
 use panache_parser::syntax::{SyntaxKind, SyntaxToken};
-use rowan::{TextSize, TokenAtOffset, WalkEvent};
+use rowan::{TextSize, TokenAtOffset};
 
 use super::options::YamlFormatOptions;
 
 /// Render the given CST root into a string. The root is expected to be
 /// the `DOCUMENT` node returned by
 /// [`panache_parser::parser::yaml::parse_yaml_tree`], but any CST node
-/// works for the token walk — we just iterate tokens.
+/// works for the walk — we descend into it recursively.
 pub(super) fn render(root: &SyntaxNode, _opts: &YamlFormatOptions) -> String {
     let depths = precompute_line_depths(root);
-    let raw = walk_with_inline_comment_normalization(root);
+    let raw = walk_with_normalization(root);
     let indented = apply_canonical_indents(&raw, &depths);
     let stripped = strip_trailing_whitespace_per_line(indented);
     let collapsed = collapse_blank_line_runs(stripped);
     normalize_trailing_newline(collapsed)
 }
 
-/// STYLE.md rule 8: walk tokens left-to-right and, when emitting a
-/// `WHITESPACE` token immediately preceding an inline `YAML_COMMENT`,
-/// emit exactly one space instead of the original bytes. An "inline"
-/// comment is one with non-whitespace content earlier on the same line
-/// (i.e. the previous non-WHITESPACE token is not `NEWLINE`). Comments
-/// at line start (standalone, preceded by `NEWLINE` or at file start)
-/// keep their original surrounding whitespace.
+/// Recursive CST walk producing the raw output. Rules applied during
+/// the walk:
 ///
-/// All other tokens emit verbatim. Inline-comment normalization is the
-/// only mutation here; it has to happen during the token walk because
-/// later line-level passes don't have CST kind information.
-fn walk_with_inline_comment_normalization(root: &SyntaxNode) -> String {
-    let tokens: Vec<SyntaxToken> = root
-        .preorder_with_tokens()
-        .filter_map(|ev| match ev {
-            WalkEvent::Enter(rowan::NodeOrToken::Token(t)) => Some(t),
-            _ => None,
-        })
-        .collect();
-    let mut raw = String::with_capacity(root.text_range().len().into());
-    for (i, tok) in tokens.iter().enumerate() {
-        if tok.kind() == SyntaxKind::WHITESPACE && is_ws_before_inline_comment(&tokens, i) {
-            raw.push(' ');
-        } else {
-            raw.push_str(tok.text());
-        }
-    }
-    raw
+/// - **Rule 8** (`emit_token`): a `WHITESPACE` token immediately
+///   preceding an inline `YAML_COMMENT` is emitted as a single space.
+///   Standalone comments (preceded by `NEWLINE` or at file start) keep
+///   their surrounding whitespace.
+/// - **Rule 5** (`emit_flow_sequence` / `emit_flow_map`): single-line,
+///   comment-free flow containers take over emission and produce
+///   canonical spacing — `[a, b, c]` (no space inside `[]`, one space
+///   after each `,`) and `{ k: v, ... }` (one space inside `{}`, one
+///   space after each `,`, one space after each `:`).
+///
+/// Multi-line flow containers or those with embedded comments are
+/// emitted verbatim via the generic recursive path — rule 6 will own
+/// multi-line wrap; inline comments inside flow are a rare edge case
+/// not worth handling here.
+fn walk_with_normalization(root: &SyntaxNode) -> String {
+    let mut out = String::with_capacity(root.text_range().len().into());
+    emit_node(&mut out, root);
+    out
 }
 
-/// True if `tokens[i]` is a `WHITESPACE` token whose run of contiguous
-/// whitespace ends with a `YAML_COMMENT`, AND that comment is inline
-/// (has any non-whitespace token earlier on the same line).
-fn is_ws_before_inline_comment(tokens: &[SyntaxToken], i: usize) -> bool {
-    let mut j = i + 1;
-    while j < tokens.len() && tokens[j].kind() == SyntaxKind::WHITESPACE {
-        j += 1;
+fn emit_node(out: &mut String, node: &SyntaxNode) {
+    match node.kind() {
+        SyntaxKind::YAML_FLOW_SEQUENCE if can_canonicalize_flow(node) => {
+            emit_flow_sequence(out, node);
+        }
+        SyntaxKind::YAML_FLOW_MAP if can_canonicalize_flow(node) => {
+            emit_flow_map(out, node);
+        }
+        _ => {
+            for child in node.children_with_tokens() {
+                match child {
+                    rowan::NodeOrToken::Token(t) => emit_token(out, &t),
+                    rowan::NodeOrToken::Node(n) => emit_node(out, &n),
+                }
+            }
+        }
     }
-    if j >= tokens.len() || tokens[j].kind() != SyntaxKind::YAML_COMMENT {
+}
+
+fn emit_token(out: &mut String, t: &SyntaxToken) {
+    if t.kind() == SyntaxKind::WHITESPACE && is_ws_before_inline_comment(t) {
+        out.push(' ');
+    } else {
+        out.push_str(t.text());
+    }
+}
+
+/// True if `t` is a `WHITESPACE` token whose forward run of contiguous
+/// whitespace lands on a `YAML_COMMENT`, AND that comment is inline
+/// (the previous non-whitespace token is not `NEWLINE`).
+fn is_ws_before_inline_comment(t: &SyntaxToken) -> bool {
+    let mut cursor = t.next_token();
+    while let Some(tok) = cursor.as_ref() {
+        if tok.kind() != SyntaxKind::WHITESPACE {
+            break;
+        }
+        cursor = tok.next_token();
+    }
+    let Some(next) = cursor else {
+        return false;
+    };
+    if next.kind() != SyntaxKind::YAML_COMMENT {
         return false;
     }
-    let mut k = i;
-    while k > 0 {
-        k -= 1;
-        match tokens[k].kind() {
+    let mut back = t.prev_token();
+    while let Some(tok) = back.as_ref() {
+        match tok.kind() {
             SyntaxKind::NEWLINE => return false,
-            SyntaxKind::WHITESPACE => continue,
+            SyntaxKind::WHITESPACE => back = tok.prev_token(),
             _ => return true,
         }
     }
     false
+}
+
+/// True if a flow container can be emitted in canonical single-line
+/// form. Multi-line containers stay verbatim (rule 6 will own wrap);
+/// containers with embedded comments stay verbatim (preserving
+/// `YAML_COMMENT` placement inside `{}`/`[]` is too rare to be worth
+/// the complexity here).
+fn can_canonicalize_flow(node: &SyntaxNode) -> bool {
+    if node.text().to_string().contains('\n') {
+        return false;
+    }
+    !node
+        .descendants_with_tokens()
+        .any(|c| matches!(c, rowan::NodeOrToken::Token(t) if t.kind() == SyntaxKind::YAML_COMMENT))
+}
+
+/// Canonical flow sequence: `[item1, item2, ...]`. No space inside the
+/// brackets; one space after each comma. Items are recursively emitted
+/// (so nested flows get their canonical form) then trimmed of stray
+/// whitespace the parser may have absorbed.
+fn emit_flow_sequence(out: &mut String, node: &SyntaxNode) {
+    out.push('[');
+    let items: Vec<_> = node
+        .children()
+        .filter(|c| c.kind() == SyntaxKind::YAML_FLOW_SEQUENCE_ITEM)
+        .collect();
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        let mut inner = String::new();
+        emit_node(&mut inner, item);
+        out.push_str(inner.trim());
+    }
+    out.push(']');
+}
+
+/// Canonical flow map: `{ k: v, ... }`. One space inside the braces
+/// (or `{}` if empty); one space after each comma; one space after
+/// each `:`. If the parser couldn't structure the content (e.g.
+/// `{key:value}` where no space disambiguates `:`), the inner text is
+/// emitted verbatim between `{ ` and ` }` — matches pretty_yaml's
+/// "normalize spacing around structure, don't re-parse content"
+/// behavior.
+fn emit_flow_map(out: &mut String, node: &SyntaxNode) {
+    let entries: Vec<_> = node
+        .children()
+        .filter(|c| c.kind() == SyntaxKind::YAML_FLOW_MAP_ENTRY)
+        .collect();
+    if entries.is_empty() {
+        let inner = inner_flow_text(node);
+        if inner.is_empty() {
+            out.push_str("{}");
+        } else {
+            out.push_str("{ ");
+            out.push_str(&inner);
+            out.push_str(" }");
+        }
+        return;
+    }
+    out.push_str("{ ");
+    for (i, entry) in entries.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        emit_flow_map_entry(out, entry);
+    }
+    out.push_str(" }");
+}
+
+fn emit_flow_map_entry(out: &mut String, entry: &SyntaxNode) {
+    let mut emitted_key = false;
+    for child in entry.children() {
+        match child.kind() {
+            SyntaxKind::YAML_FLOW_MAP_KEY => {
+                let mut buf = String::new();
+                emit_node(&mut buf, &child);
+                out.push_str(buf.trim());
+                emitted_key = true;
+            }
+            SyntaxKind::YAML_FLOW_MAP_VALUE => {
+                if emitted_key {
+                    out.push(' ');
+                }
+                let mut buf = String::new();
+                emit_node(&mut buf, &child);
+                out.push_str(buf.trim());
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Extract the content between the opening and closing brackets of a
+/// flow container as a trimmed string. Used when a flow map's parser
+/// couldn't structure its content (no `YAML_FLOW_MAP_ENTRY` children) —
+/// we preserve the raw inner bytes rather than re-parsing.
+fn inner_flow_text(node: &SyntaxNode) -> String {
+    let text = node.text().to_string();
+    let trimmed = text.trim();
+    let inner = trimmed
+        .strip_prefix(['{', '['])
+        .and_then(|s| s.strip_suffix(['}', ']']))
+        .unwrap_or(trimmed);
+    inner.trim().to_string()
 }
 
 /// Precompute the canonical indent depth for each line in the CST's
@@ -99,12 +231,12 @@ fn is_ws_before_inline_comment(tokens: &[SyntaxToken], i: usize) -> bool {
 /// for the final unterminated line). `None` means the line passes
 /// through verbatim (whitespace-only, or block-scalar interior).
 ///
-/// This is decoupled from the buffer so that rule 8 (which can shrink
-/// inline whitespace and shift per-line byte counts) doesn't invalidate
-/// rule 1's CST-offset lookup. The buffer-side pass
-/// (`apply_canonical_indents`) iterates lines in parallel — rule 8
-/// preserves `\n` positions, so the buffer's line count matches the
-/// CST's.
+/// This is decoupled from the buffer so that rules 5 and 8 (which can
+/// shift per-line byte counts) don't invalidate rule 1's CST-offset
+/// lookup. The buffer-side pass (`apply_canonical_indents`) iterates
+/// lines in parallel — none of the in-walk rules add or remove `\n`
+/// for the lines they touch, so buffer line count matches CST line
+/// count.
 fn precompute_line_depths(root: &SyntaxNode) -> Vec<Option<usize>> {
     let text = root.text().to_string();
     let mut out = Vec::new();

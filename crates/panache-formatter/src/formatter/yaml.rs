@@ -13,25 +13,30 @@
 //! `crates/panache-formatter/tests/yaml_cross_validation.rs`. See
 //! `.claude/skills/yaml-formatter-cutover/SKILL.md` for scope.
 //!
-//! Phase 1.8 status: cross-validation harness live; rules 1
+//! Phase 1.9 status: cross-validation harness live; rules 1
 //! (canonical 2-space indent driven by entry/item nesting depth),
 //! 2 (sequence items indent +2 from parent key — carried by rule 1's
-//! depth math, no separate code), 7 (collapse blank-line runs; strip
-//! leading blanks entirely), 8 (one space before inline `#` comments,
-//! emitted during the token walk), 10 (strip trailing whitespace per
-//! line), and 13 (exactly one trailing `\n` at EOF) implemented in
-//! [`document`]. Token bodies inside each line are otherwise emitted
-//! verbatim — per-container restyling (quote style, flow spacing /
-//! wrap, …) has not landed yet. Corpus covers trivially-canonical
-//! inputs, trailing-newline + trailing-WS shape rules, rule-1 indent
-//! stressors (4-space and 8-space collapse, sequence-in-mapping,
-//! sequence-of-mappings), rule-2 parent-column sequences (top-level,
-//! nested, sequence-of-mappings), rule-7 blank-line cases (interior
-//! collapse, whitespace-only blanks, leading-blank strip), and rule-8
-//! inline-comment cases (loose/tight spacing, multiple inline,
-//! standalone-above-key, nested inline). Block scalar (`|`/`>`)
-//! interior lines are left verbatim — rule 1 needs a real
-//! block-scalar renderer to canonicalize them.
+//! depth math, no separate code), 5 (canonical flow spacing for
+//! single-line, comment-free `YAML_FLOW_SEQUENCE` / `YAML_FLOW_MAP`
+//! subtrees), 7 (collapse blank-line runs; strip leading blanks
+//! entirely), 8 (one space before inline `#` comments), 10 (strip
+//! trailing whitespace per line), and 13 (exactly one trailing `\n`
+//! at EOF) implemented in [`document`]. Token bodies outside flow
+//! containers are otherwise emitted verbatim — per-container
+//! restyling (quote style, multi-line flow wrap) has not landed yet.
+//! Corpus covers trivially-canonical inputs, trailing-newline +
+//! trailing-WS shape rules, rule-1 indent stressors (4-space and
+//! 8-space collapse, sequence-in-mapping, sequence-of-mappings),
+//! rule-2 parent-column sequences (top-level, nested,
+//! sequence-of-mappings), rule-5 flow-spacing cases (no-comma-space,
+//! extra-inner-space, pathological no-spaces, nested seq-of-maps,
+//! nested maps, flow-in-block-seq, empty containers), rule-7
+//! blank-line cases (interior collapse, whitespace-only blanks,
+//! leading-blank strip), and rule-8 inline-comment cases
+//! (loose/tight spacing, multiple inline, standalone-above-key,
+//! nested inline). Block scalar (`|`/`>`) interior lines are left
+//! verbatim — rule 1 needs a real block-scalar renderer to
+//! canonicalize them.
 
 #[path = "yaml/block_map.rs"]
 mod block_map;
@@ -128,6 +133,52 @@ mod tests {
         // standard rewriting.
         let opts = YamlFormatOptions::default();
         let input = "key: |\n  line one\n  line two\n";
+        assert_eq!(format_yaml(input, &opts), input);
+    }
+
+    #[test]
+    fn rule_5_flow_spacing_canonicalized() {
+        // Rule 5: flow sequence — no space inside `[]`, one space after
+        // each `,`. Flow map — one space inside `{}`, one space after
+        // each `,`, one space after each `:`.
+        let opts = YamlFormatOptions::default();
+        assert_eq!(format_yaml("tags: [a,b,c]\n", &opts), "tags: [a, b, c]\n");
+        assert_eq!(
+            format_yaml("tags: [ a , b , c ]\n", &opts),
+            "tags: [a, b, c]\n"
+        );
+        assert_eq!(
+            format_yaml("obj: {key: value}\n", &opts),
+            "obj: { key: value }\n"
+        );
+        assert_eq!(
+            format_yaml("obj: {  key: value  }\n", &opts),
+            "obj: { key: value }\n"
+        );
+        assert_eq!(
+            format_yaml("a: {x: 1,y: 2}\n", &opts),
+            "a: { x: 1, y: 2 }\n"
+        );
+        // Pathological: parser can't structure `{key:value}` into
+        // entries; emit `{ inner }` with spacing normalized around
+        // the unparseable content.
+        assert_eq!(
+            format_yaml("obj: {key:value}\n", &opts),
+            "obj: { key:value }\n"
+        );
+        // Empty containers stay empty (no inner space).
+        assert_eq!(format_yaml("e: []\n", &opts), "e: []\n");
+        assert_eq!(format_yaml("e: {}\n", &opts), "e: {}\n");
+    }
+
+    #[test]
+    fn rule_5_multiline_flow_preserved_verbatim() {
+        // Multi-line flow containers stay verbatim — rule 6 will own
+        // multi-line wrap. The boundary check (`can_canonicalize_flow`
+        // returns false when the container's text contains `\n`) keeps
+        // the canonical emitter out of the way.
+        let opts = YamlFormatOptions::default();
+        let input = "tags: [\n  a,\n  b,\n]\n";
         assert_eq!(format_yaml(input, &opts), input);
     }
 

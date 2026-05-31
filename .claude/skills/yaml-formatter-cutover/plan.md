@@ -16,12 +16,14 @@ matching the `scanner-rewrite.md` precedent in `yaml-shadow-expand/`.
   it) + rule 7 (blank-line collapse + leading-blank strip); 1.8 rule 8
   (inline comment spacing, integrated into token walk; render pipeline
   refactored to precompute per-line depths so rule 8's byte shifts
-  don't invalidate rule 1's offset lookup). Remaining: rules 3
-  (quote style), 4 (block scalar style — preserve, no code), 5 (flow
-  spacing), 6 (flow wrap on overflow), 9 (comment positions —
-  preserve, no code), 11 (empty scalars — preserve, no code), 12
-  (key order — preserve, no code). Active work: rules 3, 5, 6 (the
-  three remaining behavior-changing rules).
+  don't invalidate rule 1's offset lookup); 1.9 rule 5 (canonical flow
+  spacing; token walk refactored to recursive node walk so flow
+  containers can take over emission for their subtrees). Remaining:
+  rules 3 (quote style), 4 (block scalar style — preserve, no code),
+  6 (flow wrap on overflow), 9 (comment positions — preserve, no
+  code), 11 (empty scalars — preserve, no code), 12 (key order —
+  preserve, no code). Active work: rules 3, 6 (the two remaining
+  behavior-changing rules).
 - **Phase 2 (joint cutover):** not started, blocked on Phase 1.
 - **Phase 3 (hashpipe extension):** not started, blocked on Phase 2.
 
@@ -29,6 +31,35 @@ matching the `scanner-rewrite.md` precedent in `yaml-shadow-expand/`.
 
 _(Update as phases complete. Earliest entries on top.)_
 
+- **Phase 1.9 — rule 5 (canonical flow spacing) + recursive walker.**
+  Refactored the token walk into a recursive node walk
+  (`walk_with_normalization` → `emit_node` → `emit_token`) so flow
+  containers can take over emission for their subtree.
+  `YAML_FLOW_SEQUENCE` emits `[item, item, ...]` (no inner space, one
+  space after `,`); `YAML_FLOW_MAP` emits `{ k: v, ... }` (one inner
+  space, one space after `,`, one space after `:`). When the parser
+  couldn't structure a flow map's content into `YAML_FLOW_MAP_ENTRY`
+  children (e.g. `{key:value}` — no space to disambiguate `:`), the
+  inner bytes are emitted verbatim between `{ ` and ` }` — matches
+  pretty_yaml's "normalize spacing around structure, don't re-parse
+  content" behavior. Multi-line flow containers and flow containers
+  with embedded `YAML_COMMENT` tokens fall through to the generic
+  recursive path and emit verbatim (rule 6 will own multi-line wrap;
+  in-flow comments are too rare to justify their own canonical path).
+  Rule 8 (inline comment WS normalization) was re-anchored to
+  `SyntaxToken::prev_token()` / `next_token()` so it works during the
+  recursive walk without an array index. Nine new corpus cases under
+  `tests/fixtures/yaml_corpus/flow/`: `canonical_sequence`,
+  `canonical_map`, `empty_sequence`, `empty_map`,
+  `sequence_no_comma_space`, `sequence_extra_space`,
+  `map_no_inner_space`, `map_extra_inner_space`, `map_no_comma_space`,
+  `map_pathological_no_spaces`, `nested_seq_of_maps`, `nested_maps`,
+  `sequence_inside_block_sequence`. Two new unit tests
+  (`rule_5_flow_spacing_canonicalized` and
+  `rule_5_multiline_flow_preserved_verbatim`). STYLE.md rule 5
+  amended with the in-flow-comment / multi-line scope and the
+  unparseable-content pass-through behavior. yaml.rs status block
+  bumped to 1.9. No live-pipeline changes.
 - **Phase 1.8 — rule 8 (inline comment spacing) + pipeline refactor.**
   Added `walk_with_inline_comment_normalization` and
   `is_ws_before_inline_comment` to
